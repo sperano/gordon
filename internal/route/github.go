@@ -72,7 +72,9 @@ func (r Router) prComment(ev event.Event, st State, led Ledger) Decision {
 	id := run.Identity{Family: run.PRFollowUp, Project: proj.Name, Workspace: proj.Workspace, Variant: variant,
 		PR: pr.Number, CommentKind: kind, CommentID: gh.CommentID, HeadRef: pr.HeadRef}
 	if r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: profile.ModeFollowUp}) {
-		r.followUpWrites(&fd, owner, gh, pr)
+		r.followUpWrites(&fd, owner, gh, pr, true)
+	} else if fd.Outcome == Duplicate {
+		r.recoverWrites(&fd, owner, gh, pr)
 	}
 	return Decision{Families: []FamilyDecision{fd}}
 }
@@ -186,17 +188,31 @@ func (r Router) prVariant(pr event.PullRequest) (string, bool) {
 	}
 }
 
+// recoverWrites replays the follow-up writes of a request whose run
+// exists but which the ledger has not recorded as handled: a worker that
+// crashed after submitting the Task. Their durable keys make the replay
+// idempotent. The draft writes replay only while the run is active: a
+// finished run has already marked the PR ready, and drafting it again
+// would leave it a draft nobody undoes. Any replayed write makes the
+// outcome Act, keeping the duplicate reason.
+func (r Router) recoverWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, pr event.PullRequest) {
+	r.followUpWrites(fd, owner, gh, pr, fd.Reason == ReasonRunActive)
+	if len(fd.Actions) > 0 {
+		fd.Outcome = Act
+	}
+}
+
 // followUpWrites adds the reactor's writes: 👀 on an owner request, and
-// the draft label and draft conversion while the follow-up runs. A review
+// the draft label and draft conversion when draft is set. A review
 // gets its 👀 too: the REST API has no reactions on a submitted review,
 // so the worker uses GraphQL addReaction on its node id, as
 // github_reactor.py does.
-func (r Router) followUpWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, pr event.PullRequest) {
+func (r Router) followUpWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, pr event.PullRequest, draft bool) {
 	if owner {
 		target := action.GitHubComment(gh.Repository, string(gh.CommentKind), gh.CommentID)
 		fd.Actions = append(fd.Actions, action.New(action.React, target, reactionEyes))
 	}
-	if label := r.Config.Policy.DraftLabel; label != "" && !pr.Draft {
+	if label := r.Config.Policy.DraftLabel; draft && label != "" && !pr.Draft {
 		target := action.PullRequest(gh.Repository, pr.Number)
 		fd.Actions = append(fd.Actions, action.New(action.AddLabel, target, label),
 			action.New(action.ConvertDraft, target, ""))

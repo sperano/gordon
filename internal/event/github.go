@@ -46,10 +46,12 @@ type githubBody struct {
 }
 
 type githubPullRequest struct {
-	Number int        `json:"number"`
-	State  string     `json:"state"`
-	Draft  bool       `json:"draft"`
-	Merged bool       `json:"merged"`
+	Number int    `json:"number"`
+	State  string `json:"state"`
+	Draft  bool   `json:"draft"`
+	// Merged is a pointer so that a closed delivery without it is
+	// refused instead of read as unmerged.
+	Merged *bool      `json:"merged"`
 	User   githubUser `json:"user"`
 	Head   githubRef  `json:"head"`
 	Base   githubRef  `json:"base"`
@@ -65,6 +67,10 @@ type githubRef struct {
 		FullName string `json:"full_name"`
 	} `json:"repo"`
 }
+
+// closedAction is the pull_request action whose merged flag decides the
+// merge-close path.
+const closedAction = "closed"
 
 var githubKinds = map[string]Kind{
 	"issue_comment":               GitHubIssueComment,
@@ -116,7 +122,7 @@ func ParseGitHub(d Delivery) (Event, error) {
 func pullRequest(repo string, p *githubPullRequest) PullRequest {
 	pr := PullRequest{
 		Repository: repo, Number: p.Number, State: p.State, Draft: p.Draft,
-		Merged: p.Merged, Author: p.User.Login, HeadRef: p.Head.Ref,
+		Merged: p.Merged != nil && *p.Merged, Author: p.User.Login, HeadRef: p.Head.Ref,
 		HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref,
 	}
 	if p.Head.Repo != nil {
@@ -153,6 +159,9 @@ func request(ev *Event, raw githubBody) error {
 	case GitHubPullRequest:
 		if raw.PullRequest == nil {
 			return fmt.Errorf("%w: pull_request event without pull_request", ErrMalformed)
+		}
+		if raw.Action == closedAction && raw.PullRequest.Merged == nil {
+			return fmt.Errorf("%w: closed pull_request without merged", ErrMalformed)
 		}
 		ev.RequestKey = fmt.Sprintf("github/%s/pull/%d/%s/%s", gh.Repository,
 			gh.PullRequest.Number, raw.Action, gh.PullRequest.HeadSHA)

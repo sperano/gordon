@@ -3,6 +3,7 @@ package event
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 )
@@ -172,8 +173,7 @@ func TestParseGitHubReviewAndPullRequest(t *testing.T) {
 	want := PullRequest{Repository: "sperano/vigie", Number: 3, State: "open", Author: "sperano",
 		HeadRef: "kelos/vikunja-9", HeadSHA: "abc", HeadRepo: "sperano/vigie", BaseRef: "main", Labels: []string{"kelos:gpt-sol"}}
 	got := opened.GitHub.PullRequest
-	if got.Number != want.Number || got.HeadRepo != want.HeadRepo || got.BaseRef != want.BaseRef ||
-		got.HeadSHA != want.HeadSHA || !slices.Equal(got.Labels, want.Labels) || got.Author != want.Author {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("pull request %+v, want %+v", got, want)
 	}
 	if opened.RequestKey != "github/sperano/vigie/pull/3/opened/abc" {
@@ -195,6 +195,7 @@ func TestParseGitHubRefusals(t *testing.T) {
 		"review no pr":      {github("pull_request_review", "g", `{`+repo+`,"review":{"id":1}}`), ErrMalformed},
 		"inline no pr":      {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{"id":1}}`), ErrMalformed},
 		"pr no pr":          {github("pull_request", "g", `{`+repo+`}`), ErrMalformed},
+		"closed no merged":  {github("pull_request", "g", `{"action":"closed",`+repo+`,"pull_request":{"number":3,"state":"closed"}}`), ErrMalformed},
 		"pr marker not obj": {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{"number":4,"pull_request":true},"comment":{"id":1,"body":"b"}}`), ErrMalformed},
 		"comment id zero":   {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{"number":4},"comment":{"id":0}}`), ErrMalformed},
 		"issue no number":   {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{},"comment":{"id":1}}`), ErrMalformed},
@@ -220,5 +221,19 @@ func TestTaskHelpers(t *testing.T) {
 	}
 	if !(PullRequest{Labels: []string{"kelos:no-review"}}).HasLabel("kelos:no-review") {
 		t.Error("PullRequest.HasLabel")
+	}
+}
+
+func TestParseGitHubClosedPullRequestMerged(t *testing.T) {
+	repo := `"repository":{"full_name":"sperano/vigie"}`
+	for _, merged := range []bool{true, false} {
+		body := fmt.Sprintf(`{"action":"closed",%s,"pull_request":{"number":3,"state":"closed","merged":%t}}`, repo, merged)
+		ev, err := ParseGitHub(github("pull_request", "g", body))
+		if err != nil {
+			t.Fatalf("merged %t: %v", merged, err)
+		}
+		if ev.GitHub.PullRequest.Merged != merged {
+			t.Errorf("merged = %t, want %t", ev.GitHub.PullRequest.Merged, merged)
+		}
 	}
 }

@@ -146,3 +146,41 @@ func TestTaskNameTooLongIsRejected(t *testing.T) {
 		t.Errorf("rejected run keeps runs %v actions %v", fd.Runs, keys(fd.Actions))
 	}
 }
+
+func TestPRFollowUpExistingRunReplaysWrites(t *testing.T) {
+	r := router()
+	const name = "pr-followup-vigie-4-c77"
+	owner := ghDelivery(t, "issue_comment", issueComment("created", "sperano", "/gordon\nplease", true))
+	bot := ghDelivery(t, "pull_request_review", review("cubic-dev-ai[bot]", "**3 issues found**"))
+	react := "react:github/sperano/vigie/c/77:eyes"
+	drafts := []string{"add-label:github/sperano/vigie/pull/4:kelos:follow-up", "convert-to-draft:github/sperano/vigie/pull/4"}
+	active := replay.Ledger{Runs: []route.RunRecord{{Name: name, Active: true}}}
+	finished := replay.Ledger{Runs: []route.RunRecord{{Name: name, Exists: true}}}
+	botActive := replay.Ledger{Runs: []route.RunRecord{{Name: "pr-followup-vigie-4-r88", Active: true}}}
+	botFinished := replay.Ledger{Runs: []route.RunRecord{{Name: "pr-followup-vigie-4-r88", Exists: true}}}
+	cases := []struct {
+		name    string
+		d       event.Delivery
+		led     replay.Ledger
+		outcome route.Outcome
+		reason  string
+		actions []string
+	}{
+		{"owner active", owner, active, route.Act, route.ReasonRunActive, append([]string{react}, drafts...)},
+		{"owner finished", owner, finished, route.Act, route.ReasonRunExists, []string{react}},
+		{"bot active", bot, botActive, route.Act, route.ReasonRunActive, drafts},
+		{"bot finished", bot, botFinished, route.Duplicate, route.ReasonRunExists, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fd := family(t, r.Decide(c.d, route.State{PullRequest: openPR()}, c.led))
+			expectFamily(t, fd, run.PRFollowUp, c.outcome, c.reason)
+			if len(fd.Runs) != 0 {
+				t.Errorf("runs %+v, want none", fd.Runs)
+			}
+			if got := keys(fd.Actions); !slices.Equal(got, c.actions) {
+				t.Errorf("actions %v, want %v", got, c.actions)
+			}
+		})
+	}
+}

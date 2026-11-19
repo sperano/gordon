@@ -36,6 +36,9 @@ func TestEntriesAreTheInventory(t *testing.T) {
 
 // sharedLibraries are legacy helper modules a dozen entries' scripts
 // import; no single entry owns them.
+// scriptsDir holds the legacy scripts every inventory entry accounts for.
+const scriptsDir = "helm/kelos/scripts/"
+
 var sharedLibraries = []string{"helm/kelos/scripts/notice_kind.py"}
 
 // TestStageScriptsHaveAnEntry fails when a stage changes a legacy script
@@ -52,7 +55,7 @@ func TestStageScriptsHaveAnEntry(t *testing.T) {
 	}
 	for _, s := range Stages() {
 		for _, p := range s.Hollingsworth {
-			if strings.HasPrefix(p, "helm/kelos/scripts/") && strings.HasSuffix(p, ".py") && !listed[p] {
+			if strings.HasPrefix(p, scriptsDir) && !strings.HasSuffix(p, "/") && !listed[p] {
 				t.Errorf("stage %02d: %s is in no inventory entry", s.Number, p)
 			}
 		}
