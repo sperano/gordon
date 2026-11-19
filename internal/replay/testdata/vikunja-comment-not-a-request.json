@@ -1,0 +1,41 @@
+{
+  "description": "A plain comment asks for nothing.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4301,
+          "project_id": 136,
+          "done": false,
+          "labels": [],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "comment": {
+          "id": 90006,
+          "comment": "<p>looks good to me</p>"
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "reason": "not-a-request",
+    "delivery_key": "vikunja/comment/90006",
+    "request_key": "vikunja/comment/90006"
+  }
+}

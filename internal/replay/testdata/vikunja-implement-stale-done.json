@@ -1,0 +1,68 @@
+{
+  "description": "The delivery saw an open task; the fresh read shows it done since: stale, no run.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4101,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "feature"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4101,
+      "project_id": 3,
+      "done": true,
+      "labels": [
+        "feature"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-hollingsworth-claude-opus-4101"
+    ],
+    "divergence": "legacy filtered on the payload's done=false and started a run on a done task"
+  },
+  "expect": {
+    "outcome": "stale",
+    "delivery_key": "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594",
+    "request_key": "vikunja/task/4101",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "stale",
+        "reason": "task-done"
+      }
+    ]
+  }
+}

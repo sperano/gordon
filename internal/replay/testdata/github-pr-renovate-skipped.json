@@ -1,0 +1,82 @@
+{
+  "description": "A Renovate PR gets its required review check posted as skipped, no review run.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "pull_request",
+      "X-GitHub-Delivery": "88888888-2222-3333-4444-555555555555"
+    },
+    "body": {
+      "action": "opened",
+      "sender": {
+        "login": "renovate[bot]"
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "pull_request": {
+        "number": 8,
+        "state": "open",
+        "draft": false,
+        "merged": false,
+        "user": {
+          "login": "renovate[bot]"
+        },
+        "head": {
+          "ref": "renovate/go-deps",
+          "sha": "0123456789abcdef0123456789abcdef01234567",
+          "repo": {
+            "full_name": "sperano/lucarne"
+          }
+        },
+        "base": {
+          "ref": "main"
+        },
+        "labels": []
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/lucarne",
+      "number": 8,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "renovate[bot]",
+      "head_ref": "renovate/go-deps",
+      "head_sha": "0123456789abcdef0123456789abcdef01234567",
+      "head_repo": "sperano/lucarne",
+      "base_ref": "main",
+      "labels": [],
+      "files": []
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "github/delivery/88888888-2222-3333-4444-555555555555",
+    "request_key": "github/sperano/lucarne/pull/8/opened/0123456789abcdef0123456789abcdef01234567",
+    "families": [
+      {
+        "family": "pr-review",
+        "project": "lucarne",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "reason": "skip-author",
+        "actions": [
+          {
+            "key": "post-skipped-checks:github/sperano/lucarne/pull/8:review/pr-challenger@0123456789abcdef0123456789abcdef01234567",
+            "kind": "post-skipped-checks",
+            "target": "github/sperano/lucarne/pull/8",
+            "value": "review/pr-challenger@0123456789abcdef0123456789abcdef01234567"
+          }
+        ]
+      }
+    ]
+  }
+}

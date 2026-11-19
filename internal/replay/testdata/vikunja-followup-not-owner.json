@@ -1,0 +1,60 @@
+{
+  "description": "A /gordon comment by anyone but the owner (here an agent) is refused: no feedback loop.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4301,
+          "project_id": 136,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "comment": {
+          "id": 90004,
+          "comment": "<p>/gordon do it</p>"
+        },
+        "doer": {
+          "username": "gpt-astra"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4301,
+      "project_id": 136,
+      "done": false,
+      "labels": [
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Review"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "reject",
+    "reason": "not-owner",
+    "delivery_key": "vikunja/comment/90004",
+    "request_key": "vikunja/comment/90004"
+  }
+}

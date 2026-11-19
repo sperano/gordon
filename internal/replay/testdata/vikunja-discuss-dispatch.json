@@ -1,0 +1,107 @@
+{
+  "description": "A discuss card in Doing starts a read-only discuss run; puckdb keeps its read-only database access.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4201,
+          "project_id": 6,
+          "done": false,
+          "labels": [
+            {
+              "title": "discuss"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "gpt-astra"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4201,
+      "project_id": 6,
+      "done": false,
+      "labels": [
+        "discuss"
+      ],
+      "assignees": [
+        "gpt-astra"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-discuss-puckdb-gpt-astra-4201"
+    ],
+    "divergence": "same Task; legacy ran it as the writing image-build-submitter ServiceAccount, Gordon as kelos-discuss"
+  },
+  "expect": {
+    "outcome": "dispatch",
+    "delivery_key": "vikunja/task.updated/4201/d6ceaa4b7573164cf6062d4bc8746a6c",
+    "request_key": "vikunja/task/4201",
+    "families": [
+      {
+        "family": "vikunja-discuss",
+        "project": "puckdb",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "dispatch",
+        "runs": [
+          {
+            "name": "vikunja-discuss-puckdb-gpt-astra-4201",
+            "branch": "kelos/vikunja-4201",
+            "identity": {
+              "family": "vikunja-discuss",
+              "project": "puckdb",
+              "variant": "gpt-astra",
+              "task_id": 4201
+            },
+            "profile": {
+              "config_version": "hollingsworth-4a50f33",
+              "variant": "gpt-astra",
+              "agent": "codex",
+              "model": "gpt-6-astra",
+              "effort": "medium",
+              "image": "ericsperano/kelos-codex:0.64.0-20261119-055920-d9bba7f",
+              "credential_type": "oauth",
+              "credential_secret": "codex-oauth",
+              "mode": "discuss",
+              "profile": "puckdb-discuss",
+              "service_account": "kelos-discuss",
+              "workspace": "puckdb-readonly",
+              "read_only": true,
+              "capabilities": [
+                "github-readonly",
+                "cluster-read",
+                "postgres-test",
+                "puckdb-prod-readonly"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/vikunja-discuss-puckdb-gpt-astra-4201",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/vikunja-discuss-puckdb-gpt-astra-4201"
+          }
+        ]
+      }
+    ]
+  }
+}

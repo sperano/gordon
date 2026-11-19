@@ -1,0 +1,56 @@
+{
+  "description": "A delivery without X-Vikunja-Signature is refused before parsing.",
+  "delivery": {
+    "source": "vikunja",
+    "signature": "missing",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4101,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "feature"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4101,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "feature"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "reject",
+    "reason": "signature-missing",
+    "status": 401
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "description": "The owner's /gordon on a task in progress works on the task's branch, behind Kelos's branch lock.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4301,
+          "project_id": 136,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "comment": {
+          "id": 90001,
+          "comment": "<p>/gordon please rebase</p>"
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4301,
+      "project_id": 136,
+      "done": false,
+      "labels": [
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Review"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-fu-sillage-4301-c90001"
+    ]
+  },
+  "expect": {
+    "outcome": "dispatch",
+    "delivery_key": "vikunja/comment/90001",
+    "request_key": "vikunja/comment/90001",
+    "families": [
+      {
+        "family": "vikunja-followup",
+        "project": "sillage",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "dispatch",
+        "runs": [
+          {
+            "name": "vikunja-fu-sillage-4301-c90001",
+            "branch": "kelos/vikunja-4301",
+            "identity": {
+              "family": "vikunja-followup",
+              "project": "sillage",
+              "variant": "claude-opus",
+              "task_id": 4301,
+              "comment_id": 90001
+            },
+            "profile": {
+              "config_version": "hollingsworth-4a50f33",
+              "variant": "claude-opus",
+              "agent": "claude-code",
+              "model": "claude-opus-5-5[1m]",
+              "effort": "medium",
+              "image": "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f",
+              "credential_type": "oauth",
+              "credential_secret": "claude-oauth",
+              "mode": "followup",
+              "profile": "default",
+              "service_account": "",
+              "workspace": "sillage",
+              "read_only": false,
+              "capabilities": [
+                "github-write"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/vikunja-fu-sillage-4301-c90001",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/vikunja-fu-sillage-4301-c90001"
+          },
+          {
+            "key": "react:vikunja/comment/90001:eyes",
+            "kind": "react",
+            "target": "vikunja/comment/90001",
+            "value": "eyes"
+          }
+        ]
+      }
+    ]
+  }
+}

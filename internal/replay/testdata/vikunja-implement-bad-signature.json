@@ -1,0 +1,56 @@
+{
+  "description": "A delivery signed with another key is refused before parsing.",
+  "delivery": {
+    "source": "vikunja",
+    "signature": "invalid",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4101,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "feature"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4101,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "feature"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "reject",
+    "reason": "signature-invalid",
+    "status": 403
+  }
+}

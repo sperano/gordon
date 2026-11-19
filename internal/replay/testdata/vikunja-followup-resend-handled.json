@@ -1,0 +1,65 @@
+{
+  "description": "A legacy reconciler resend is a new delivery of a request already handled (legacy reached the same Task name).",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4301,
+          "project_id": 136,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "comment": {
+          "id": 90001,
+          "comment": "<p>/gordon please rebase</p>"
+        },
+        "doer": {
+          "username": "eric"
+        },
+        "redispatch": "2026-11-19T08:05:00Z"
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4301,
+      "project_id": 136,
+      "done": false,
+      "labels": [
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Review"
+      ]
+    }
+  },
+  "ledger": {
+    "requests": [
+      "vikunja/comment/90001"
+    ]
+  },
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "duplicate",
+    "reason": "request-handled",
+    "delivery_key": "vikunja/comment/90001/redispatch/2026-11-19T08:05:00Z",
+    "request_key": "vikunja/comment/90001"
+  }
+}

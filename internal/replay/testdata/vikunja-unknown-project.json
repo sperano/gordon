@@ -1,0 +1,37 @@
+{
+  "description": "A project with no configuration is ignored.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4102,
+          "project_id": 99,
+          "done": false,
+          "labels": [],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "reason": "project-not-configured",
+    "delivery_key": "vikunja/task.updated/4102/b22888ef9c22f2351aeb1d7a01695034",
+    "request_key": "vikunja/task/4102"
+  }
+}

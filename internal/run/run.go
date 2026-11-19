@@ -1,0 +1,128 @@
+// Package run defines run identities: which dispatch family a Kelos Task
+// belongs to and the deterministic Task name and branch it gets.
+//
+// Names are exactly the legacy TaskSpawner nameTemplates (hollingsworth
+// helm/kelos/templates/taskspawners.yaml, commentspawners.yaml,
+// followupspawners.yaml, reviewspawners.yaml), because legacy pod hooks
+// (wait_for_blockers.py, announce_start.py, dedupe_pr_task.py,
+// limit_reaper.py) parse ids back out of them; a Task Gordon submits during
+// the migration must look like the one the spawner would have made.
+package run
+
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+)
+
+// Family is a dispatch family: one legacy spawner family, or one group of
+// model-free actions that Gordon takes over.
+type Family string
+
+const (
+	VikunjaImplement       Family = "vikunja-implement"
+	VikunjaDiscuss         Family = "vikunja-discuss"
+	VikunjaFollowUp        Family = "vikunja-followup"
+	VikunjaFollowUpAnswer  Family = "vikunja-followup-answer"
+	VikunjaFollowUpDiscuss Family = "vikunja-followup-discuss"
+	PRFollowUp             Family = "pr-followup"
+	PRReview               Family = "pr-review"
+	PROpen                 Family = "pr-open"
+	MergeClose             Family = "merge-close"
+)
+
+// Families lists every family the router decides, in a stable order.
+var Families = []Family{
+	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
+	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
+}
+
+// BranchPrefix is the legacy agent branch prefix (vikunjaSpawners.branchPrefix).
+const BranchPrefix = "kelos/vikunja-"
+
+// MaxNameLength is the Kubernetes label-value limit a Task name must fit:
+// Kelos copies the name into the kelos.dev/task label.
+const MaxNameLength = 63
+
+// shortSHALength is how much of a head SHA a review Task name keeps.
+const shortSHALength = 8
+
+// Identity is everything that names one run.
+type Identity struct {
+	Family    Family `json:"family"`
+	Project   string `json:"project,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+	Variant   string `json:"variant,omitempty"`
+	Reviewer  string `json:"reviewer,omitempty"`
+	TaskID    int64  `json:"task_id,omitempty"`
+	CommentID int64  `json:"comment_id,omitempty"`
+	// CommentKind is the follow-up letter: c, l, r (GitHub) or p (poller).
+	CommentKind string `json:"comment_kind,omitempty"`
+	PR          int    `json:"pr,omitempty"`
+	HeadSHA     string `json:"head_sha,omitempty"`
+	HeadRef     string `json:"head_ref,omitempty"`
+}
+
+// Name is the Kelos Task name, or "" for a family that submits no Task.
+func (i Identity) Name() string {
+	switch i.Family {
+	case VikunjaImplement:
+		return fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+	case VikunjaDiscuss:
+		return fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+	case VikunjaFollowUp, VikunjaFollowUpAnswer, VikunjaFollowUpDiscuss:
+		// One name across the three modes, so a task whose labels change
+		// between deliveries still deduplicates (commentspawners.yaml).
+		return fmt.Sprintf("vikunja-fu-%s-%d-c%d", i.Project, i.TaskID, i.CommentID)
+	case PRFollowUp:
+		return fmt.Sprintf("pr-followup-%s-%d-%s%d", i.Workspace, i.PR, i.CommentKind, i.CommentID)
+	case PRReview:
+		return fmt.Sprintf("review-%s-%s-%d-%s", i.Workspace, i.Reviewer, i.PR, short(i.HeadSHA))
+	default:
+		return ""
+	}
+}
+
+// Branch is the Task's spec.branch, which Kelos serialises Tasks on; ""
+// for a Task that clones the Workspace ref (answers, discuss follow-ups,
+// reviews).
+func (i Identity) Branch() string {
+	switch i.Family {
+	case VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp:
+		return BranchPrefix + strconv.FormatInt(i.TaskID, 10)
+	case PRFollowUp:
+		return i.HeadRef
+	default:
+		return ""
+	}
+}
+
+func short(sha string) string {
+	if len(sha) < shortSHALength {
+		return sha
+	}
+	return sha[:shortSHALength]
+}
+
+var agentBranch = regexp.MustCompile(`^` + regexp.QuoteMeta(BranchPrefix) + `([0-9]+)$`)
+
+// TaskIDFromBranch returns the Vikunja task id of an agent branch
+// (kelos/vikunja-<digits>, merge_close.task_id_from_branch); false for any
+// other branch.
+func TaskIDFromBranch(branch string) (int64, bool) {
+	m := agentBranch.FindStringSubmatch(branch)
+	if m == nil {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
+var retrySuffix = regexp.MustCompile(`-retry[0-9]+$`)
+
+// StripRetry removes the limit reaper's -retry<n> suffix from a Task name
+// (limit_reaper.py), giving the name of the run it restarted.
+func StripRetry(name string) string { return retrySuffix.ReplaceAllString(name, "") }

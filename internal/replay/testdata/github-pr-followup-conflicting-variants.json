@@ -1,0 +1,70 @@
+{
+  "description": "Two non-default kelos:<variant> labels select two agents: conflict.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "issue_comment",
+      "X-GitHub-Delivery": "44444444-2222-3333-4444-555555555555"
+    },
+    "body": {
+      "action": "created",
+      "sender": {
+        "login": "sperano"
+      },
+      "repository": {
+        "full_name": "sperano/vigie"
+      },
+      "issue": {
+        "number": 42,
+        "pull_request": {
+          "url": "https://api.github.com/repos/sperano/vigie/pulls/42"
+        }
+      },
+      "comment": {
+        "id": 700003,
+        "body": "/gordon fix it"
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/vigie",
+      "number": 42,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "head_repo": "sperano/vigie",
+      "base_ref": "main",
+      "labels": [
+        "kelos:claude-sonnet",
+        "kelos:gpt-sol"
+      ],
+      "files": []
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "pr-followup-vigie-42-c700003"
+    ],
+    "divergence": "legacy started whichever of the two variant spawners won the Task-name race"
+  },
+  "expect": {
+    "outcome": "conflict",
+    "delivery_key": "github/delivery/44444444-2222-3333-4444-555555555555",
+    "request_key": "github/sperano/vigie/c/700003",
+    "families": [
+      {
+        "family": "pr-followup",
+        "project": "vigie",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "conflict",
+        "reason": "multiple-variant-labels"
+      }
+    ]
+  }
+}
