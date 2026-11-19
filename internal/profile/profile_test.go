@@ -98,9 +98,10 @@ func TestResolveRefusals(t *testing.T) {
 	c.Variants["broken"] = Variant{Runner: "missing"}
 	c.Profiles["leaky"] = Profile{ReadOnly: true, Capabilities: []Capability{GitHubReadOnly, ImageBuildSubmit}}
 	c.Profiles["unclassified"] = Profile{ReadOnly: true, Capabilities: []Capability{GitHubReadOnly, "vault-admin"}}
+	c.Profiles["no-write"] = Profile{Capabilities: []Capability{GitHubReadOnly, ClusterRead}}
 	c.Projects = append(c.Projects, Project{Name: "odd", Workspace: "odd",
 		Profiles: map[Mode]string{ModeImplement: ProfileDefault, ModeDiscuss: ProfileDefault},
-		Allowed:  map[Mode][]string{ModeImplement: {"leaky", "ghost", ProfileDiscuss}, ModeAnswer: {"unclassified"}}})
+		Allowed:  map[Mode][]string{ModeImplement: {"leaky", "ghost", ProfileDiscuss, "no-write"}, ModeAnswer: {"unclassified"}}})
 	cases := map[string]struct {
 		req  Request
 		want string
@@ -115,6 +116,7 @@ func TestResolveRefusals(t *testing.T) {
 		"payload profile":   {Request{Project: "vigie", Variant: "claude-opus", Mode: ModeImplement, Profile: ProfilePuckDB}, CodeProfileNotAllowed},
 		"discuss writes":    {Request{Project: "odd", Variant: "claude-opus", Mode: ModeDiscuss}, CodeReadOnlyViolation},
 		"write read-only":   {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: ProfileDiscuss}, CodeReadOnlyViolation},
+		"write no grant":    {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: "no-write"}, CodeReadOnlyViolation},
 		"leaky read-only":   {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: "leaky"}, CodeConflictingProfile},
 		"unknown grant":     {Request{Project: "odd", Variant: "claude-opus", Mode: ModeAnswer, Profile: "unclassified"}, CodeUnknownCapability},
 		"ghost profile":     {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: "ghost"}, CodeUnknownProfile},

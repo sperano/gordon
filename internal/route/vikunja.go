@@ -117,15 +117,17 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 }
 
 // projectOf is the task's configured project: the fresh task's when it
-// moved since the delivery, so a run takes its new project's profile and
-// Task name. moved reports a move out of the configured projects.
+// moved since the delivery (into a configured project too), so a run
+// takes its new project's profile and Task name. moved reports a move
+// from a configured project out of the configured projects.
 func (r Router) projectOf(sent int64, fresh *event.Task) (p profile.Project, ok, moved bool) {
 	p, ok = r.Config.Project(sent)
-	if !ok || fresh == nil || fresh.ProjectID == sent {
+	if fresh == nil || fresh.ProjectID == sent {
 		return p, ok, false
 	}
+	wasConfigured := ok
 	p, ok = r.Config.Project(fresh.ProjectID)
-	return p, ok, !ok
+	return p, ok, wasConfigured && !ok
 }
 
 // submit resolves and deduplicates one run; on success fd dispatches it.

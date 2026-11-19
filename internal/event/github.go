@@ -29,8 +29,10 @@ type githubBody struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
 	Issue *struct {
-		Number      int              `json:"number"`
-		PullRequest *json.RawMessage `json:"pull_request"`
+		Number int `json:"number"`
+		// PullRequest marks an issue that is a pull request; decoding it
+		// as an object makes any other value malformed.
+		PullRequest *struct{} `json:"pull_request"`
 	} `json:"issue"`
 	Comment *struct {
 		ID   int64  `json:"id"`

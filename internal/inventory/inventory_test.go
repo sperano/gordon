@@ -59,6 +59,56 @@ func TestStageScriptsHaveAnEntry(t *testing.T) {
 	}
 }
 
+// TestEntryPathsAreStaged fails when a migrated or retired entry's legacy
+// file is changed by no stage from its implementation to its cutover, so
+// the stage table would omit work the move needs.
+func TestEntryPathsAreStaged(t *testing.T) {
+	for _, e := range Entries() {
+		if e.Decision == Retain {
+			continue
+		}
+		for _, p := range e.Legacy {
+			if !stagedBetween(p, firstStage(e), e.Cutover) {
+				t.Errorf("%s: %s is in no stage from %02d to %02d", e.ID, p, firstStage(e), e.Cutover)
+			}
+		}
+	}
+}
+
+func TestStagedBetweenMatchesDirectories(t *testing.T) {
+	if !stagedBetween("helm/kelos/templates/run-link.yaml", StageRetire, StageRetire) {
+		t.Error("stage 13's templates/ directory does not cover a template")
+	}
+	if stagedBetween("helm/kelos/templates/run-link.yaml", StageGitHubCut, StageGitHubCut) {
+		t.Error("stage 09 covers a template it does not list")
+	}
+}
+
+// firstStage is the first stage that works on an entry: its
+// implementation, or its cutover when nothing is built.
+func firstStage(e Entry) int {
+	if e.Implement != 0 {
+		return e.Implement
+	}
+	return e.Cutover
+}
+
+// stagedBetween reports whether a stage numbered from lo to hi lists the
+// path itself or a directory (ending in /) that contains it.
+func stagedBetween(path string, lo, hi int) bool {
+	for _, s := range Stages() {
+		if s.Number < lo || s.Number > hi {
+			continue
+		}
+		for _, q := range s.Hollingsworth {
+			if q == path || strings.HasSuffix(q, "/") && strings.HasPrefix(path, q) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestEntriesAreComplete(t *testing.T) {
 	seen := map[string]bool{}
 	for _, e := range Entries() {

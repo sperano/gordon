@@ -17,19 +17,14 @@ const closedAction = "closed"
 // on closed (merge_close.py). It applies only to an allowed author's PR
 // on a kelos/vikunja-<id> branch.
 func (r Router) taskLink(ev event.Event, proj profile.Project, st State) (FamilyDecision, bool) {
-	sent := ev.GitHub.PullRequest
-	taskID, ok := run.TaskIDFromBranch(sent.HeadRef)
-	if !ok || !slices.Contains(r.Config.Policy.PullRequestAuthors, sent.Author) {
+	if !r.linksTask(ev) {
 		return FamilyDecision{}, false
 	}
-	var fd FamilyDecision
-	switch {
-	case slices.Contains(openActions, ev.Action):
+	sent := ev.GitHub.PullRequest
+	taskID, _ := run.TaskIDFromBranch(sent.HeadRef)
+	fd := r.family(run.MergeClose, proj.Name)
+	if slices.Contains(openActions, ev.Action) {
 		fd = r.family(run.PROpen, proj.Name)
-	case ev.Action == closedAction:
-		fd = r.family(run.MergeClose, proj.Name)
-	default:
-		return FamilyDecision{}, false
 	}
 	if st.Task == nil || st.Task.ID != taskID {
 		fd.Outcome, fd.Reason = Retry, ReasonStateUnavailable
@@ -41,6 +36,15 @@ func (r Router) taskLink(ev event.Event, proj profile.Project, st State) (Family
 		r.mergeClose(&fd, sent, *st.PullRequest, *st.Task)
 	}
 	return fd, true
+}
+
+// linksTask reports whether the delivery is a pr-open or merge-close
+// action on an allowed author's kelos/vikunja-<id> branch.
+func (r Router) linksTask(ev event.Event) bool {
+	sent := ev.GitHub.PullRequest
+	_, ok := run.TaskIDFromBranch(sent.HeadRef)
+	return ok && slices.Contains(r.Config.Policy.PullRequestAuthors, sent.Author) &&
+		(slices.Contains(openActions, ev.Action) || ev.Action == closedAction)
 }
 
 func prRef(pr event.PullRequest) string { return fmt.Sprintf("%s#%d", pr.Repository, pr.Number) }

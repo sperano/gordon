@@ -37,11 +37,15 @@ func (r Router) pullRequest(ev event.Event, st State, led Ledger) Decision {
 	if !ok {
 		return Decision{Outcome: Ignore, Reason: ReasonRepositoryNotConfigured}
 	}
+	reviews := slices.Contains(reviewActions, ev.Action)
+	if !reviews && !r.linksTask(ev) {
+		return Decision{Outcome: Ignore, Reason: ReasonActionNotRouted}
+	}
 	if st.PullRequest == nil {
 		return Decision{Outcome: Retry, Reason: ReasonStateUnavailable}
 	}
 	var out []FamilyDecision
-	if slices.Contains(reviewActions, ev.Action) {
+	if reviews {
 		out = append(out, r.review(ev, proj, *st.PullRequest, led))
 	}
 	if fd, ok := r.taskLink(ev, proj, st); ok {
@@ -56,15 +60,15 @@ func (r Router) pullRequest(ev event.Event, st State, led Ledger) Decision {
 // review schedules one review run per applicable reviewer
 // (reviewspawners.yaml), or skipped checks for a skipped PR (review_skip.py).
 // The `kelos:no-review` label is read from the fresh PR: a label added or
-// removed since the delivery decides; the head branch and SHA the skipped
-// checks name are the delivery's.
+// removed since the delivery decides, and so does the fresh author; the
+// head branch and SHA the skipped checks name are the delivery's.
 func (r Router) review(ev event.Event, proj profile.Project, pr event.PullRequest, led Ledger) FamilyDecision {
 	p, sent := r.Config.Policy, ev.GitHub.PullRequest
 	fd := r.family(run.PRReview, proj.Name)
 	switch {
-	case slices.Contains(p.ReviewSkipAuthors, sent.Author):
+	case slices.Contains(p.ReviewSkipAuthors, pr.Author):
 		r.skipChecks(&fd, sent, ReasonSkipAuthor)
-	case !slices.Contains(p.PullRequestAuthors, sent.Author):
+	case !slices.Contains(p.PullRequestAuthors, pr.Author):
 		fd.Outcome, fd.Reason = Reject, ReasonAuthorNotAllowed
 	case sent.Draft:
 		fd.Outcome, fd.Reason = Ignore, ReasonDraft
@@ -83,13 +87,16 @@ func (r Router) review(ev event.Event, proj profile.Project, pr event.PullReques
 }
 
 func (r Router) reviewRuns(fd *FamilyDecision, proj profile.Project, pr event.PullRequest, led Ledger) {
-	dups := 0
+	dups, active := 0, 0
 	reviewers := r.reviewers(proj, pr.Files)
 	for _, rv := range reviewers {
 		id := run.Identity{Family: run.PRReview, Project: proj.Name, Workspace: proj.Workspace,
 			Variant: rv.Variant, Reviewer: rv.Name, PR: pr.Number, HeadSHA: pr.HeadSHA}
-		if _, dup := existing(led, id.Name()); dup {
+		if reason, dup := existing(led, id.Name()); dup {
 			dups++
+			if reason == ReasonRunActive {
+				active++
+			}
 			continue
 		}
 		rn, ok := r.resolved(fd, id, profile.Request{Project: proj.Name, Variant: rv.Variant,
@@ -102,7 +109,11 @@ func (r Router) reviewRuns(fd *FamilyDecision, proj profile.Project, pr event.Pu
 		fd.Actions = append(fd.Actions, action.New(action.SubmitTask, action.KelosTask(KelosNamespace, rn.Name), ""))
 	}
 	fd.Outcome = Dispatch
-	if dups == len(reviewers) {
+	switch {
+	case dups < len(reviewers):
+	case active == dups:
+		fd.Outcome, fd.Reason = Duplicate, ReasonRunActive
+	default:
 		fd.Outcome, fd.Reason = Duplicate, ReasonRunExists
 	}
 }

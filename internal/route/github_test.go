@@ -106,6 +106,12 @@ func TestBotSuggestionsNeedOptIn(t *testing.T) {
 	cubic := r.Decide(ghDelivery(t, "pull_request_review", review("cubic-dev-ai[bot]", "**3 issues found** across 2 files")),
 		route.State{PullRequest: openPR()}, replay.Ledger{})
 	expectFamily(t, family(t, cubic), run.PRFollowUp, route.Dispatch, "")
+	suggestions := review("gordon-cole-ai[bot]", "**Review verdict: suggestions** (review/x)")
+	unknown := r.Decide(ghDelivery(t, "pull_request_review", suggestions), route.State{}, replay.Ledger{})
+	expect(t, unknown, route.Retry, route.ReasonStateUnavailable)
+	handled := replay.Ledger{Requests: []string{"github/sperano/vigie/r/88"}}
+	blocking := review("gordon-cole-ai[bot]", "**Review verdict: blocking** (review/x)")
+	expect(t, r.Decide(ghDelivery(t, "pull_request_review", blocking), route.State{}, handled), route.Duplicate, route.ReasonRequestHandled)
 }
 
 func TestBadBotPatternRejectsInsteadOfPanicking(t *testing.T) {

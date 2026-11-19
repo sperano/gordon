@@ -153,9 +153,10 @@ func (c Config) defaultProfile(p Project, m Mode) string {
 
 // checkProfile enforces that a discuss run is read-only whatever else it
 // asks for, that every capability is classified, that a read-only profile
-// carries no writing capability, and
-// that a writing mode gets a writing profile.
+// carries no writing capability, and that a writing mode gets a profile
+// that is not read-only and grants at least one writing capability.
 func checkProfile(name string, p Profile, m Mode) error {
+	grantsWrite := false
 	for _, capability := range p.Capabilities {
 		writing, known := capability.Writes()
 		if !known {
@@ -164,12 +165,16 @@ func checkProfile(name string, p Profile, m Mode) error {
 		if p.ReadOnly && writing {
 			return refuse(CodeConflictingProfile, "profile %q is read-only but grants %s", name, capability)
 		}
+		grantsWrite = grantsWrite || writing
 	}
 	if m == ModeDiscuss && !p.ReadOnly {
 		return refuse(CodeReadOnlyViolation, "discuss needs a read-only profile, %q writes", name)
 	}
 	if m != ModeDiscuss && p.ReadOnly {
 		return refuse(CodeReadOnlyViolation, "%s needs a writing profile, %q is read-only", m, name)
+	}
+	if m != ModeDiscuss && !grantsWrite {
+		return refuse(CodeReadOnlyViolation, "%s needs a writing profile, %q grants no writing capability", m, name)
 	}
 	return nil
 }

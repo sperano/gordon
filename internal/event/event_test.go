@@ -187,19 +187,20 @@ func TestParseGitHubRefusals(t *testing.T) {
 		d    Delivery
 		want error
 	}{
-		"unknown event":   {github("star", "g", `{}`), ErrUnsupported},
-		"no delivery id":  {github("push", "", `{}`), ErrMalformed},
-		"not json":        {github("push", "g", `{`), ErrMalformed},
-		"no repository":   {github("push", "g", `{}`), ErrMalformed},
-		"comment no body": {github("issue_comment", "g", `{"action":"created",`+repo+`}`), ErrMalformed},
-		"review no pr":    {github("pull_request_review", "g", `{`+repo+`,"review":{"id":1}}`), ErrMalformed},
-		"inline no pr":    {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{"id":1}}`), ErrMalformed},
-		"pr no pr":        {github("pull_request", "g", `{`+repo+`}`), ErrMalformed},
-		"comment id zero": {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{"number":4},"comment":{"id":0}}`), ErrMalformed},
-		"issue no number": {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{},"comment":{"id":1}}`), ErrMalformed},
-		"review id zero":  {github("pull_request_review", "g", `{`+repo+`,"review":{"id":0},"pull_request":{"number":3}}`), ErrMalformed},
-		"inline id zero":  {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{},"pull_request":{"number":3}}`), ErrMalformed},
-		"pr no number":    {github("pull_request", "g", `{`+repo+`,"pull_request":{"state":"open"}}`), ErrMalformed},
+		"unknown event":     {github("star", "g", `{}`), ErrUnsupported},
+		"no delivery id":    {github("push", "", `{}`), ErrMalformed},
+		"not json":          {github("push", "g", `{`), ErrMalformed},
+		"no repository":     {github("push", "g", `{}`), ErrMalformed},
+		"comment no body":   {github("issue_comment", "g", `{"action":"created",`+repo+`}`), ErrMalformed},
+		"review no pr":      {github("pull_request_review", "g", `{`+repo+`,"review":{"id":1}}`), ErrMalformed},
+		"inline no pr":      {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{"id":1}}`), ErrMalformed},
+		"pr no pr":          {github("pull_request", "g", `{`+repo+`}`), ErrMalformed},
+		"pr marker not obj": {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{"number":4,"pull_request":true},"comment":{"id":1,"body":"b"}}`), ErrMalformed},
+		"comment id zero":   {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{"number":4},"comment":{"id":0}}`), ErrMalformed},
+		"issue no number":   {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{},"comment":{"id":1}}`), ErrMalformed},
+		"review id zero":    {github("pull_request_review", "g", `{`+repo+`,"review":{"id":0},"pull_request":{"number":3}}`), ErrMalformed},
+		"inline id zero":    {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{},"pull_request":{"number":3}}`), ErrMalformed},
+		"pr no number":      {github("pull_request", "g", `{`+repo+`,"pull_request":{"state":"open"}}`), ErrMalformed},
 	}
 	for name, c := range cases {
 		if _, err := ParseGitHub(c.d); !errors.Is(err, c.want) {

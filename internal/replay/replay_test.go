@@ -14,7 +14,7 @@ const fixtureDir = "testdata"
 
 // minFixtures is the committed fixture count: deleting one fails, and
 // the glob cannot silently match nothing.
-const minFixtures = 32
+const minFixtures = 33
 
 func load(t *testing.T) []Fixture {
 	t.Helper()
@@ -85,7 +85,7 @@ func TestFixturesCoverOutcomes(t *testing.T) {
 		seen[f.Expect.Outcome] = true
 	}
 	for _, o := range []route.Outcome{route.Dispatch, route.Act, route.Ignore, route.Reject,
-		route.Duplicate, route.Stale, route.Conflict} {
+		route.Duplicate, route.Stale, route.Conflict, route.Retry} {
 		if !seen[o] {
 			t.Errorf("no fixture expects %s", o)
 		}

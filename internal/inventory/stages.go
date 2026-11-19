@@ -40,7 +40,8 @@ func buildStages() []Stage {
 			"scripts/subtask_chain.py", "scripts/done_unlabel.py", "scripts/action_needed.py",
 			"scripts/wait_for_blockers.py", "scripts/announce_start.py", "scripts/followup_queued_notice.py",
 			"scripts/report_failures.py", "scripts/notice_kind.py", "scripts/vikunja_request.py",
-			"scripts/sillage_marker.py", "scripts/run_link.py")},
+			"scripts/sillage_marker.py", "scripts/run_link.py", "scripts/reconcile_vikunja_followups.py",
+			"scripts/webhook_enricher.py")},
 	}
 }
 
@@ -50,7 +51,8 @@ func cutoverStages() []Stage {
 		{StageVikunjaCut, "cut over Vikunja routing with rollback", []string{"sperano/hollingsworth"},
 			append(chartPath("values-hollingsworth.yaml", "templates/webhook-enricher.yaml", "templates/taskspawners.yaml",
 				"templates/commentspawners.yaml", "templates/vikunja-followup-reconciler.yaml",
-				"templates/subtask-chain-reconcile.yaml", "templates/failure-reporter.yaml", "templates/wait-for-blockers.yaml"),
+				"templates/subtask-chain-reconcile.yaml", "templates/failure-reporter.yaml", "templates/wait-for-blockers.yaml",
+				"templates/_worker.tpl", "templates/_followup.tpl", "templates/_subtask-chain.tpl", "templates/_sillage-marker.tpl"),
 				"scripts/vikunja_sync.py", "helm/gordon/values-hollingsworth.yaml")},
 		{StageGitHub, "implement GitHub, review and reconciliation workflows", nil, chartPath(
 			"scripts/github_reactor.py", "scripts/review_skip.py", "scripts/followup_request.py", "scripts/followup_ready.py",
@@ -65,7 +67,11 @@ func cutoverStages() []Stage {
 				"templates/conflict-reconcile.yaml", "templates/mergespawners.yaml", "templates/merge-close-reconcile.yaml",
 				"templates/pr-readiness.yaml", "templates/github-reactor.yaml", "templates/review-poller.yaml",
 				"templates/webhook-proxy.yaml", "templates/limit-reaper.yaml", "templates/wikispawners.yaml",
-				"templates/wiki-comment-poller.yaml", "templates/announce-wiki-start.yaml"),
+				"templates/wiki-comment-poller.yaml", "templates/announce-wiki-start.yaml", "templates/_followup.tpl",
+				"templates/_review.tpl", "templates/_pr-task-dedup.tpl", "templates/pr-review-supersede.yaml",
+				"templates/_limit.tpl", "templates/announce-github-start.yaml", "templates/_conflict.tpl",
+				"templates/merge-close.yaml", "templates/_wiki-followup.tpl", "scripts/poll_wiki_comments.py",
+				"scripts/pg_client.py", "scripts/announce_wiki_start.py"),
 				"tofu/kelos/main.tf", "tofu/kelos/repos.tf", "helm/gordon/values-hollingsworth.yaml")},
 		{StageUsage, "retain normalized Kelos usage without double counting",
 			[]string{"sperano/kelos", "sperano/hollingsworth"}, append(chartPath("Chart.yaml", "values-hollingsworth.yaml"),

@@ -77,6 +77,14 @@ func TestFreshProjectWins(t *testing.T) {
 	if fd := family(t, c); len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-fu-lucarne-5-c9" {
 		t.Errorf("moved task comment runs %+v", fd.Runs)
 	}
+	in := r.Decide(comment(t, task(5, 99, nil, "claude-opus"), 9, "<p>/gordon go</p>", "eric"),
+		route.State{Task: fresh(5, 139, nil, "claude-opus")}, replay.Ledger{})
+	if fd := family(t, in); fd.Outcome != route.Dispatch || len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-fu-lucarne-5-c9" {
+		t.Errorf("comment on a task moved into a project: %s runs %+v", fd.Outcome, fd.Runs)
+	}
+	between := r.Decide(comment(t, task(5, 99, nil, "claude-opus"), 9, "<p>/gordon go</p>", "eric"),
+		route.State{Task: fresh(5, 98, nil, "claude-opus")}, replay.Ledger{})
+	expectFamily(t, family(t, between), run.VikunjaFollowUpAnswer, route.Ignore, route.ReasonProjectNotConfigured)
 }
 
 func TestTaskCommentModes(t *testing.T) {

@@ -48,8 +48,11 @@ func (r Router) prComment(ev event.Event, st State, led Ledger) Decision {
 	owner, why := r.classify(ev, st)
 	if why != "" {
 		o := Ignore
-		if why == ReasonNotOwner || why == ReasonBadBotPattern {
+		switch why {
+		case ReasonNotOwner, ReasonBadBotPattern:
 			o = Reject
+		case ReasonStateUnavailable:
+			o = Retry
 		}
 		return Decision{Outcome: o, Reason: why}
 	}
@@ -87,23 +90,42 @@ func (r Router) classify(ev event.Event, st State) (bool, string) {
 	if ev.Kind != event.GitHubReview {
 		return false, ReasonNotARequest
 	}
-	labels := gh.PullRequest.Labels
-	if st.PullRequest != nil {
-		labels = st.PullRequest.Labels
-	}
 	for _, bot := range p.ReviewBots {
 		if bot.Login != ev.Actor {
 			continue
 		}
-		found, err := botFindings(bot, gh.Body, slices.Contains(labels, p.FixSuggestionsLabel))
-		switch {
-		case err != nil:
-			return false, ReasonBadBotPattern
-		case found:
-			return false, ""
+		if why := r.botRequest(bot, gh, st.PullRequest); why != ReasonNotARequest {
+			return false, why
 		}
 	}
 	return false, ReasonNotARequest
+}
+
+// botRequest is "" when the bot's review carries findings it acts on.
+// Suggestions count only on a PR with the fix-suggestions label, read
+// from the fresh PR: while it is unavailable and the delivery lacks the
+// label, a suggestions review waits for it instead of being dropped.
+func (r Router) botRequest(bot profile.Bot, gh *event.GitHub, fresh *event.PullRequest) string {
+	label := r.Config.Policy.FixSuggestionsLabel
+	labels := gh.PullRequest.Labels
+	if fresh != nil {
+		labels = fresh.Labels
+	}
+	optIn := slices.Contains(labels, label)
+	unknown := fresh == nil && !optIn
+	found, err := botFindings(bot, gh.Body, optIn || unknown)
+	switch {
+	case err != nil:
+		return ReasonBadBotPattern
+	case !found:
+		return ReasonNotARequest
+	case !unknown:
+		return ""
+	}
+	if findings, _ := matches(bot.FindingsPattern, gh.Body); findings {
+		return ""
+	}
+	return ReasonStateUnavailable
 }
 
 func botFindings(bot profile.Bot, body string, fixSuggestions bool) (bool, error) {

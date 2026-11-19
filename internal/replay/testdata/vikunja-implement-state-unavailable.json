@@ -1,0 +1,44 @@
+{
+  "description": "A card moved to Doing while the task cannot be read back from Vikunja is retried, not dispatched from the delivery alone.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4101,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "feature"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-hollingsworth-claude-opus-4101"
+    ],
+    "divergence": "Legacy dispatched from the webhook payload; Gordon decides from fresh state, so it retries until the task can be read."
+  },
+  "expect": {
+    "outcome": "retry",
+    "reason": "state-unavailable",
+    "delivery_key": "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594",
+    "request_key": "vikunja/task/4101"
+  }
+}

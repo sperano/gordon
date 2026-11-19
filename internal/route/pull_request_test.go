@@ -39,8 +39,11 @@ func TestReviewGates(t *testing.T) {
 	r := router()
 	open := route.State{PullRequest: openPR()}
 	noReview := route.State{PullRequest: openPR("kelos:no-review")}
-	closed := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "closed", HeadSHA: "abc12345"}}
-	drafted := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "open", Draft: true, HeadSHA: "abc12345"}}
+	closed := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "closed", Author: "sperano", HeadSHA: "abc12345"}}
+	drafted := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "open", Author: "sperano", Draft: true, HeadSHA: "abc12345"}}
+	byStranger, byRenovate := openPR(), openPR()
+	byStranger.Author, byRenovate.Author = "mallory", "renovate[bot]"
+	skipped := []string{"post-skipped-checks:github/sperano/vigie/pull/4:review/pr-challenger@abc12345"}
 	cases := []struct {
 		name    string
 		o       prOpts
@@ -50,7 +53,14 @@ func TestReviewGates(t *testing.T) {
 		actions []string
 	}{
 		{"draft", prOpts{action: "opened", author: "sperano", head: "feature", draft: true}, open, route.Ignore, route.ReasonDraft, nil},
-		{"stranger", prOpts{action: "opened", author: "mallory", head: "feature"}, open, route.Reject, route.ReasonAuthorNotAllowed, nil},
+		{"stranger", prOpts{action: "opened", author: "mallory", head: "feature"}, route.State{PullRequest: byStranger},
+			route.Reject, route.ReasonAuthorNotAllowed, nil},
+		{"fresh author not allowed", prOpts{action: "opened", author: "sperano", head: "feature"}, route.State{PullRequest: byStranger},
+			route.Reject, route.ReasonAuthorNotAllowed, nil},
+		{"fresh author allowed", prOpts{action: "opened", author: "mallory", head: "feature"}, open,
+			route.Dispatch, "", []string{"submit-task:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345"}},
+		{"fresh skip author", prOpts{action: "opened", author: "sperano", head: "feature"}, route.State{PullRequest: byRenovate},
+			route.Act, route.ReasonSkipAuthor, skipped},
 		{"no-review other branch", prOpts{action: "opened", author: "sperano", head: "feature", labels: []string{"kelos:no-review"}},
 			noReview, route.Ignore, route.ReasonNoReviewLabel, nil},
 		{"no-review fork image-build", prOpts{action: "opened", author: "sperano", head: "image-build/x", headRepo: "fork/vigie",
@@ -85,6 +95,8 @@ func TestReviewRunsDeduplicateAndRefuse(t *testing.T) {
 	if fd.Outcome != route.Dispatch || len(fd.Runs) != 1 || fd.Runs[0].Name != "review-vigie-idiomatic-go-4-abc12345" {
 		t.Errorf("partial duplicate: %+v", fd)
 	}
+	allActive := replay.Ledger{Runs: append(slices.Clone(led.Runs), route.RunRecord{Name: "review-vigie-idiomatic-go-4-abc12345", Active: true})}
+	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, allActive)), run.PRReview, route.Duplicate, route.ReasonRunActive)
 	led.Runs = append(led.Runs, route.RunRecord{Name: "review-vigie-idiomatic-go-4-abc12345", Exists: true})
 	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, led)), run.PRReview, route.Duplicate, route.ReasonRunExists)
 	r.Config.CommonReviewer = []profile.Reviewer{{Name: "pr-challenger", Variant: "deepseek", Effort: "high"}}
@@ -121,5 +133,11 @@ func TestTaskLink(t *testing.T) {
 	expect(t, both, route.Act, "")
 	edited := r.Decide(prEvent(t, prOpts{action: "edited", author: "sperano", head: "kelos/vikunja-5"}), route.State{PullRequest: openPR()}, replay.Ledger{})
 	expect(t, edited, route.Ignore, route.ReasonActionNotRouted)
+	for _, a := range []string{"edited", "labeled"} {
+		unrouted := r.Decide(prEvent(t, prOpts{action: a, author: "sperano", head: "kelos/vikunja-5"}), route.State{}, replay.Ledger{})
+		expect(t, unrouted, route.Ignore, route.ReasonActionNotRouted)
+	}
+	closedFeature := r.Decide(prEvent(t, prOpts{action: "closed", author: "sperano", head: "feature"}), route.State{}, replay.Ledger{})
+	expect(t, closedFeature, route.Ignore, route.ReasonActionNotRouted)
 	expect(t, r.Decide(prEvent(t, agent), route.State{}, replay.Ledger{}), route.Retry, route.ReasonStateUnavailable)
 }
