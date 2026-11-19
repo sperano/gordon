@@ -17,6 +17,7 @@ const (
 	ReasonSkipAuthor    = "skip-author"
 	ReasonHeadMoved     = "head-moved"
 	ReasonReopened      = "pull-request-reopened"
+	ReasonNoReviewers   = "no-reviewers"
 )
 
 // reviewActions start reviews (prReview.actions).
@@ -110,6 +111,8 @@ func (r Router) reviewRuns(fd *FamilyDecision, proj profile.Project, pr event.Pu
 	}
 	fd.Outcome = Dispatch
 	switch {
+	case len(reviewers) == 0:
+		fd.Outcome, fd.Reason = Ignore, ReasonNoReviewers
 	case dups < len(reviewers):
 	case active == dups:
 		fd.Outcome, fd.Reason = Duplicate, ReasonRunActive

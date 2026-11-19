@@ -99,6 +99,11 @@ func TestReviewRunsDeduplicateAndRefuse(t *testing.T) {
 	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, allActive)), run.PRReview, route.Duplicate, route.ReasonRunActive)
 	led.Runs = append(led.Runs, route.RunRecord{Name: "review-vigie-idiomatic-go-4-abc12345", Exists: true})
 	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, led)), run.PRReview, route.Duplicate, route.ReasonRunExists)
+	none := router()
+	none.Config.CommonReviewer = nil
+	pr.Files = []string{"README.md"}
+	expectFamily(t, family(t, none.Decide(prEvent(t, o), route.State{PullRequest: pr}, replay.Ledger{})), run.PRReview, route.Ignore, route.ReasonNoReviewers)
+	pr.Files = []string{"cmd/main.go"}
 	r.Config.CommonReviewer = []profile.Reviewer{{Name: "pr-challenger", Variant: "deepseek", Effort: "high"}}
 	refused := family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, replay.Ledger{}))
 	expectFamily(t, refused, run.PRReview, route.Reject, profile.CodeUnsupportedEffort)

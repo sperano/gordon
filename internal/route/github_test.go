@@ -109,7 +109,12 @@ func TestBotSuggestionsNeedOptIn(t *testing.T) {
 	suggestions := review("gordon-cole-ai[bot]", "**Review verdict: suggestions** (review/x)")
 	unknown := r.Decide(ghDelivery(t, "pull_request_review", suggestions), route.State{}, replay.Ledger{})
 	expect(t, unknown, route.Retry, route.ReasonStateUnavailable)
+	labelled := review("gordon-cole-ai[bot]", "**Review verdict: suggestions** (review/x)")
+	labelled["pull_request"].(map[string]any)["labels"] = []map[string]any{{"name": "kelos:fix-suggestions"}}
 	handled := replay.Ledger{Requests: []string{"github/sperano/vigie/r/88"}}
+	// The delivery's label opts in while the fresh PR is unavailable, so
+	// the review is a request: already handled, not waiting for state.
+	expect(t, r.Decide(ghDelivery(t, "pull_request_review", labelled), route.State{}, handled), route.Duplicate, route.ReasonRequestHandled)
 	blocking := review("gordon-cole-ai[bot]", "**Review verdict: blocking** (review/x)")
 	expect(t, r.Decide(ghDelivery(t, "pull_request_review", blocking), route.State{}, handled), route.Duplicate, route.ReasonRequestHandled)
 }
