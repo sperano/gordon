@@ -96,6 +96,9 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 	if st.Task == nil {
 		return Decision{Outcome: Retry, Reason: ReasonStateUnavailable}
 	}
+	if proj, ok, _ = r.projectOf(ev.Vikunja.Task.ProjectID, st.Task); !ok {
+		return Decision{Outcome: Stale, Reason: ReasonProjectNotConfigured}
+	}
 	sent, fresh := ev.Vikunja.Task, *st.Task
 	if sent.Buckets == nil {
 		sent.Buckets = fresh.Buckets
@@ -111,6 +114,18 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 		r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: mode})
 	}
 	return Decision{Families: []FamilyDecision{fd}}
+}
+
+// projectOf is the task's configured project: the fresh task's when it
+// moved since the delivery, so a run takes its new project's profile and
+// Task name. moved reports a move out of the configured projects.
+func (r Router) projectOf(sent int64, fresh *event.Task) (p profile.Project, ok, moved bool) {
+	p, ok = r.Config.Project(sent)
+	if !ok || fresh == nil || fresh.ProjectID == sent {
+		return p, ok, false
+	}
+	p, ok = r.Config.Project(fresh.ProjectID)
+	return p, ok, !ok
 }
 
 // submit resolves and deduplicates one run; on success fd dispatches it.

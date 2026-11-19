@@ -99,6 +99,9 @@ func ParseGitHub(d Delivery) (Event, error) {
 		DeliveryKey: "github/delivery/" + guid, Actor: raw.Sender.Login, GitHub: gh,
 	}
 	if raw.PullRequest != nil {
+		if raw.PullRequest.Number <= 0 {
+			return Event{}, fmt.Errorf("%w: pull_request.number missing", ErrMalformed)
+		}
 		gh.OnPullRequest = true
 		gh.PullRequest = pullRequest(raw.Repository.FullName, raw.PullRequest)
 	}
@@ -154,6 +157,9 @@ func request(ev *Event, raw githubBody) error {
 		return nil
 	default:
 		return nil
+	}
+	if gh.CommentID <= 0 || gh.PullRequest.Number <= 0 {
+		return fmt.Errorf("%w: %s without a comment, review or issue id", ErrMalformed, ev.Kind)
 	}
 	ev.RequestKey = fmt.Sprintf("github/%s/%c/%d", gh.Repository, gh.CommentKind, gh.CommentID)
 	return nil

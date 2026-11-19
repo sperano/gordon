@@ -117,6 +117,22 @@ func Markdown(entries []Entry) string {
 	return b.String()
 }
 
+// StagesMarkdown renders each later stage with the other repositories
+// and the Hollingsworth paths it changes.
+func StagesMarkdown(stages []Stage) string {
+	var b strings.Builder
+	b.WriteString("| Stage | Title | Repositories | Hollingsworth paths |\n")
+	b.WriteString("|---|---|---|---|\n")
+	for _, s := range stages {
+		repos := "–"
+		if len(s.Repositories) > 0 {
+			repos = strings.Join(s.Repositories, ", ")
+		}
+		fmt.Fprintf(&b, "| %02d | %s | %s | %s |\n", s.Number, escape(s.Title), repos, files(s.Hollingsworth))
+	}
+	return b.String()
+}
+
 func stages(e Entry) string {
 	switch {
 	case e.Implement != 0 && e.Cutover != 0:

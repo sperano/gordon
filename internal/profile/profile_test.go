@@ -97,9 +97,10 @@ func TestResolveRefusals(t *testing.T) {
 	c.ReviewProfile = ""
 	c.Variants["broken"] = Variant{Runner: "missing"}
 	c.Profiles["leaky"] = Profile{ReadOnly: true, Capabilities: []Capability{GitHubReadOnly, ImageBuildSubmit}}
+	c.Profiles["unclassified"] = Profile{ReadOnly: true, Capabilities: []Capability{GitHubReadOnly, "vault-admin"}}
 	c.Projects = append(c.Projects, Project{Name: "odd", Workspace: "odd",
 		Profiles: map[Mode]string{ModeImplement: ProfileDefault, ModeDiscuss: ProfileDefault},
-		Allowed:  map[Mode][]string{ModeImplement: {"leaky", "ghost", ProfileDiscuss}}})
+		Allowed:  map[Mode][]string{ModeImplement: {"leaky", "ghost", ProfileDiscuss}, ModeAnswer: {"unclassified"}}})
 	cases := map[string]struct {
 		req  Request
 		want string
@@ -115,6 +116,7 @@ func TestResolveRefusals(t *testing.T) {
 		"discuss writes":    {Request{Project: "odd", Variant: "claude-opus", Mode: ModeDiscuss}, CodeReadOnlyViolation},
 		"write read-only":   {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: ProfileDiscuss}, CodeReadOnlyViolation},
 		"leaky read-only":   {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: "leaky"}, CodeConflictingProfile},
+		"unknown grant":     {Request{Project: "odd", Variant: "claude-opus", Mode: ModeAnswer, Profile: "unclassified"}, CodeUnknownCapability},
 		"ghost profile":     {Request{Project: "odd", Variant: "claude-opus", Mode: ModeImplement, Profile: "ghost"}, CodeUnknownProfile},
 		"no review profile": {Request{Project: "odd", Variant: "claude-opus", Mode: ModeReview}, CodeNoProfileForMode},
 	}
@@ -147,14 +149,28 @@ func TestResolveEffortOverrideAndAllowedProfile(t *testing.T) {
 }
 
 func TestCapabilityWrites(t *testing.T) {
-	for _, c := range []Capability{GitHubWrite, ImageBuildSubmit} {
-		if !c.Writes() {
-			t.Errorf("%s should write", c)
+	cases := map[Capability][2]bool{
+		GitHubWrite: {true, true}, ImageBuildSubmit: {true, true},
+		GitHubReadOnly: {false, true}, ClusterRead: {false, true}, PostgresTest: {false, true},
+		PuckDBProdReadOnly: {false, true}, "vault-admin": {false, false},
+	}
+	for c, want := range cases {
+		if writing, known := c.Writes(); writing != want[0] || known != want[1] {
+			t.Errorf("%s: writes %v known %v, want %v %v", c, writing, known, want[0], want[1])
 		}
 	}
-	for _, c := range []Capability{GitHubReadOnly, ClusterRead, PostgresTest, PuckDBProdReadOnly} {
-		if c.Writes() {
-			t.Errorf("%s should not write", c)
-		}
+}
+
+func TestProjectsDoNotShareProfileMaps(t *testing.T) {
+	c := Defaults()
+	vigie, _ := c.projectByName("vigie")
+	vigie.Profiles[ModeImplement] = ProfilePuckDB
+	sillage, _ := c.projectByName("sillage")
+	if got := sillage.Profiles[ModeImplement]; got != ProfileDefault {
+		t.Errorf("sillage implement profile %q after editing vigie's, want %q", got, ProfileDefault)
+	}
+	again, _ := Defaults().projectByName("vigie")
+	if got := again.Profiles[ModeImplement]; got != ProfileDefault {
+		t.Errorf("a later Defaults() vigie implement profile %q, want %q", got, ProfileDefault)
 	}
 }

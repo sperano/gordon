@@ -38,6 +38,9 @@ var (
 	ErrBadSignature  = errors.New("signature invalid")
 	ErrUnknownSource = errors.New("unknown source")
 	ErrTooLarge      = errors.New("body too large")
+	// ErrNoKey refuses to sign with an empty key, which Verify never
+	// accepts.
+	ErrNoKey = errors.New("signing key empty")
 )
 
 // Status is the HTTP status a receiver answers for a refusal, as the
@@ -101,6 +104,12 @@ func (k Keys) Verify(d event.Delivery) error {
 	return nil
 }
 
+// Header is the signature header of source; false for an unknown source.
+func Header(source event.Source) (string, bool) {
+	s, ok := schemes[source]
+	return s.header, ok
+}
+
 // Digest is the hex HMAC-SHA256 of body under key.
 func Digest(key, body []byte) string {
 	mac := hmac.New(sha256.New, key)
@@ -108,11 +117,15 @@ func Digest(key, body []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// Sign returns the header name and value that sign body for source.
+// Sign returns the header name and value that sign body for source; an
+// empty key is refused, as Verify refuses it.
 func Sign(source event.Source, key, body []byte) (header, value string, err error) {
 	s, ok := schemes[source]
 	if !ok {
 		return "", "", ErrUnknownSource
+	}
+	if len(key) == 0 {
+		return "", "", ErrNoKey
 	}
 	return s.header, s.prefix + Digest(key, body), nil
 }

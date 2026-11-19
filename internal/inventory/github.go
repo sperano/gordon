@@ -14,15 +14,16 @@ func gh(id string, kind Kind, trigger string, families []run.Family, note string
 func githubDispatch() []Entry {
 	return []Entry{
 		gh("pr-followup", Spawner, "owner /gordon comment, inline comment or review; review-bot findings",
-			[]run.Family{run.PRFollowUp}, "pr-followup-<workspace>-<variant>; variant from the PR's kelos:<variant> label",
+			[]run.Family{run.PRFollowUp}, "spawners pr-followup-<workspace>-<variant>, Tasks pr-followup-<workspace>-<pr>-<kind><id>; variant from the PR's kelos:<variant> label",
 			"templates/followupspawners.yaml", "templates/_followup.tpl"),
 		gh("github-reactor", Receiver, "mirrored GitHub deliveries: owner requests, bot findings",
 			[]run.Family{run.PRFollowUp}, "👀 reaction, kelos:follow-up label and draft conversion",
-			"scripts/github_reactor.py", "scripts/followup_request.py", "templates/github-reactor.yaml"),
+			"scripts/github_reactor.py", "scripts/followup_request.py", "scripts/followup_ready.py",
+			"templates/github-reactor.yaml"),
 		gh("review-skip", Receiver, "pull_request by renovate/dependabot, or kelos:no-review on image-build/ or onboard/",
 			[]run.Family{run.PRReview}, "skipped review/pr-challenger check run", "scripts/review_skip.py"),
 		gh("pr-review", Spawner, "pull_request opened, synchronize, ready_for_review (not draft)",
-			[]run.Family{run.PRReview}, "pr-review-<workspace>-<reviewer>; stack reviewers by file pattern",
+			[]run.Family{run.PRReview}, "spawners pr-review-<workspace>-<reviewer>, Tasks review-<workspace>-<reviewer>-<pr>-<sha8>; stack reviewers by file pattern",
 			"templates/reviewspawners.yaml", "templates/_review.tpl"),
 		gh("pr-task-dedup", InitContainer, "first init container of review and PR follow-up pods", nil,
 			"replaced by the run ledger; the skip marker stays until cutover", "scripts/dedupe_pr_task.py", "templates/_pr-task-dedup.tpl"),
@@ -59,6 +60,6 @@ func githubReconcilers() []Entry {
 		gh("pr-readiness", Spawner, "check_run completed; */5 backstop", nil,
 			"exact-head readiness, ready/round-limit notices, ntfy, auto-merge, missing checks",
 			"scripts/reconcile_pr_ready.py", "scripts/pr_ready_notify.py", "scripts/auto_merge.py",
-			"scripts/missing_checks.py", "templates/pr-readiness.yaml"),
+			"scripts/missing_checks.py", "scripts/review_findings.py", "templates/pr-readiness.yaml"),
 	}
 }

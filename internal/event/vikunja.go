@@ -57,7 +57,8 @@ type vikunjaData struct {
 	Redispatch string `json:"redispatch"`
 }
 
-// ParseVikunja parses an authenticated Vikunja delivery body.
+// ParseVikunja parses an authenticated Vikunja delivery body. An event
+// it does not subscribe to is ErrUnsupported before its data is checked.
 //
 // A comment's request key is its comment id, so a legacy reconciler
 // resend (data.redispatch set) is the same request. A task.updated has no
@@ -68,12 +69,15 @@ func ParseVikunja(body []byte) (Event, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return Event{}, fmt.Errorf("%w: %v", ErrMalformed, err)
 	}
+	if raw.EventName != vikunjaTaskUpdated && raw.EventName != vikunjaCommentCreated {
+		return Event{}, fmt.Errorf("%w: vikunja %q", ErrUnsupported, raw.EventName)
+	}
 	var data vikunjaData
 	if len(raw.Data) == 0 || json.Unmarshal(raw.Data, &data) != nil {
 		return Event{}, fmt.Errorf("%w: data is not an object", ErrMalformed)
 	}
-	if data.Task == nil || data.Task.ID == nil {
-		return Event{}, fmt.Errorf("%w: data.task.id missing", ErrMalformed)
+	if data.Task == nil || data.Task.ID == nil || *data.Task.ID <= 0 {
+		return Event{}, fmt.Errorf("%w: data.task.id missing or not positive", ErrMalformed)
 	}
 	ev := Event{Source: SourceVikunja, Vikunja: &Vikunja{
 		Task: vikunjaTask(data), Redispatch: data.Redispatch,
@@ -81,14 +85,10 @@ func ParseVikunja(body []byte) (Event, error) {
 	if data.Doer != nil {
 		ev.Actor = data.Doer.Username
 	}
-	switch raw.EventName {
-	case vikunjaTaskUpdated:
+	if raw.EventName == vikunjaTaskUpdated {
 		return taskUpdated(ev, raw.Data)
-	case vikunjaCommentCreated:
-		return commentCreated(ev, data)
-	default:
-		return Event{}, fmt.Errorf("%w: vikunja %q", ErrUnsupported, raw.EventName)
 	}
+	return commentCreated(ev, data)
 }
 
 func vikunjaTask(data vikunjaData) Task {
@@ -123,7 +123,7 @@ func taskUpdated(ev Event, data json.RawMessage) (Event, error) {
 }
 
 func commentCreated(ev Event, data vikunjaData) (Event, error) {
-	if data.Comment == nil || data.Comment.ID == 0 {
+	if data.Comment == nil || data.Comment.ID <= 0 {
 		return Event{}, fmt.Errorf("%w: data.comment.id missing", ErrMalformed)
 	}
 	ev.Kind = VikunjaTaskCommentCreated

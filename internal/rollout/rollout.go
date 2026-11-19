@@ -40,8 +40,9 @@ const (
 	LegacyDisabled Gate = "legacy-disabled"
 )
 
-// Required lists the gates each owner needs, in order.
-var Required = map[Owner][]Gate{
+// required lists the gates each owner needs, in order. It is unexported
+// so no caller can weaken Validate.
+var required = map[Owner][]Gate{
 	Legacy: nil,
 	Shadow: {ReplayParity},
 	Gordon: {ReplayParity, ShadowParity, RollbackTested, LegacyDisabled},
@@ -82,9 +83,11 @@ func (t Table) Owner(project string, family run.Family) Owner {
 }
 
 // Executes reports whether Gordon performs a decision's actions in the
-// scope; in Legacy and Shadow it only records them.
+// scope: only when Gordon owns it and the table is valid, so a rule
+// lacking its gate evidence executes nothing. In Shadow Gordon only
+// records its decisions; in Legacy the decision is informational.
 func (t Table) Executes(project string, family run.Family) bool {
-	return t.Owner(project, family) == Gordon
+	return t.Owner(project, family) == Gordon && t.Validate() == nil
 }
 
 // Validate refuses a table with an unknown family or owner, two rules for
@@ -95,7 +98,7 @@ func (t Table) Validate() error {
 		if !slices.Contains(run.Families, r.Family) {
 			return fmt.Errorf("rule %s/%s: unknown family", r.Project, r.Family)
 		}
-		gates, ok := Required[r.Owner]
+		gates, ok := required[r.Owner]
 		if !ok {
 			return fmt.Errorf("rule %s/%s: unknown owner %q", r.Project, r.Family, r.Owner)
 		}

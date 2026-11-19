@@ -55,6 +55,9 @@ func (r Router) pullRequest(ev event.Event, st State, led Ledger) Decision {
 
 // review schedules one review run per applicable reviewer
 // (reviewspawners.yaml), or skipped checks for a skipped PR (review_skip.py).
+// The `kelos:no-review` label is read from the fresh PR: a label added or
+// removed since the delivery decides; the head branch and SHA the skipped
+// checks name are the delivery's.
 func (r Router) review(ev event.Event, proj profile.Project, pr event.PullRequest, led Ledger) FamilyDecision {
 	p, sent := r.Config.Policy, ev.GitHub.PullRequest
 	fd := r.family(run.PRReview, proj.Name)
@@ -65,7 +68,7 @@ func (r Router) review(ev event.Event, proj profile.Project, pr event.PullReques
 		fd.Outcome, fd.Reason = Reject, ReasonAuthorNotAllowed
 	case sent.Draft:
 		fd.Outcome, fd.Reason = Ignore, ReasonDraft
-	case sent.HasLabel(p.NoReviewLabel):
+	case pr.HasLabel(p.NoReviewLabel):
 		r.skipLabelled(&fd, sent)
 	case pr.State != event.PullRequestOpen:
 		fd.Outcome, fd.Reason = Stale, ReasonPullRequestClosed

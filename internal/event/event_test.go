@@ -39,6 +39,24 @@ func TestParseVikunjaTaskUpdated(t *testing.T) {
 	}
 }
 
+// TestParseVikunjaDigestIgnoresFormatting pins that a re-formatted resend
+// of the same data gets the same delivery key: the digest is of the
+// compacted data.
+func TestParseVikunjaDigestIgnoresFormatting(t *testing.T) {
+	pretty := []byte("{\"event_name\": \"task.updated\",\n  \"data\": {\n    \"task\": {\"id\": 7, \"project_id\": 3,\n" +
+		"      \"done\": false,\n      \"labels\": [ {\"title\": \"in progress\"} ],\n" +
+		"      \"assignees\": [ {\"username\": \"claude-opus\"} ]\n    }\n  }\n}")
+	ev, err := ParseVikunja(pretty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same key as TestParseVikunjaTaskUpdated's compact body.
+	const key = "vikunja/task.updated/7/38934adbfad18e550274d38705aed57e"
+	if ev.DeliveryKey != key {
+		t.Errorf("delivery key %q, want %q", ev.DeliveryKey, key)
+	}
+}
+
 func TestParseVikunjaKeepsEmptyBuckets(t *testing.T) {
 	ev, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":1,"buckets":[]}}}`))
 	if err != nil {
@@ -80,6 +98,10 @@ func TestParseVikunjaRefusals(t *testing.T) {
 		"data not obj":  {`{"event_name":"task.updated","data":[1]}`, ErrMalformed},
 		"no data":       {`{"event_name":"task.updated"}`, ErrMalformed},
 		"no task id":    {`{"event_name":"task.updated","data":{"task":{}}}`, ErrMalformed},
+		"zero task id":  {`{"event_name":"task.updated","data":{"task":{"id":0}}}`, ErrMalformed},
+		"negative id":   {`{"event_name":"task.updated","data":{"task":{"id":-1}}}`, ErrMalformed},
+		"project event": {`{"event_name":"project.updated","data":{"project":{"id":3}}}`, ErrUnsupported},
+		"other no data": {`{"event_name":"task.deleted"}`, ErrUnsupported},
 		"comment no id": {`{"event_name":"task.comment.created","data":{"task":{"id":1},"comment":{}}}`, ErrMalformed},
 		"other event":   {`{"event_name":"task.deleted","data":{"task":{"id":1}}}`, ErrUnsupported},
 	}
@@ -107,6 +129,21 @@ func TestParseGitHubIssueComment(t *testing.T) {
 	}
 	if gh.OnPullRequest || gh.CommentKind != CommentKindIssue || gh.PullRequest.Number != 4 || ev.Actor != "sperano" {
 		t.Errorf("event %+v github %+v", ev, gh)
+	}
+}
+
+func TestParseGitHubIssueCommentOnPullRequest(t *testing.T) {
+	ev, err := ParseGitHub(github("issue_comment", "g5", `{"action":"created","sender":{"login":"sperano"},`+
+		`"repository":{"full_name":"sperano/vigie"},"issue":{"number":6,"pull_request":{}},"comment":{"id":12,"body":"/gordon"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh := ev.GitHub
+	if !gh.OnPullRequest || gh.PullRequest.Number != 6 || gh.PullRequest.Repository != "sperano/vigie" {
+		t.Errorf("github %+v, want on pull request sperano/vigie#6", gh)
+	}
+	if ev.RequestKey != "github/sperano/vigie/c/12" {
+		t.Errorf("request key %q", ev.RequestKey)
 	}
 }
 
@@ -158,6 +195,11 @@ func TestParseGitHubRefusals(t *testing.T) {
 		"review no pr":    {github("pull_request_review", "g", `{`+repo+`,"review":{"id":1}}`), ErrMalformed},
 		"inline no pr":    {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{"id":1}}`), ErrMalformed},
 		"pr no pr":        {github("pull_request", "g", `{`+repo+`}`), ErrMalformed},
+		"comment id zero": {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{"number":4},"comment":{"id":0}}`), ErrMalformed},
+		"issue no number": {github("issue_comment", "g", `{"action":"created",`+repo+`,"issue":{},"comment":{"id":1}}`), ErrMalformed},
+		"review id zero":  {github("pull_request_review", "g", `{`+repo+`,"review":{"id":0},"pull_request":{"number":3}}`), ErrMalformed},
+		"inline id zero":  {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{},"pull_request":{"number":3}}`), ErrMalformed},
+		"pr no number":    {github("pull_request", "g", `{`+repo+`,"pull_request":{"state":"open"}}`), ErrMalformed},
 	}
 	for name, c := range cases {
 		if _, err := ParseGitHub(c.d); !errors.Is(err, c.want) {

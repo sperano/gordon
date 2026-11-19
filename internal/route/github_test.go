@@ -2,9 +2,11 @@ package route_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/replay"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
@@ -104,4 +106,32 @@ func TestBotSuggestionsNeedOptIn(t *testing.T) {
 	cubic := r.Decide(ghDelivery(t, "pull_request_review", review("cubic-dev-ai[bot]", "**3 issues found** across 2 files")),
 		route.State{PullRequest: openPR()}, replay.Ledger{})
 	expectFamily(t, family(t, cubic), run.PRFollowUp, route.Dispatch, "")
+}
+
+func TestBadBotPatternRejectsInsteadOfPanicking(t *testing.T) {
+	r := router()
+	r.Config.Policy.ReviewBots = []profile.Bot{{Login: "gordon-cole-ai[bot]", FindingsPattern: "("}}
+	d := r.Decide(ghDelivery(t, "pull_request_review", review("gordon-cole-ai[bot]", "**Review verdict: blocking**")),
+		route.State{PullRequest: openPR()}, replay.Ledger{})
+	expect(t, d, route.Reject, route.ReasonBadBotPattern)
+	r.Config.Policy.ReviewBots = []profile.Bot{{Login: "gordon-cole-ai[bot]", FindingsPattern: "^never$", SuggestionsPattern: "("}}
+	d = r.Decide(ghDelivery(t, "pull_request_review", review("gordon-cole-ai[bot]", "**Review verdict: suggestions**")),
+		route.State{PullRequest: openPR("kelos:fix-suggestions")}, replay.Ledger{})
+	expect(t, d, route.Reject, route.ReasonBadBotPattern)
+}
+
+func TestTaskNameTooLongIsRejected(t *testing.T) {
+	r := router()
+	for i := range r.Config.Projects {
+		if r.Config.Projects[i].Name == "vigie" {
+			r.Config.Projects[i].Workspace = strings.Repeat("w", run.MaxNameLength)
+		}
+	}
+	d := r.Decide(ghDelivery(t, "issue_comment", issueComment("created", "sperano", "/gordon go", true)),
+		route.State{PullRequest: openPR()}, replay.Ledger{})
+	fd := family(t, d)
+	expectFamily(t, fd, run.PRFollowUp, route.Reject, route.ReasonNameTooLong)
+	if len(fd.Runs) != 0 || len(fd.Actions) != 0 {
+		t.Errorf("rejected run keeps runs %v actions %v", fd.Runs, keys(fd.Actions))
+	}
 }

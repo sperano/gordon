@@ -29,6 +29,9 @@ const (
 	ReasonKelosOwned       = "kelos-owned"
 	ReasonMalformed        = "malformed"
 	ReasonUnsupported      = "unsupported-event"
+	// ReasonNameTooLong refuses a run whose Task name exceeds
+	// run.MaxNameLength: Kelos could not label the Task with it.
+	ReasonNameTooLong = "task-name-too-long"
 )
 
 // Router decides deliveries. It holds only trusted configuration.
@@ -115,8 +118,13 @@ func (r Router) family(f run.Family, project string) FamilyDecision {
 	}
 }
 
-// resolved builds a run, or a Reject naming the configuration's refusal.
+// resolved builds a run, or a Reject naming the configuration's refusal
+// or a Task name too long for its kelos.dev/task label.
 func (r Router) resolved(fd *FamilyDecision, id run.Identity, req profile.Request) (Run, bool) {
+	if len(id.Name()) > run.MaxNameLength {
+		fd.Outcome, fd.Reason = Reject, ReasonNameTooLong
+		return Run{}, false
+	}
 	prof, err := r.Config.Resolve(req)
 	if err != nil {
 		var perr *profile.Error

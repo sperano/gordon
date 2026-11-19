@@ -60,6 +60,25 @@ func TestTaskUpdatedEligibility(t *testing.T) {
 	expect(t, retry, route.Retry, route.ReasonStateUnavailable)
 }
 
+// TestFreshProjectWins pins that a task moved since the delivery runs
+// under its new project, and one moved out of the configured projects is
+// stale.
+func TestFreshProjectWins(t *testing.T) {
+	r := router()
+	moved := r.Decide(updated(t, task(5, 136, nil, "claude-opus")), route.State{Task: fresh(5, 139, nil, "claude-opus")}, replay.Ledger{})
+	fd := family(t, moved)
+	if fd.Project != "lucarne" || len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-lucarne-claude-opus-5" {
+		t.Errorf("moved task: project %q runs %+v", fd.Project, fd.Runs)
+	}
+	gone := r.Decide(updated(t, task(5, 136, nil, "claude-opus")), route.State{Task: fresh(5, 99, nil, "claude-opus")}, replay.Ledger{})
+	expect(t, gone, route.Stale, route.ReasonProjectNotConfigured)
+	c := r.Decide(comment(t, task(5, 136, nil, "claude-opus"), 9, "<p>/gordon go</p>", "eric"),
+		route.State{Task: fresh(5, 139, nil, "claude-opus")}, replay.Ledger{})
+	if fd := family(t, c); len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-fu-lucarne-5-c9" {
+		t.Errorf("moved task comment runs %+v", fd.Runs)
+	}
+}
+
 func TestTaskCommentModes(t *testing.T) {
 	r := router()
 	const text = "<p>/gordon go</p>"
@@ -97,6 +116,7 @@ func TestTaskCommentUnanswered(t *testing.T) {
 		{"two agents", task(5, 136, nil, "claude-opus", "gpt-sol"), fresh(5, 136, nil, "claude-opus", "gpt-sol"), route.Conflict, route.ReasonMultipleAgents},
 		{"no-agent", task(5, 136, nil, "claude-opus"), fresh(5, 136, []string{"no-agent"}, "claude-opus"), route.Ignore, route.ReasonNoAgentLabel},
 		{"unknown project", task(5, 99, nil, "claude-opus"), nil, route.Ignore, route.ReasonProjectNotConfigured},
+		{"moved out since", task(5, 136, nil, "claude-opus"), fresh(5, 99, nil, "claude-opus"), route.Stale, route.ReasonProjectNotConfigured},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

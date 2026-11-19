@@ -72,3 +72,14 @@ func TestValidateRefusals(t *testing.T) {
 		}
 	}
 }
+
+func TestExecutesFailsClosedOnInvalidTable(t *testing.T) {
+	table := Table{Rules: []Rule{{Project: "vigie", Family: run.PRReview, Owner: Gordon,
+		Evidence: []Gate{ReplayParity, ShadowParity, RollbackTested}}}}
+	if got := table.Owner("vigie", run.PRReview); got != Gordon {
+		t.Fatalf("owner %s, want gordon", got)
+	}
+	if table.Executes("vigie", run.PRReview) {
+		t.Error("a Gordon rule lacking legacy-disabled executes")
+	}
+}

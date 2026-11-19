@@ -40,11 +40,20 @@ const (
 	PuckDBProdReadOnly Capability = "puckdb-prod-readonly"
 )
 
-// writes lists the capabilities that can change something outside the pod.
-var writes = map[Capability]bool{GitHubWrite: true, ImageBuildSubmit: true}
+// writes classifies every known capability: true when it can change
+// something outside the pod. A capability missing here is unknown.
+var writes = map[Capability]bool{
+	GitHubWrite: true, ImageBuildSubmit: true,
+	GitHubReadOnly: false, ClusterRead: false, PostgresTest: false, PuckDBProdReadOnly: false,
+}
 
-// Writes reports whether the capability can change state outside the pod.
-func (c Capability) Writes() bool { return writes[c] }
+// Writes reports whether the capability can change state outside the
+// pod; known is false for a capability with no classification, which
+// checkProfile refuses so a new grant fails closed.
+func (c Capability) Writes() (writing, known bool) {
+	writing, known = writes[c]
+	return writing, known
+}
 
 // Runner is one agent runtime (vikunjaSpawners.runners).
 type Runner struct {

@@ -22,10 +22,10 @@ func (r Router) taskComment(ev event.Event, st State, led Ledger) Decision {
 	if led.HandledRequest(ev.RequestKey) {
 		return Decision{Outcome: Duplicate, Reason: ReasonRequestHandled}
 	}
-	proj, known := r.Config.Project(ev.Vikunja.Task.ProjectID)
-	if known && st.Task == nil {
+	if _, known := r.Config.Project(ev.Vikunja.Task.ProjectID); known && st.Task == nil {
 		return Decision{Outcome: Retry, Reason: ReasonStateUnavailable}
 	}
+	proj, known, moved := r.projectOf(ev.Vikunja.Task.ProjectID, st.Task)
 	family, mode := run.VikunjaFollowUpAnswer, profile.ModeAnswer
 	if known {
 		family, mode = r.followUpMode(*st.Task)
@@ -33,7 +33,11 @@ func (r Router) taskComment(ev event.Event, st State, led Ledger) Decision {
 	fd := r.family(family, proj.Name)
 	react := action.New(action.React, action.VikunjaComment(c.ID), reactionEyes)
 	if !known {
-		unanswered(&fd, Ignore, ReasonProjectNotConfigured, c.ID, react)
+		o := Ignore
+		if moved {
+			o = Stale
+		}
+		unanswered(&fd, o, ReasonProjectNotConfigured, c.ID, react)
 		return Decision{Families: []FamilyDecision{fd}}
 	}
 	if b := r.followUpBlocker(ev.Vikunja.Task, *st.Task); b != nil {

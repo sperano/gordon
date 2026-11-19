@@ -8,6 +8,57 @@ import (
 	"github.com/sperano/gordon/internal/run"
 )
 
+// wantIDs is the complete legacy inventory: an entry dropped or added
+// without updating this list fails.
+var wantIDs = []string{
+	"vikunja-implement", "vikunja-discuss", "vikunja-followup", "vikunja-followup-answer", "vikunja-followup-discuss",
+	"webhook-enricher", "vikunja-followup-reconciler", "drag-cancel", "discuss-fallback", "unanswered-notice",
+	"followup-reaction", "done-unlabel", "action-needed-unlabel", "subtask-chain", "wait-for-blockers",
+	"announce-start", "sillage-blocker-span", "run-link", "failure-reporter", "fetch-attachments", "claim-task",
+	"pr-followup", "github-reactor", "review-skip", "pr-review", "pr-task-dedup", "pr-review-supersede",
+	"review-round-cap", "announce-github-start", "pr-conflict", "pr-open", "merge-close", "limit-reaper",
+	"review-poller", "conflict-reconcile", "merge-close-reconcile", "pr-readiness", "wiki-comment-poller",
+	"wiki-followup", "announce-wiki-start", "image-build-request", "image-build-push", "image-build-reconcile",
+	"kelos-branch-lock", "pr-opener", "reviewer-scripts", "sidecar-guard", "test-postgres", "mactest",
+	"dispatch-verifier", "webhook-proxy", "cluster-triage", "succeeded-task-cleaner", "cheatsheet",
+	"kelos-telemetry", "clone-check",
+}
+
+func TestEntriesAreTheInventory(t *testing.T) {
+	var got []string
+	for _, e := range Entries() {
+		got = append(got, e.ID)
+	}
+	if !slices.Equal(got, wantIDs) {
+		t.Errorf("entries %v\nwant %v", got, wantIDs)
+	}
+}
+
+// sharedLibraries are legacy helper modules a dozen entries' scripts
+// import; no single entry owns them.
+var sharedLibraries = []string{"helm/kelos/scripts/notice_kind.py"}
+
+// TestStageScriptsHaveAnEntry fails when a stage changes a legacy script
+// that no inventory entry accounts for.
+func TestStageScriptsHaveAnEntry(t *testing.T) {
+	listed := map[string]bool{}
+	for _, p := range sharedLibraries {
+		listed[p] = true
+	}
+	for _, e := range Entries() {
+		for _, p := range e.Legacy {
+			listed[p] = true
+		}
+	}
+	for _, s := range Stages() {
+		for _, p := range s.Hollingsworth {
+			if strings.HasPrefix(p, "helm/kelos/scripts/") && strings.HasSuffix(p, ".py") && !listed[p] {
+				t.Errorf("stage %02d: %s is in no inventory entry", s.Number, p)
+			}
+		}
+	}
+}
+
 func TestEntriesAreComplete(t *testing.T) {
 	seen := map[string]bool{}
 	for _, e := range Entries() {
@@ -120,5 +171,22 @@ func TestMarkdown(t *testing.T) {
 	}, "\n")
 	if got != want {
 		t.Errorf("Markdown:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestStagesMarkdown(t *testing.T) {
+	got := StagesMarkdown([]Stage{
+		{Number: 2, Title: "a|b", Repositories: []string{"r1", "r2"}, Hollingsworth: []string{"p1", "p2"}},
+		{Number: 12, Title: "c", Hollingsworth: []string{"p"}},
+	})
+	want := strings.Join([]string{
+		"| Stage | Title | Repositories | Hollingsworth paths |",
+		"|---|---|---|---|",
+		"| 02 | a\\|b | r1, r2 | `p1`<br>`p2` |",
+		"| 12 | c | – | `p` |",
+		"",
+	}, "\n")
+	if got != want {
+		t.Errorf("StagesMarkdown:\n%s\nwant:\n%s", got, want)
 	}
 }

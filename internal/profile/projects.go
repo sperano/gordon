@@ -1,5 +1,7 @@
 package profile
 
+import "maps"
+
 // Mode-to-profile maps shared by the legacy projects.
 var (
 	plainProfiles = map[Mode]string{
@@ -13,10 +15,12 @@ var (
 	}
 )
 
-// project is a legacy project whose workspace and repository share its name.
+// project is a legacy project whose workspace and repository share its
+// name. It gets its own copy of profiles, so changing one project's
+// Profiles changes no other project or later Defaults().
 func project(name string, id int64, profiles map[Mode]string, configs ...string) Project {
 	return Project{Name: name, VikunjaID: id, Workspace: name, Repository: "sperano/" + name,
-		AgentConfigs: configs, Profiles: profiles}
+		AgentConfigs: configs, Profiles: maps.Clone(profiles)}
 }
 
 // projects lists vikunjaSpawners.projects in their legacy order, which

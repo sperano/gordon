@@ -20,6 +20,7 @@ const (
 	CodeUnknownMode        = "unknown-mode"
 	CodeIncompleteVariant  = "incomplete-variant"
 	CodeConflictingProfile = "conflicting-profile"
+	CodeUnknownCapability  = "unknown-capability"
 )
 
 // Error is a refused resolution; Code is stable for decisions and metrics.
@@ -151,11 +152,16 @@ func (c Config) defaultProfile(p Project, m Mode) string {
 }
 
 // checkProfile enforces that a discuss run is read-only whatever else it
-// asks for, that a read-only profile carries no writing capability, and
+// asks for, that every capability is classified, that a read-only profile
+// carries no writing capability, and
 // that a writing mode gets a writing profile.
 func checkProfile(name string, p Profile, m Mode) error {
 	for _, capability := range p.Capabilities {
-		if p.ReadOnly && capability.Writes() {
+		writing, known := capability.Writes()
+		if !known {
+			return refuse(CodeUnknownCapability, "profile %q grants unclassified %s", name, capability)
+		}
+		if p.ReadOnly && writing {
 			return refuse(CodeConflictingProfile, "profile %q is read-only but grants %s", name, capability)
 		}
 	}

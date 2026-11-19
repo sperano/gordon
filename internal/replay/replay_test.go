@@ -2,6 +2,8 @@ package replay
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -10,8 +12,9 @@ import (
 
 const fixtureDir = "testdata"
 
-// minFixtures guards against a glob that silently matches nothing.
-const minFixtures = 30
+// minFixtures is the committed fixture count: deleting one fails, and
+// the glob cannot silently match nothing.
+const minFixtures = 32
 
 func load(t *testing.T) []Fixture {
 	t.Helper()
@@ -104,11 +107,28 @@ func TestBuildSignatureModes(t *testing.T) {
 		t.Errorf("signature %q, want %q", got, want)
 	}
 	f.Delivery.Signature = SignatureMissing
-	if d, _ = f.Build(); d.Header("X-Vikunja-Signature") != "" {
-		t.Error("missing-signature fixture is signed")
+	f.Delivery.Headers = map[string]string{"x-vikunja-signature": want, "X-Other": "kept"}
+	d, err = f.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Header("X-Vikunja-Signature") != "" || d.Header("X-Other") != "kept" {
+		t.Errorf("missing-signature headers %v, want only X-Other", d.Headers)
 	}
 	f.Delivery.Signature = "bogus"
 	if _, err := f.Build(); err == nil || err.Error() != `x: unknown signature mode "bogus"` {
 		t.Errorf("unknown signature mode: err %v", err)
+	}
+}
+
+func TestLoadRefusesTrailingData(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(`{"description":"a"} {"description":"b"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(dir)
+	want := filepath.Join(dir, "a.json") + ": trailing data after the fixture"
+	if err == nil || err.Error() != want {
+		t.Errorf("err %v, want %q", err, want)
 	}
 }

@@ -38,6 +38,7 @@ func prEvent(t *testing.T, o prOpts) event.Delivery {
 func TestReviewGates(t *testing.T) {
 	r := router()
 	open := route.State{PullRequest: openPR()}
+	noReview := route.State{PullRequest: openPR("kelos:no-review")}
 	closed := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "closed", HeadSHA: "abc12345"}}
 	drafted := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "open", Draft: true, HeadSHA: "abc12345"}}
 	cases := []struct {
@@ -51,11 +52,15 @@ func TestReviewGates(t *testing.T) {
 		{"draft", prOpts{action: "opened", author: "sperano", head: "feature", draft: true}, open, route.Ignore, route.ReasonDraft, nil},
 		{"stranger", prOpts{action: "opened", author: "mallory", head: "feature"}, open, route.Reject, route.ReasonAuthorNotAllowed, nil},
 		{"no-review other branch", prOpts{action: "opened", author: "sperano", head: "feature", labels: []string{"kelos:no-review"}},
-			open, route.Ignore, route.ReasonNoReviewLabel, nil},
+			noReview, route.Ignore, route.ReasonNoReviewLabel, nil},
 		{"no-review fork image-build", prOpts{action: "opened", author: "sperano", head: "image-build/x", headRepo: "fork/vigie",
-			labels: []string{"kelos:no-review"}}, open, route.Ignore, route.ReasonNoReviewLabel, nil},
+			labels: []string{"kelos:no-review"}}, noReview, route.Ignore, route.ReasonNoReviewLabel, nil},
 		{"no-review image-build", prOpts{action: "ready_for_review", author: "sperano", head: "image-build/x", labels: []string{"kelos:no-review"}},
-			open, route.Act, route.ReasonNoReviewLabel, []string{"post-skipped-checks:github/sperano/vigie/pull/4:review/pr-challenger@abc12345"}},
+			noReview, route.Act, route.ReasonNoReviewLabel, []string{"post-skipped-checks:github/sperano/vigie/pull/4:review/pr-challenger@abc12345"}},
+		{"no-review added since", prOpts{action: "opened", author: "sperano", head: "image-build/x"},
+			noReview, route.Act, route.ReasonNoReviewLabel, []string{"post-skipped-checks:github/sperano/vigie/pull/4:review/pr-challenger@abc12345"}},
+		{"no-review removed since", prOpts{action: "opened", author: "sperano", head: "image-build/x", labels: []string{"kelos:no-review"}},
+			open, route.Dispatch, "", []string{"submit-task:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345"}},
 		{"closed since", prOpts{action: "synchronize", author: "sperano", head: "feature"}, closed, route.Stale, route.ReasonPullRequestClosed, nil},
 		{"drafted since", prOpts{action: "synchronize", author: "sperano", head: "feature"}, drafted, route.Stale, route.ReasonDraft, nil},
 	}

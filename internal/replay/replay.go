@@ -9,11 +9,14 @@ package replay
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/sperano/gordon/internal/auth"
 	"github.com/sperano/gordon/internal/event"
@@ -101,6 +104,9 @@ func Load(dir string) ([]Fixture, error) {
 		if err := dec.Decode(&f); err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
+		if err := dec.Decode(&json.RawMessage{}); !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%s: trailing data after the fixture", p)
+		}
 		f.Name = filepath.Base(p)
 		out = append(out, f)
 	}
@@ -127,10 +133,6 @@ func (f Fixture) Build() (event.Delivery, error) {
 	if err := json.Compact(&body, f.Delivery.Body); err != nil {
 		return event.Delivery{}, fmt.Errorf("%s: body: %w", f.Name, err)
 	}
-	headers := map[string]string{}
-	for k, v := range f.Delivery.Headers {
-		headers[k] = v
-	}
 	key := FixtureKey
 	switch f.Delivery.Signature {
 	case SignatureMissing:
@@ -141,6 +143,7 @@ func (f Fixture) Build() (event.Delivery, error) {
 	default:
 		return event.Delivery{}, fmt.Errorf("%s: unknown signature mode %q", f.Name, f.Delivery.Signature)
 	}
+	headers := f.headers(key == nil)
 	if key != nil {
 		name, value, err := auth.Sign(f.Delivery.Source, key, body.Bytes())
 		if err != nil {
@@ -149,6 +152,20 @@ func (f Fixture) Build() (event.Delivery, error) {
 		headers[name] = value
 	}
 	return event.Delivery{Source: f.Delivery.Source, Headers: headers, Body: body.Bytes()}, nil
+}
+
+// headers copies the fixture's headers; unsigned drops any signature
+// header they carry (case-insensitively), so a missing signature is
+// missing whatever the fixture says.
+func (f Fixture) headers(unsigned bool) map[string]string {
+	sig, _ := auth.Header(f.Delivery.Source)
+	headers := map[string]string{}
+	for k, v := range f.Delivery.Headers {
+		if !unsigned || !strings.EqualFold(k, sig) {
+			headers[k] = v
+		}
+	}
+	return headers
 }
 
 // Run decides the fixture's delivery.

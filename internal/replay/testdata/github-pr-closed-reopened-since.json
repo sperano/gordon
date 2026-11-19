@@ -1,5 +1,5 @@
 {
-  "description": "A closed event for a PR reopened since is stale: the task is left alone.",
+  "description": "An unmerged close of a PR reopened since is stale: the task is left alone (a merged PR cannot be reopened).",
   "delivery": {
     "source": "github",
     "headers": {
@@ -18,7 +18,7 @@
         "number": 7,
         "state": "closed",
         "draft": false,
-        "merged": true,
+        "merged": false,
         "user": {
           "login": "sperano"
         },
@@ -70,9 +70,9 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-merge-lucarne-7-true"
+      "vikunja-merge-lucarne-7-false"
     ],
-    "divergence": "legacy's merge_close.py ran on the event and closed the task"
+    "divergence": "legacy's merge_close.py ran on the event and removed the task's pr open label"
   },
   "expect": {
     "outcome": "stale",

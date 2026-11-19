@@ -19,6 +19,9 @@ const (
 	ReasonPullRequestClosed       = "pull-request-closed"
 	ReasonMultipleVariantLabels   = "multiple-variant-labels"
 	ReasonActionNotRouted         = "action-not-routed"
+	// ReasonBadBotPattern refuses a review bot's review whose configured
+	// pattern does not compile, instead of panicking on the delivery.
+	ReasonBadBotPattern = "review-bot-pattern-invalid"
 )
 
 // requestActions are the comment and review actions that carry a request.
@@ -45,7 +48,7 @@ func (r Router) prComment(ev event.Event, st State, led Ledger) Decision {
 	owner, why := r.classify(ev, st)
 	if why != "" {
 		o := Ignore
-		if why == ReasonNotOwner {
+		if why == ReasonNotOwner || why == ReasonBadBotPattern {
 			o = Reject
 		}
 		return Decision{Outcome: o, Reason: why}
@@ -89,19 +92,34 @@ func (r Router) classify(ev event.Event, st State) (bool, string) {
 		labels = st.PullRequest.Labels
 	}
 	for _, bot := range p.ReviewBots {
-		if bot.Login == ev.Actor && botFindings(bot, gh.Body, slices.Contains(labels, p.FixSuggestionsLabel)) {
+		if bot.Login != ev.Actor {
+			continue
+		}
+		found, err := botFindings(bot, gh.Body, slices.Contains(labels, p.FixSuggestionsLabel))
+		switch {
+		case err != nil:
+			return false, ReasonBadBotPattern
+		case found:
 			return false, ""
 		}
 	}
 	return false, ReasonNotARequest
 }
 
-func botFindings(bot profile.Bot, body string, fixSuggestions bool) bool {
-	if regexp.MustCompile(bot.FindingsPattern).MatchString(body) {
-		return true
+func botFindings(bot profile.Bot, body string, fixSuggestions bool) (bool, error) {
+	found, err := matches(bot.FindingsPattern, body)
+	if err != nil || found || !fixSuggestions || bot.SuggestionsPattern == "" {
+		return found, err
 	}
-	return fixSuggestions && bot.SuggestionsPattern != "" &&
-		regexp.MustCompile(bot.SuggestionsPattern).MatchString(body)
+	return matches(bot.SuggestionsPattern, body)
+}
+
+func matches(pattern, text string) (bool, error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(text), nil
 }
 
 // prGate checks the fresh pull request and picks its variant.
@@ -147,7 +165,10 @@ func (r Router) prVariant(pr event.PullRequest) (string, bool) {
 }
 
 // followUpWrites adds the reactor's writes: 👀 on an owner request, and
-// the draft label and draft conversion while the follow-up runs.
+// the draft label and draft conversion while the follow-up runs. A review
+// gets its 👀 too: the REST API has no reactions on a submitted review,
+// so the worker uses GraphQL addReaction on its node id, as
+// github_reactor.py does.
 func (r Router) followUpWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, pr event.PullRequest) {
 	if owner {
 		target := action.GitHubComment(gh.Repository, string(gh.CommentKind), gh.CommentID)
