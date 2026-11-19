@@ -1,0 +1,72 @@
+{
+  "description": "An owner request on a task with no agent assignee gets its reaction and an unanswered notice, no run.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4301,
+          "project_id": 136,
+          "done": false,
+          "labels": [],
+          "assignees": []
+        },
+        "comment": {
+          "id": 90005,
+          "comment": "<p>/gordon anyone?</p>"
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4301,
+      "project_id": 136,
+      "done": false,
+      "labels": [],
+      "assignees": [],
+      "buckets": [
+        "Review"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "vikunja/comment/90005",
+    "request_key": "vikunja/comment/90005",
+    "families": [
+      {
+        "family": "vikunja-followup-answer",
+        "project": "sillage",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "no-agent-assignee",
+        "actions": [
+          {
+            "key": "react:vikunja/comment/90005:eyes",
+            "kind": "react",
+            "target": "vikunja/comment/90005",
+            "value": "eyes"
+          },
+          {
+            "key": "post-notice:vikunja/comment/90005:unanswered:no-agent-assignee",
+            "kind": "post-notice",
+            "target": "vikunja/comment/90005",
+            "value": "unanswered",
+            "detail": "no-agent-assignee"
+          }
+        ]
+      }
+    ]
+  }
+}

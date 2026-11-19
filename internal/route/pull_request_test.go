@@ -1,0 +1,120 @@
+package route_test
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/replay"
+	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
+)
+
+type prOpts struct {
+	action, author, head, headRepo string
+	draft, merged                  bool
+	labels                         []string
+}
+
+func prEvent(t *testing.T, o prOpts) event.Delivery {
+	labels := []map[string]any{}
+	for _, l := range o.labels {
+		labels = append(labels, map[string]any{"name": l})
+	}
+	if o.headRepo == "" {
+		o.headRepo = repo
+	}
+	state := "open"
+	if o.action == "closed" {
+		state = "closed"
+	}
+	return ghDelivery(t, "pull_request", map[string]any{"action": o.action, "sender": map[string]any{"login": o.author},
+		"pull_request": map[string]any{"number": 4, "state": state, "draft": o.draft, "merged": o.merged,
+			"user": map[string]any{"login": o.author}, "labels": labels, "base": map[string]any{"ref": "main"},
+			"head": map[string]any{"ref": o.head, "sha": "abc12345", "repo": map[string]any{"full_name": o.headRepo}}}})
+}
+
+func TestReviewGates(t *testing.T) {
+	r := router()
+	open := route.State{PullRequest: openPR()}
+	closed := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "closed", HeadSHA: "abc12345"}}
+	drafted := route.State{PullRequest: &event.PullRequest{Repository: repo, Number: 4, State: "open", Draft: true, HeadSHA: "abc12345"}}
+	cases := []struct {
+		name    string
+		o       prOpts
+		st      route.State
+		outcome route.Outcome
+		reason  string
+		actions []string
+	}{
+		{"draft", prOpts{action: "opened", author: "sperano", head: "feature", draft: true}, open, route.Ignore, route.ReasonDraft, nil},
+		{"stranger", prOpts{action: "opened", author: "mallory", head: "feature"}, open, route.Reject, route.ReasonAuthorNotAllowed, nil},
+		{"no-review other branch", prOpts{action: "opened", author: "sperano", head: "feature", labels: []string{"kelos:no-review"}},
+			open, route.Ignore, route.ReasonNoReviewLabel, nil},
+		{"no-review fork image-build", prOpts{action: "opened", author: "sperano", head: "image-build/x", headRepo: "fork/vigie",
+			labels: []string{"kelos:no-review"}}, open, route.Ignore, route.ReasonNoReviewLabel, nil},
+		{"no-review image-build", prOpts{action: "ready_for_review", author: "sperano", head: "image-build/x", labels: []string{"kelos:no-review"}},
+			open, route.Act, route.ReasonNoReviewLabel, []string{"post-skipped-checks:github/sperano/vigie/pull/4:review/pr-challenger@abc12345"}},
+		{"closed since", prOpts{action: "synchronize", author: "sperano", head: "feature"}, closed, route.Stale, route.ReasonPullRequestClosed, nil},
+		{"drafted since", prOpts{action: "synchronize", author: "sperano", head: "feature"}, drafted, route.Stale, route.ReasonDraft, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fd := family(t, r.Decide(prEvent(t, c.o), c.st, replay.Ledger{}))
+			expectFamily(t, fd, run.PRReview, c.outcome, c.reason)
+			if got := keys(fd.Actions); !slices.Equal(got, append([]string{}, c.actions...)) {
+				t.Errorf("actions %v, want %v", got, c.actions)
+			}
+		})
+	}
+}
+
+func TestReviewRunsDeduplicateAndRefuse(t *testing.T) {
+	r := router()
+	o := prOpts{action: "synchronize", author: "sperano", head: "feature"}
+	pr := openPR()
+	pr.Files = []string{"cmd/main.go"}
+	led := replay.Ledger{Runs: []route.RunRecord{{Name: "review-vigie-pr-challenger-4-abc12345", Active: true}}}
+	fd := family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, led))
+	if fd.Outcome != route.Dispatch || len(fd.Runs) != 1 || fd.Runs[0].Name != "review-vigie-idiomatic-go-4-abc12345" {
+		t.Errorf("partial duplicate: %+v", fd)
+	}
+	led.Runs = append(led.Runs, route.RunRecord{Name: "review-vigie-idiomatic-go-4-abc12345", Exists: true})
+	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, led)), run.PRReview, route.Duplicate, route.ReasonRunExists)
+	r.Config.CommonReviewer = []profile.Reviewer{{Name: "pr-challenger", Variant: "deepseek", Effort: "high"}}
+	refused := family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, replay.Ledger{}))
+	expectFamily(t, refused, run.PRReview, route.Reject, profile.CodeUnsupportedEffort)
+	if len(refused.Runs) != 0 || len(refused.Actions) != 0 {
+		t.Errorf("refused review keeps runs %v actions %v", refused.Runs, keys(refused.Actions))
+	}
+}
+
+func TestTaskLink(t *testing.T) {
+	r := router()
+	agent := prOpts{action: "opened", author: "sperano", head: "kelos/vikunja-5"}
+	done := &event.Task{ID: 5, Done: true, Labels: []string{"pr open"}, Buckets: []string{"Doing"}}
+	d := r.Decide(prEvent(t, agent), route.State{PullRequest: openPR(), Task: done}, replay.Ledger{})
+	if len(d.Families) != 2 {
+		t.Fatalf("families %+v", d.Families)
+	}
+	if got := keys(d.Families[1].Actions); !slices.Equal(got, []string{"post-notice:vikunja/task/5:pr-open:sperano/vigie#4"}) {
+		t.Errorf("pr-open on a done, labelled task: %v", got)
+	}
+	other := r.Decide(prEvent(t, agent), route.State{PullRequest: openPR(), Task: &event.Task{ID: 6}}, replay.Ledger{})
+	expectFamily(t, other.Families[1], run.PROpen, route.Retry, route.ReasonStateUnavailable)
+	closed := prOpts{action: "closed", author: "sperano", head: "kelos/vikunja-5"}
+	shut := &event.PullRequest{Repository: repo, Number: 4, State: "closed"}
+	labelled := &event.Task{ID: 5, Labels: []string{"in progress", "pr open", "action-needed"}}
+	fd := family(t, r.Decide(prEvent(t, closed), route.State{PullRequest: shut, Task: labelled}, replay.Ledger{}))
+	want := []string{"remove-label:vikunja/task/5:pr open", "remove-label:vikunja/task/5:action-needed"}
+	if fd.Family != run.MergeClose || !slices.Equal(keys(fd.Actions), want) {
+		t.Errorf("unmerged close %s %v, want %v", fd.Family, keys(fd.Actions), want)
+	}
+	draft := prOpts{action: "opened", author: "sperano", head: "kelos/vikunja-5", draft: true}
+	both := r.Decide(prEvent(t, draft), route.State{PullRequest: openPR(), Task: labelled}, replay.Ledger{})
+	expect(t, both, route.Act, "")
+	edited := r.Decide(prEvent(t, prOpts{action: "edited", author: "sperano", head: "kelos/vikunja-5"}), route.State{PullRequest: openPR()}, replay.Ledger{})
+	expect(t, edited, route.Ignore, route.ReasonActionNotRouted)
+	expect(t, r.Decide(prEvent(t, agent), route.State{}, replay.Ledger{}), route.Retry, route.ReasonStateUnavailable)
+}

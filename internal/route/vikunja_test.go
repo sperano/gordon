@@ -1,0 +1,114 @@
+package route_test
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/replay"
+	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
+)
+
+func task(id, project int64, labels []string, assignees ...string) map[string]any {
+	ls, as := []map[string]any{}, []map[string]any{}
+	for _, l := range labels {
+		ls = append(ls, map[string]any{"title": l})
+	}
+	for _, a := range assignees {
+		as = append(as, map[string]any{"username": a})
+	}
+	return map[string]any{"id": id, "project_id": project, "labels": ls, "assignees": as}
+}
+
+func fresh(id, project int64, labels []string, assignees ...string) *event.Task {
+	return &event.Task{ID: id, ProjectID: project, Labels: labels, Assignees: assignees, Buckets: []string{"Doing"}}
+}
+
+func updated(t *testing.T, tk map[string]any) event.Delivery {
+	return signed(t, event.SourceVikunja, nil, map[string]any{"event_name": "task.updated", "data": map[string]any{"task": tk}})
+}
+
+func comment(t *testing.T, tk map[string]any, id int64, text, doer string) event.Delivery {
+	return signed(t, event.SourceVikunja, nil, map[string]any{"event_name": "task.comment.created",
+		"data": map[string]any{"task": tk, "comment": map[string]any{"id": id, "comment": text}, "doer": map[string]any{"username": doer}}})
+}
+
+func TestTaskUpdatedEligibility(t *testing.T) {
+	r := router()
+	cases := []struct {
+		name    string
+		sent    []string
+		now     []string
+		family  run.Family
+		outcome route.Outcome
+		reason  string
+	}{
+		{"chain parent", []string{"chain"}, []string{"chain"}, run.VikunjaImplement, route.Ignore, route.ReasonChain},
+		{"chain discuss", []string{"chain", "discuss"}, []string{"chain", "discuss"}, run.VikunjaDiscuss, route.Dispatch, ""},
+		{"in progress", []string{"in progress"}, []string{"in progress"}, run.VikunjaImplement, route.Ignore, route.ReasonInProgress},
+		{"claimed since", nil, []string{"in progress"}, run.VikunjaImplement, route.Stale, route.ReasonInProgress},
+		{"no-agent", []string{"no-agent"}, []string{"no-agent"}, run.VikunjaImplement, route.Ignore, route.ReasonNoAgentLabel},
+	}
+	for _, c := range cases {
+		d := r.Decide(updated(t, task(5, 136, c.sent, "claude-opus")), route.State{Task: fresh(5, 136, c.now, "claude-opus")}, replay.Ledger{})
+		t.Run(c.name, func(t *testing.T) { expectFamily(t, family(t, d), c.family, c.outcome, c.reason) })
+	}
+	none := r.Decide(updated(t, task(5, 136, nil)), route.State{Task: fresh(5, 136, nil)}, replay.Ledger{})
+	expectFamily(t, family(t, none), run.VikunjaImplement, route.Ignore, route.ReasonNoAgentAssignee)
+	retry := r.Decide(updated(t, task(5, 136, nil, "claude-opus")), route.State{}, replay.Ledger{})
+	expect(t, retry, route.Retry, route.ReasonStateUnavailable)
+}
+
+func TestTaskCommentModes(t *testing.T) {
+	r := router()
+	const text = "<p>/gordon go</p>"
+	busy := r.Decide(comment(t, task(5, 136, []string{"pr open"}, "claude-opus"), 9, text, "eric"),
+		route.State{Task: fresh(5, 136, []string{"pr open"}, "claude-opus")}, replay.Ledger{})
+	fd := family(t, busy)
+	expectFamily(t, fd, run.VikunjaFollowUp, route.Dispatch, "")
+	if fd.Runs[0].Branch != "kelos/vikunja-5" {
+		t.Errorf("pr open follow-up branch %q", fd.Runs[0].Branch)
+	}
+	exists := r.Decide(comment(t, task(5, 136, nil, "claude-opus"), 9, text, "eric"), route.State{Task: fresh(5, 136, nil, "claude-opus")},
+		replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-fu-sillage-5-c9", Exists: true}}})
+	fd = family(t, exists)
+	expectFamily(t, fd, run.VikunjaFollowUpAnswer, route.Duplicate, route.ReasonRunExists)
+	if len(fd.Actions) != 0 {
+		t.Errorf("duplicate has actions %v", keys(fd.Actions))
+	}
+	notRequest := r.Decide(comment(t, task(5, 136, nil), 9, "<p>/gordonx</p>", "eric"), route.State{}, replay.Ledger{})
+	expect(t, notRequest, route.Ignore, route.ReasonNotARequest)
+	retry := r.Decide(comment(t, task(5, 136, nil), 9, text, "eric"), route.State{}, replay.Ledger{})
+	expect(t, retry, route.Retry, route.ReasonStateUnavailable)
+}
+
+func TestTaskCommentUnanswered(t *testing.T) {
+	r := router()
+	const text = "<p>/gordon go</p>"
+	cases := []struct {
+		name    string
+		sent    map[string]any
+		now     *event.Task
+		outcome route.Outcome
+		reason  string
+	}{
+		{"done since", task(5, 136, nil, "claude-opus"), &event.Task{ID: 5, ProjectID: 136, Done: true, Assignees: []string{"claude-opus"}}, route.Stale, route.ReasonTaskDone},
+		{"two agents", task(5, 136, nil, "claude-opus", "gpt-sol"), fresh(5, 136, nil, "claude-opus", "gpt-sol"), route.Conflict, route.ReasonMultipleAgents},
+		{"no-agent", task(5, 136, nil, "claude-opus"), fresh(5, 136, []string{"no-agent"}, "claude-opus"), route.Ignore, route.ReasonNoAgentLabel},
+		{"unknown project", task(5, 99, nil, "claude-opus"), nil, route.Ignore, route.ReasonProjectNotConfigured},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := r.Decide(comment(t, c.sent, 9, text, "eric"), route.State{Task: c.now}, replay.Ledger{})
+			fd := family(t, d)
+			if fd.Outcome != c.outcome || fd.Reason != c.reason {
+				t.Errorf("%s/%q, want %s/%q", fd.Outcome, fd.Reason, c.outcome, c.reason)
+			}
+			want := []string{"react:vikunja/comment/9:eyes", "post-notice:vikunja/comment/9:unanswered:" + c.reason}
+			if got := keys(fd.Actions); !slices.Equal(got, want) {
+				t.Errorf("actions %v, want %v", got, want)
+			}
+		})
+	}
+}

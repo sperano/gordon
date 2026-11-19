@@ -1,0 +1,25 @@
+{
+  "description": "The legacy Wiki.js follow-up source is authenticated, then ignored: the family is retired.",
+  "delivery": {
+    "source": "wiki-comment",
+    "body": {
+      "id": "wiki-5-1763539200",
+      "workspace": "hollingsworth",
+      "variant": "claude-opus",
+      "page_id": "5",
+      "comment_id": "9"
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "wiki-fu-hollingsworth-5-c9"
+    ],
+    "divergence": "retired: Wiki.js is read-only legacy since 2026-10-23"
+  },
+  "expect": {
+    "outcome": "ignore",
+    "reason": "family-retired"
+  }
+}

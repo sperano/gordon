@@ -1,0 +1,55 @@
+{
+  "description": "A /gordon PR comment by another login is refused: owner-only.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "issue_comment",
+      "X-GitHub-Delivery": "22222222-2222-3333-4444-555555555555"
+    },
+    "body": {
+      "action": "created",
+      "sender": {
+        "login": "mallory"
+      },
+      "repository": {
+        "full_name": "sperano/vigie"
+      },
+      "issue": {
+        "number": 42,
+        "pull_request": {
+          "url": "https://api.github.com/repos/sperano/vigie/pulls/42"
+        }
+      },
+      "comment": {
+        "id": 700002,
+        "body": "/gordon merge it"
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/vigie",
+      "number": 42,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "head_repo": "sperano/vigie",
+      "base_ref": "main",
+      "labels": [],
+      "files": []
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "reject",
+    "reason": "not-owner",
+    "delivery_key": "github/delivery/22222222-2222-3333-4444-555555555555",
+    "request_key": "github/sperano/vigie/c/700002"
+  }
+}

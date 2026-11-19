@@ -1,0 +1,92 @@
+{
+  "description": "A closed event for a PR reopened since is stale: the task is left alone.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "pull_request",
+      "X-GitHub-Delivery": "aaaaaaaa-2222-3333-4444-555555555555"
+    },
+    "body": {
+      "action": "closed",
+      "sender": {
+        "login": "sperano"
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "pull_request": {
+        "number": 7,
+        "state": "closed",
+        "draft": false,
+        "merged": true,
+        "user": {
+          "login": "sperano"
+        },
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "sha": "0123456789abcdef0123456789abcdef01234567",
+          "repo": {
+            "full_name": "sperano/lucarne"
+          }
+        },
+        "base": {
+          "ref": "main"
+        },
+        "labels": []
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/lucarne",
+      "number": 7,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "0123456789abcdef0123456789abcdef01234567",
+      "head_repo": "sperano/lucarne",
+      "base_ref": "main",
+      "labels": [],
+      "files": []
+    },
+    "task": {
+      "id": 4401,
+      "project_id": 139,
+      "done": false,
+      "labels": [
+        "in progress",
+        "pr open"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Review"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-merge-lucarne-7-true"
+    ],
+    "divergence": "legacy's merge_close.py ran on the event and closed the task"
+  },
+  "expect": {
+    "outcome": "stale",
+    "delivery_key": "github/delivery/aaaaaaaa-2222-3333-4444-555555555555",
+    "request_key": "github/sperano/lucarne/pull/7/closed/0123456789abcdef0123456789abcdef01234567",
+    "families": [
+      {
+        "family": "merge-close",
+        "project": "lucarne",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "stale",
+        "reason": "pull-request-reopened"
+      }
+    ]
+  }
+}

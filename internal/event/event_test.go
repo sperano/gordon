@@ -1,0 +1,181 @@
+package event
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+)
+
+func TestHeaderCaseInsensitive(t *testing.T) {
+	d := Delivery{Headers: map[string]string{"x-github-event": "push"}}
+	if got := d.Header("X-GitHub-Event"); got != "push" {
+		t.Errorf("Header = %q, want push", got)
+	}
+	if got := d.Header("X-Missing"); got != "" {
+		t.Errorf("missing header = %q, want empty", got)
+	}
+}
+
+func TestParseVikunjaTaskUpdated(t *testing.T) {
+	body := []byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3,"done":false,` +
+		`"labels":[{"title":"in progress"}],"assignees":[{"username":"claude-opus"}]}}}`)
+	ev, err := ParseVikunja(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sha256 of the compacted data object, first 16 bytes, from Python hashlib.
+	const key = "vikunja/task.updated/7/38934adbfad18e550274d38705aed57e"
+	if ev.Kind != VikunjaTaskUpdated || ev.RequestKey != "vikunja/task/7" {
+		t.Errorf("kind %q request %q", ev.Kind, ev.RequestKey)
+	}
+	if ev.DeliveryKey != key {
+		t.Errorf("delivery key %q, want %q", ev.DeliveryKey, key)
+	}
+	task := ev.Vikunja.Task
+	if task.ProjectID != 3 || !slices.Equal(task.Labels, []string{"in progress"}) ||
+		!slices.Equal(task.Assignees, []string{"claude-opus"}) || task.Buckets != nil {
+		t.Errorf("task %+v", task)
+	}
+}
+
+func TestParseVikunjaKeepsEmptyBuckets(t *testing.T) {
+	ev, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":1,"buckets":[]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Vikunja.Task.Buckets == nil || len(ev.Vikunja.Task.Buckets) != 0 {
+		t.Errorf("buckets %#v, want empty non-nil (the enricher's 'in no bucket')", ev.Vikunja.Task.Buckets)
+	}
+}
+
+func TestParseVikunjaCommentKeys(t *testing.T) {
+	body := `{"event_name":"task.comment.created","data":{"task":{"id":5},"comment":{"id":9,"comment":"<p>/gordon x</p>"},` +
+		`"doer":{"username":"eric"}%s}}`
+	ev, err := ParseVikunja([]byte(fmt.Sprintf(body, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Actor != "eric" || ev.Vikunja.Comment.Body != "<p>/gordon x</p>" {
+		t.Errorf("actor %q comment %+v", ev.Actor, ev.Vikunja.Comment)
+	}
+	if ev.DeliveryKey != "vikunja/comment/9" || ev.RequestKey != "vikunja/comment/9" {
+		t.Errorf("keys %q %q", ev.DeliveryKey, ev.RequestKey)
+	}
+	resend, err := ParseVikunja([]byte(fmt.Sprintf(body, `,"redispatch":"2026-11-19T08:00:00Z"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resend.RequestKey != ev.RequestKey || resend.DeliveryKey != "vikunja/comment/9/redispatch/2026-11-19T08:00:00Z" {
+		t.Errorf("resend keys %q %q", resend.DeliveryKey, resend.RequestKey)
+	}
+}
+
+func TestParseVikunjaRefusals(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want error
+	}{
+		"not json":      {`{`, ErrMalformed},
+		"data not obj":  {`{"event_name":"task.updated","data":[1]}`, ErrMalformed},
+		"no data":       {`{"event_name":"task.updated"}`, ErrMalformed},
+		"no task id":    {`{"event_name":"task.updated","data":{"task":{}}}`, ErrMalformed},
+		"comment no id": {`{"event_name":"task.comment.created","data":{"task":{"id":1},"comment":{}}}`, ErrMalformed},
+		"other event":   {`{"event_name":"task.deleted","data":{"task":{"id":1}}}`, ErrUnsupported},
+	}
+	for name, c := range cases {
+		if _, err := ParseVikunja([]byte(c.body)); !errors.Is(err, c.want) {
+			t.Errorf("%s: err %v, want %v", name, err, c.want)
+		}
+	}
+}
+
+func github(event, guid, body string) Delivery {
+	return Delivery{Source: SourceGitHub, Body: []byte(body),
+		Headers: map[string]string{GitHubEventHeader: event, GitHubDeliveryHeader: guid}}
+}
+
+func TestParseGitHubIssueComment(t *testing.T) {
+	ev, err := ParseGitHub(github("issue_comment", "g1", `{"action":"created","sender":{"login":"sperano"},`+
+		`"repository":{"full_name":"sperano/vigie"},"issue":{"number":4},"comment":{"id":11,"body":"/gordon"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh := ev.GitHub
+	if ev.DeliveryKey != "github/delivery/g1" || ev.RequestKey != "github/sperano/vigie/c/11" {
+		t.Errorf("keys %q %q", ev.DeliveryKey, ev.RequestKey)
+	}
+	if gh.OnPullRequest || gh.CommentKind != CommentKindIssue || gh.PullRequest.Number != 4 || ev.Actor != "sperano" {
+		t.Errorf("event %+v github %+v", ev, gh)
+	}
+}
+
+func TestParseGitHubReviewAndPullRequest(t *testing.T) {
+	pr := `"pull_request":{"number":3,"state":"open","user":{"login":"sperano"},` +
+		`"head":{"ref":"kelos/vikunja-9","sha":"abc","repo":{"full_name":"sperano/vigie"}},"base":{"ref":"main"},"labels":[{"name":"kelos:gpt-sol"}]}`
+	repo := `"repository":{"full_name":"sperano/vigie"}`
+	review, err := ParseGitHub(github("pull_request_review", "g2", `{"action":"submitted",`+repo+`,"review":{"id":21,"body":"b"},`+pr+`}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.RequestKey != "github/sperano/vigie/r/21" || review.GitHub.CommentKind != CommentKindReview || !review.GitHub.OnPullRequest {
+		t.Errorf("review %+v", review)
+	}
+	inline, err := ParseGitHub(github("pull_request_review_comment", "g3", `{"action":"created",`+repo+`,"comment":{"id":31,"body":"b"},`+pr+`}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inline.RequestKey != "github/sperano/vigie/l/31" {
+		t.Errorf("inline request key %q", inline.RequestKey)
+	}
+	opened, err := ParseGitHub(github("pull_request", "g4", `{"action":"opened",`+repo+`,`+pr+`}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := PullRequest{Repository: "sperano/vigie", Number: 3, State: "open", Author: "sperano",
+		HeadRef: "kelos/vikunja-9", HeadSHA: "abc", HeadRepo: "sperano/vigie", BaseRef: "main", Labels: []string{"kelos:gpt-sol"}}
+	got := opened.GitHub.PullRequest
+	if got.Number != want.Number || got.HeadRepo != want.HeadRepo || got.BaseRef != want.BaseRef ||
+		got.HeadSHA != want.HeadSHA || !slices.Equal(got.Labels, want.Labels) || got.Author != want.Author {
+		t.Errorf("pull request %+v, want %+v", got, want)
+	}
+	if opened.RequestKey != "github/sperano/vigie/pull/3/opened/abc" {
+		t.Errorf("pull request key %q", opened.RequestKey)
+	}
+}
+
+func TestParseGitHubRefusals(t *testing.T) {
+	repo := `"repository":{"full_name":"sperano/vigie"}`
+	cases := map[string]struct {
+		d    Delivery
+		want error
+	}{
+		"unknown event":   {github("star", "g", `{}`), ErrUnsupported},
+		"no delivery id":  {github("push", "", `{}`), ErrMalformed},
+		"not json":        {github("push", "g", `{`), ErrMalformed},
+		"no repository":   {github("push", "g", `{}`), ErrMalformed},
+		"comment no body": {github("issue_comment", "g", `{"action":"created",`+repo+`}`), ErrMalformed},
+		"review no pr":    {github("pull_request_review", "g", `{`+repo+`,"review":{"id":1}}`), ErrMalformed},
+		"inline no pr":    {github("pull_request_review_comment", "g", `{`+repo+`,"comment":{"id":1}}`), ErrMalformed},
+		"pr no pr":        {github("pull_request", "g", `{`+repo+`}`), ErrMalformed},
+	}
+	for name, c := range cases {
+		if _, err := ParseGitHub(c.d); !errors.Is(err, c.want) {
+			t.Errorf("%s: err %v, want %v", name, err, c.want)
+		}
+	}
+	push, err := ParseGitHub(github("push", "g", `{`+repo+`}`))
+	if err != nil || push.Kind != GitHubPush || push.RequestKey != "" {
+		t.Errorf("push %+v err %v", push, err)
+	}
+}
+
+func TestTaskHelpers(t *testing.T) {
+	task := Task{Labels: []string{"chain"}, Buckets: []string{"Doing"}}
+	if !task.HasLabel("chain") || task.HasLabel("discuss") || !task.InBucket("Doing") || task.InBucket("To-Do") {
+		t.Errorf("helpers on %+v", task)
+	}
+	if !(PullRequest{Labels: []string{"kelos:no-review"}}).HasLabel("kelos:no-review") {
+		t.Error("PullRequest.HasLabel")
+	}
+}

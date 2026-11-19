@@ -1,0 +1,84 @@
+{
+  "description": "A synchronize for a head that was pushed over since is stale: only the newest head is reviewed.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "pull_request",
+      "X-GitHub-Delivery": "77777777-2222-3333-4444-555555555555"
+    },
+    "body": {
+      "action": "synchronize",
+      "sender": {
+        "login": "sperano"
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "pull_request": {
+        "number": 7,
+        "state": "open",
+        "draft": false,
+        "merged": false,
+        "user": {
+          "login": "sperano"
+        },
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "sha": "0123456789abcdef0123456789abcdef01234567",
+          "repo": {
+            "full_name": "sperano/lucarne"
+          }
+        },
+        "base": {
+          "ref": "main"
+        },
+        "labels": [
+          {
+            "name": "kelos:claude-opus"
+          }
+        ]
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/lucarne",
+      "number": 7,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "fedcba9876543210fedcba9876543210fedcba98",
+      "head_repo": "sperano/lucarne",
+      "base_ref": "main",
+      "labels": [],
+      "files": [
+        "internal/run/run.go"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "review-lucarne-pr-challenger-7-01234567",
+      "review-lucarne-idiomatic-go-7-01234567"
+    ],
+    "divergence": "legacy reviewed the old head too and relied on supersede to cancel it"
+  },
+  "expect": {
+    "outcome": "stale",
+    "delivery_key": "github/delivery/77777777-2222-3333-4444-555555555555",
+    "request_key": "github/sperano/lucarne/pull/7/synchronize/0123456789abcdef0123456789abcdef01234567",
+    "families": [
+      {
+        "family": "pr-review",
+        "project": "lucarne",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "stale",
+        "reason": "head-moved"
+      }
+    ]
+  }
+}

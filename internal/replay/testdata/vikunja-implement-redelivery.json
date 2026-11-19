@@ -1,0 +1,60 @@
+{
+  "description": "Vikunja retries the same task.updated body: its data digest is already in the ledger (legacy dropped it through the generic server's 24 h $.data cache).",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4101,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "feature"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4101,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "feature"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {
+    "deliveries": [
+      "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594"
+    ]
+  },
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "outcome": "duplicate",
+    "reason": "redelivery",
+    "delivery_key": "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594",
+    "request_key": "vikunja/task/4101"
+  }
+}

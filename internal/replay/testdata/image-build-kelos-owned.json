@@ -1,0 +1,24 @@
+{
+  "description": "Image-build requests stay with Kelos's model-free spawners; Gordon ignores them.",
+  "delivery": {
+    "source": "image-build",
+    "body": {
+      "id": "req-1",
+      "image": "lucarne",
+      "environment": "prod",
+      "ref": "main"
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "image-build-lucarne-req-1"
+    ],
+    "divergence": "retained with Kelos: its spawner keeps creating the build Task"
+  },
+  "expect": {
+    "outcome": "ignore",
+    "reason": "kelos-owned"
+  }
+}

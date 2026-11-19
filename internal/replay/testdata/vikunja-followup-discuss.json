@@ -1,0 +1,120 @@
+{
+  "description": "A follow-up on a discuss task runs read-only and reserves the discuss start comment.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-19T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4302,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "discuss"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "comment": {
+          "id": 90003,
+          "comment": "<p>/gordon your view on option B?</p>"
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4302,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "discuss"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-fu-hollingsworth-4302-c90003"
+    ]
+  },
+  "expect": {
+    "outcome": "dispatch",
+    "delivery_key": "vikunja/comment/90003",
+    "request_key": "vikunja/comment/90003",
+    "families": [
+      {
+        "family": "vikunja-followup-discuss",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "dispatch",
+        "runs": [
+          {
+            "name": "vikunja-fu-hollingsworth-4302-c90003",
+            "identity": {
+              "family": "vikunja-followup-discuss",
+              "project": "hollingsworth",
+              "variant": "claude-opus",
+              "task_id": 4302,
+              "comment_id": 90003
+            },
+            "profile": {
+              "config_version": "hollingsworth-4a50f33",
+              "variant": "claude-opus",
+              "agent": "claude-code",
+              "model": "claude-opus-5-5[1m]",
+              "effort": "medium",
+              "image": "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f",
+              "credential_type": "oauth",
+              "credential_secret": "claude-oauth",
+              "mode": "discuss",
+              "profile": "discuss",
+              "service_account": "kelos-discuss",
+              "workspace": "hollingsworth-readonly",
+              "read_only": true,
+              "capabilities": [
+                "github-readonly",
+                "cluster-read"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/vikunja-fu-hollingsworth-4302-c90003",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/vikunja-fu-hollingsworth-4302-c90003"
+          },
+          {
+            "key": "react:vikunja/comment/90003:eyes",
+            "kind": "react",
+            "target": "vikunja/comment/90003",
+            "value": "eyes"
+          },
+          {
+            "key": "post-notice:vikunja/comment/90003:discuss-start",
+            "kind": "post-notice",
+            "target": "vikunja/comment/90003",
+            "value": "discuss-start"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "description": "A blocking review-bot verdict starts a follow-up with the PR's kelos:claude-sonnet variant; a bot request gets no reaction.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "pull_request_review",
+      "X-GitHub-Delivery": "33333333-2222-3333-4444-555555555555"
+    },
+    "body": {
+      "action": "submitted",
+      "sender": {
+        "login": "gordon-cole-ai[bot]"
+      },
+      "repository": {
+        "full_name": "sperano/vigie"
+      },
+      "review": {
+        "id": 800001,
+        "body": "**Review verdict: blocking** (review/pr-challenger)\n\nOne finding."
+      },
+      "pull_request": {
+        "number": 42,
+        "state": "open",
+        "draft": false,
+        "merged": false,
+        "user": {
+          "login": "sperano"
+        },
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          "repo": {
+            "full_name": "sperano/vigie"
+          }
+        },
+        "base": {
+          "ref": "main"
+        },
+        "labels": [
+          {
+            "name": "kelos:claude-sonnet"
+          }
+        ]
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/vigie",
+      "number": 42,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "head_repo": "sperano/vigie",
+      "base_ref": "main",
+      "labels": [
+        "kelos:claude-sonnet"
+      ],
+      "files": []
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "pr-followup-vigie-42-r800001"
+    ]
+  },
+  "expect": {
+    "outcome": "dispatch",
+    "delivery_key": "github/delivery/33333333-2222-3333-4444-555555555555",
+    "request_key": "github/sperano/vigie/r/800001",
+    "families": [
+      {
+        "family": "pr-followup",
+        "project": "vigie",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "dispatch",
+        "runs": [
+          {
+            "name": "pr-followup-vigie-42-r800001",
+            "branch": "kelos/vikunja-4401",
+            "identity": {
+              "family": "pr-followup",
+              "project": "vigie",
+              "workspace": "vigie",
+              "variant": "claude-sonnet",
+              "comment_id": 800001,
+              "comment_kind": "r",
+              "pr": 42,
+              "head_ref": "kelos/vikunja-4401"
+            },
+            "profile": {
+              "config_version": "hollingsworth-4a50f33",
+              "variant": "claude-sonnet",
+              "agent": "claude-code",
+              "model": "claude-sonnet-5",
+              "effort": "medium",
+              "image": "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f",
+              "credential_type": "oauth",
+              "credential_secret": "claude-oauth",
+              "mode": "followup",
+              "profile": "default",
+              "service_account": "",
+              "workspace": "vigie",
+              "read_only": false,
+              "capabilities": [
+                "github-write"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/pr-followup-vigie-42-r800001",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/pr-followup-vigie-42-r800001"
+          },
+          {
+            "key": "add-label:github/sperano/vigie/pull/42:kelos:follow-up",
+            "kind": "add-label",
+            "target": "github/sperano/vigie/pull/42",
+            "value": "kelos:follow-up"
+          },
+          {
+            "key": "convert-to-draft:github/sperano/vigie/pull/42",
+            "kind": "convert-to-draft",
+            "target": "github/sperano/vigie/pull/42"
+          }
+        ]
+      }
+    ]
+  }
+}
