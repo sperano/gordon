@@ -69,15 +69,17 @@ func (r Router) prOpen(fd *FamilyDecision, sent, pr event.PullRequest, t event.T
 
 // mergeClose finishes the task of a merged PR (done, lifecycle labels
 // off, the merged notice once) or clears the PR labels of one closed
-// unmerged; a PR reopened since is stale.
+// unmerged; a PR reopened since is stale. A merge cannot be undone, so
+// the PR is merged when the delivery or the fresh PR says so: a late
+// unmerged-close delivery of a PR merged since still finishes the task.
 func (r Router) mergeClose(fd *FamilyDecision, sent, pr event.PullRequest, t event.Task) {
 	if pr.State == event.PullRequestOpen {
 		fd.Outcome, fd.Reason = Stale, ReasonReopened
 		return
 	}
 	p, target := r.Config.Policy, action.VikunjaTask(t.ID)
-	labels := p.CloseLabels
-	if sent.Merged {
+	labels, merged := p.CloseLabels, sent.Merged || pr.Merged
+	if merged {
 		labels = p.MergeCloseLabels
 		if !t.Done {
 			fd.Actions = append(fd.Actions, action.New(action.MarkDone, target, ""))
@@ -88,7 +90,7 @@ func (r Router) mergeClose(fd *FamilyDecision, sent, pr event.PullRequest, t eve
 			fd.Actions = append(fd.Actions, action.New(action.RemoveLabel, target, l))
 		}
 	}
-	if sent.Merged {
+	if merged {
 		fd.Actions = append(fd.Actions, action.Notice(target, NoticeMerged, prRef(sent)))
 	}
 	fd.Outcome = Act

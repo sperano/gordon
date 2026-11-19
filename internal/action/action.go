@@ -54,8 +54,9 @@ type Action struct {
 	// Value is the label, bucket, reaction or notice kind, or the Task
 	// name; "" when the kind needs none.
 	Value string `json:"value,omitempty"`
-	// Detail qualifies a notice: the unanswered reason code, or the pull
-	// request a pr-open or merged notice names.
+	// Detail qualifies a notice (the unanswered reason code, or the pull
+	// request a pr-open or merged notice names) or carries a GitHub
+	// reaction's subject node id; it is not part of a reaction's key.
 	Detail string `json:"detail,omitempty"`
 }
 

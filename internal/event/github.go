@@ -34,15 +34,16 @@ type githubBody struct {
 		// as an object makes any other value malformed.
 		PullRequest *struct{} `json:"pull_request"`
 	} `json:"issue"`
-	Comment *struct {
-		ID   int64  `json:"id"`
-		Body string `json:"body"`
-	} `json:"comment"`
-	Review *struct {
-		ID   int64  `json:"id"`
-		Body string `json:"body"`
-	} `json:"review"`
+	Comment     *githubComment     `json:"comment"`
+	Review      *githubComment     `json:"review"`
 	PullRequest *githubPullRequest `json:"pull_request"`
+}
+
+// githubComment is a comment or a submitted review.
+type githubComment struct {
+	ID     int64  `json:"id"`
+	NodeID string `json:"node_id"`
+	Body   string `json:"body"`
 }
 
 type githubPullRequest struct {
@@ -143,19 +144,19 @@ func request(ev *Event, raw githubBody) error {
 		if raw.Comment == nil || raw.Issue == nil {
 			return fmt.Errorf("%w: issue_comment without comment or issue", ErrMalformed)
 		}
-		gh.CommentKind, gh.CommentID, gh.Body = CommentKindIssue, raw.Comment.ID, raw.Comment.Body
+		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindIssue, raw.Comment.ID, raw.Comment.NodeID, raw.Comment.Body
 		gh.OnPullRequest = raw.Issue.PullRequest != nil
 		gh.PullRequest = PullRequest{Repository: gh.Repository, Number: raw.Issue.Number}
 	case GitHubReviewComment:
 		if raw.Comment == nil || raw.PullRequest == nil {
 			return fmt.Errorf("%w: review comment without comment or pull_request", ErrMalformed)
 		}
-		gh.CommentKind, gh.CommentID, gh.Body = CommentKindInline, raw.Comment.ID, raw.Comment.Body
+		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindInline, raw.Comment.ID, raw.Comment.NodeID, raw.Comment.Body
 	case GitHubReview:
 		if raw.Review == nil || raw.PullRequest == nil {
 			return fmt.Errorf("%w: review without review or pull_request", ErrMalformed)
 		}
-		gh.CommentKind, gh.CommentID, gh.Body = CommentKindReview, raw.Review.ID, raw.Review.Body
+		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindReview, raw.Review.ID, raw.Review.NodeID, raw.Review.Body
 	case GitHubPullRequest:
 		if raw.PullRequest == nil {
 			return fmt.Errorf("%w: pull_request event without pull_request", ErrMalformed)

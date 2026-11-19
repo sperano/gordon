@@ -22,6 +22,7 @@
       },
       "comment": {
         "id": 700001,
+        "node_id": "IC_kwDOAAAAAM4AAAAB",
         "body": "/gordon address the review"
       }
     }
@@ -106,7 +107,8 @@
             "key": "react:github/sperano/vigie/c/700001:eyes",
             "kind": "react",
             "target": "github/sperano/vigie/c/700001",
-            "value": "eyes"
+            "value": "eyes",
+            "detail": "IC_kwDOAAAAAM4AAAAB"
           },
           {
             "key": "add-label:github/sperano/vigie/pull/42:kelos:follow-up",

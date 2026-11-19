@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/replay"
@@ -34,12 +35,12 @@ func issueComment(action, sender, text string, onPR bool) map[string]any {
 		issue["pull_request"] = map[string]any{}
 	}
 	return map[string]any{"action": action, "sender": map[string]any{"login": sender}, "issue": issue,
-		"comment": map[string]any{"id": 77, "body": text}}
+		"comment": map[string]any{"id": 77, "node_id": "IC_77", "body": text}}
 }
 
 func review(sender, text string) map[string]any {
 	return map[string]any{"action": "submitted", "sender": map[string]any{"login": sender},
-		"review":       map[string]any{"id": 88, "body": text},
+		"review":       map[string]any{"id": 88, "node_id": "PRR_88", "body": text},
 		"pull_request": map[string]any{"number": 4, "state": "open", "user": map[string]any{"login": "sperano"}}}
 }
 
@@ -182,5 +183,23 @@ func TestPRFollowUpExistingRunReplaysWrites(t *testing.T) {
 				t.Errorf("actions %v, want %v", got, c.actions)
 			}
 		})
+	}
+}
+
+func TestOwnerReactionTargetsNodeID(t *testing.T) {
+	r := router()
+	st := route.State{PullRequest: openPR()}
+	fd := family(t, r.Decide(ghDelivery(t, "pull_request_review", review("sperano", "/gordon fix it")), st, replay.Ledger{}))
+	if i := slices.IndexFunc(fd.Actions, func(a action.Action) bool { return a.Kind == action.React }); i < 0 ||
+		fd.Actions[i].Key != "react:github/sperano/vigie/r/88:eyes" || fd.Actions[i].Detail != "PRR_88" {
+		t.Errorf("review reaction %+v, want r/88 with node id PRR_88", fd.Actions)
+	}
+	noNode := issueComment("created", "sperano", "/gordon go", true)
+	delete(noNode["comment"].(map[string]any), "node_id")
+	fd = family(t, r.Decide(ghDelivery(t, "issue_comment", noNode), st, replay.Ledger{}))
+	want := []string{"submit-task:kelos/kelos-agents/pr-followup-vigie-4-c77",
+		"add-label:github/sperano/vigie/pull/4:kelos:follow-up", "convert-to-draft:github/sperano/vigie/pull/4"}
+	if got := keys(fd.Actions); !slices.Equal(got, want) {
+		t.Errorf("no node id actions %v, want %v", got, want)
 	}
 }

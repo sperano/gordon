@@ -203,14 +203,16 @@ func (r Router) recoverWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, 
 }
 
 // followUpWrites adds the reactor's writes: 👀 on an owner request, and
-// the draft label and draft conversion when draft is set. A review
-// gets its 👀 too: the REST API has no reactions on a submitted review,
-// so the worker uses GraphQL addReaction on its node id, as
-// github_reactor.py does.
+// the draft label and draft conversion when draft is set. The 👀 is
+// GraphQL addReaction on the comment's or review's node id, its Detail
+// (REST has no reactions on a submitted review), as github_reactor.py
+// does; a delivery without a node id gets none, as in legacy.
 func (r Router) followUpWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, pr event.PullRequest, draft bool) {
-	if owner {
+	if owner && gh.CommentNodeID != "" {
 		target := action.GitHubComment(gh.Repository, string(gh.CommentKind), gh.CommentID)
-		fd.Actions = append(fd.Actions, action.New(action.React, target, reactionEyes))
+		react := action.New(action.React, target, reactionEyes)
+		react.Detail = gh.CommentNodeID
+		fd.Actions = append(fd.Actions, react)
 	}
 	if label := r.Config.Policy.DraftLabel; draft && label != "" && !pr.Draft {
 		target := action.PullRequest(gh.Repository, pr.Number)

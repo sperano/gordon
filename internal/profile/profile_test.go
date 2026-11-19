@@ -6,14 +6,39 @@ import (
 	"testing"
 )
 
-// TestDefaultsPreserveLegacyVariants pins each variant to the model and
-// effort values-hollingsworth.yaml gives it at LegacyVersion.
+// Legacy runner images and credentials (values-hollingsworth.yaml at
+// LegacyVersion), written out so the test does not read the defaults'
+// own constants.
+const (
+	legacyClaudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f"
+	legacyCodexImage    = "ericsperano/kelos-codex:0.64.0-20261119-055920-d9bba7f"
+	legacyOpenCodeImage = "ericsperano/kelos-opencode:0.64.0-20261119-055920-d9bba7f"
+)
+
+// legacyRunner is what a variant resolves to: agent, model, effort, and
+// the image and credentials that select its container.
+type legacyRunner struct {
+	agent, model, effort, image, credType, credSecret string
+}
+
+// TestDefaultsPreserveLegacyVariants pins each variant to the agent,
+// model, effort, image and credentials values-hollingsworth.yaml gives it
+// at LegacyVersion.
 func TestDefaultsPreserveLegacyVariants(t *testing.T) {
-	want := map[string][3]string{
-		"claude-opus": {"claude-code", "claude-opus-5-5[1m]", "medium"}, "claude-sonnet": {"claude-code", "claude-sonnet-5", "medium"},
-		"claude-fable": {"claude-code", "claude-fable-5-1", "medium"}, "claude-haiku": {"claude-code", "claude-haiku-5", "medium"},
-		"gpt-sol": {"codex", "gpt-5.6-sol", "medium"}, "gpt-astra": {"codex", "gpt-6-astra", "medium"},
-		"deepseek": {"opencode", "deepseek/deepseek-v4-pro", ""}, "qwen-coder": {"opencode", "llamacpp/qwen3-coder", ""},
+	claude := func(model string) legacyRunner {
+		return legacyRunner{"claude-code", model, "medium", legacyClaudeImage, "oauth", "claude-oauth"}
+	}
+	codex := func(model string) legacyRunner {
+		return legacyRunner{"codex", model, "medium", legacyCodexImage, "oauth", "codex-oauth"}
+	}
+	opencode := func(model string) legacyRunner {
+		return legacyRunner{"opencode", model, "", legacyOpenCodeImage, "none", ""}
+	}
+	want := map[string]legacyRunner{
+		"claude-opus": claude("claude-opus-5-5[1m]"), "claude-sonnet": claude("claude-sonnet-5"),
+		"claude-fable": claude("claude-fable-5-1"), "claude-haiku": claude("claude-haiku-5"),
+		"gpt-sol": codex("gpt-5.6-sol"), "gpt-astra": codex("gpt-6-astra"),
+		"deepseek": opencode("deepseek/deepseek-v4-pro"), "qwen-coder": opencode("llamacpp/qwen3-coder"),
 	}
 	c := Defaults()
 	if c.DefaultVariant != "claude-opus" || len(c.Variants) != len(want) {
@@ -25,8 +50,9 @@ func TestDefaultsPreserveLegacyVariants(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		if [3]string{got.Agent, got.Model, got.Effort} != w {
-			t.Errorf("%s: %s %s %q, want %v", name, got.Agent, got.Model, got.Effort, w)
+		g := legacyRunner{got.Agent, got.Model, got.Effort, got.Image, got.CredentialType, got.CredentialSecret}
+		if g != w {
+			t.Errorf("%s: %+v, want %+v", name, g, w)
 		}
 	}
 }

@@ -243,3 +243,13 @@ func TestStagesMarkdown(t *testing.T) {
 		t.Errorf("StagesMarkdown:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// TestStagesWithHollingsworthPathsNameIt fails when a stage changes
+// Hollingsworth paths but its repositories omit sperano/hollingsworth.
+func TestStagesWithHollingsworthPathsNameIt(t *testing.T) {
+	for _, s := range Stages() {
+		if len(s.Hollingsworth) > 0 && !slices.Contains(s.Repositories, "sperano/hollingsworth") {
+			t.Errorf("stage %02d changes %d Hollingsworth paths, repositories %v", s.Number, len(s.Hollingsworth), s.Repositories)
+		}
+	}
+}

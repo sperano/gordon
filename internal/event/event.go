@@ -118,7 +118,10 @@ type GitHub struct {
 	// comment, 'l' inline review comment, 'r' review; 0 otherwise.
 	CommentKind byte
 	CommentID   int64
-	Body        string
+	// CommentNodeID is the comment's or review's GraphQL node id, which
+	// addReaction needs: REST has no reactions on a submitted review.
+	CommentNodeID string
+	Body          string
 	// OnPullRequest is false for an issue_comment on a plain issue.
 	OnPullRequest bool
 	PullRequest   PullRequest

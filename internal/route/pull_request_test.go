@@ -133,6 +133,13 @@ func TestTaskLink(t *testing.T) {
 	if fd.Family != run.MergeClose || !slices.Equal(keys(fd.Actions), want) {
 		t.Errorf("unmerged close %s %v, want %v", fd.Family, keys(fd.Actions), want)
 	}
+	mergedSince := &event.PullRequest{Repository: repo, Number: 4, State: "closed", Merged: true}
+	fd = family(t, r.Decide(prEvent(t, closed), route.State{PullRequest: mergedSince, Task: labelled}, replay.Ledger{}))
+	want = []string{"mark-done:vikunja/task/5", "remove-label:vikunja/task/5:in progress", "remove-label:vikunja/task/5:pr open",
+		"remove-label:vikunja/task/5:action-needed", "post-notice:vikunja/task/5:merged:sperano/vigie#4"}
+	if !slices.Equal(keys(fd.Actions), want) {
+		t.Errorf("unmerged delivery of a merged PR %v, want %v", keys(fd.Actions), want)
+	}
 	draft := prOpts{action: "opened", author: "sperano", head: "kelos/vikunja-5", draft: true}
 	both := r.Decide(prEvent(t, draft), route.State{PullRequest: openPR(), Task: labelled}, replay.Ledger{})
 	expect(t, both, route.Act, "")

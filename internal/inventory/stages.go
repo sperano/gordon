@@ -10,6 +10,9 @@ type Stage struct {
 	Hollingsworth []string
 }
 
+// hollingsworth is the repository that holds every Hollingsworth path.
+var hollingsworth = []string{"sperano/hollingsworth"}
+
 // Stages lists Gordon 02 to 13.
 func Stages() []Stage { return append(buildStages(), cutoverStages()...) }
 
@@ -23,10 +26,10 @@ func buildStages() []Stage {
 				"pod_overrides_template_test.py", "puckdb_prod_access_template_test.py",
 				"readonly_serviceaccount_template_test.py"),
 				"helm/shared-postgres/values-hollingsworth.yaml", "helm/valkey/DATABASE_ALLOCATION.md", "tofu/kelos/puckdb.tf")},
-		{StageIntake, "build durable intake, workers and observability", nil, chartPath(
+		{StageIntake, "build durable intake, workers and observability", hollingsworth, chartPath(
 			"scripts/webhook_enricher.py", "scripts/dispatch_signature.py", "scripts/bounded_http.py",
 			"scripts/reconcile_vikunja_followups.py")},
-		{StageDispatch, "dispatch ordinary Kelos Tasks from resolved profiles", nil, chartPath(
+		{StageDispatch, "dispatch ordinary Kelos Tasks from resolved profiles", hollingsworth, chartPath(
 			"templates/taskspawners.yaml", "templates/commentspawners.yaml", "templates/followupspawners.yaml",
 			"templates/reviewspawners.yaml", "templates/_worker.tpl", "templates/_followup.tpl",
 			"templates/_dispatch.tpl", "templates/_correlation.tpl", "templates/_attachments.tpl",
@@ -35,7 +38,7 @@ func buildStages() []Stage {
 			append(chartPath("templates/webhook-proxy.yaml", "templates/webhook-enricher.yaml", "values-hollingsworth.yaml"),
 				"helm/gordon/", "argocd-apps/appset.yaml", "tofu/kelos/dispatch.tf", "tofu/kelos/main.tf",
 				"helm/shared-postgres/values-hollingsworth.yaml", "helm/prometheus/", "assets/avatars/gordon-8-bit.png")},
-		{StageVikunja, "implement Vikunja lifecycle orchestration", nil, chartPath(
+		{StageVikunja, "implement Vikunja lifecycle orchestration", hollingsworth, chartPath(
 			"scripts/drag_cancel.py", "scripts/discuss_fallback.py", "scripts/unanswered_notice.py",
 			"scripts/subtask_chain.py", "scripts/done_unlabel.py", "scripts/action_needed.py",
 			"scripts/wait_for_blockers.py", "scripts/announce_start.py", "scripts/followup_queued_notice.py",
@@ -54,7 +57,7 @@ func cutoverStages() []Stage {
 				"templates/subtask-chain-reconcile.yaml", "templates/failure-reporter.yaml", "templates/wait-for-blockers.yaml",
 				"templates/_worker.tpl", "templates/_followup.tpl", "templates/_subtask-chain.tpl", "templates/_sillage-marker.tpl"),
 				"scripts/vikunja_sync.py", "helm/gordon/values-hollingsworth.yaml")},
-		{StageGitHub, "implement GitHub, review and reconciliation workflows", nil, chartPath(
+		{StageGitHub, "implement GitHub, review and reconciliation workflows", hollingsworth, chartPath(
 			"scripts/github_reactor.py", "scripts/review_skip.py", "scripts/followup_request.py", "scripts/followup_ready.py",
 			"scripts/cap_review_rounds.py", "scripts/dedupe_pr_task.py", "scripts/supersede_reviews.py",
 			"scripts/announce_github_start.py", "scripts/poll_review_bot.py", "scripts/reconcile_conflicts.py",

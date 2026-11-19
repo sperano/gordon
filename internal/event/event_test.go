@@ -135,7 +135,7 @@ func TestParseGitHubIssueComment(t *testing.T) {
 
 func TestParseGitHubIssueCommentOnPullRequest(t *testing.T) {
 	ev, err := ParseGitHub(github("issue_comment", "g5", `{"action":"created","sender":{"login":"sperano"},`+
-		`"repository":{"full_name":"sperano/vigie"},"issue":{"number":6,"pull_request":{}},"comment":{"id":12,"body":"/gordon"}}`))
+		`"repository":{"full_name":"sperano/vigie"},"issue":{"number":6,"pull_request":{}},"comment":{"id":12,"node_id":"IC_12","body":"/gordon"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestParseGitHubIssueCommentOnPullRequest(t *testing.T) {
 	if !gh.OnPullRequest || gh.PullRequest.Number != 6 || gh.PullRequest.Repository != "sperano/vigie" {
 		t.Errorf("github %+v, want on pull request sperano/vigie#6", gh)
 	}
-	if ev.RequestKey != "github/sperano/vigie/c/12" {
+	if ev.RequestKey != "github/sperano/vigie/c/12" || gh.CommentNodeID != "IC_12" {
 		t.Errorf("request key %q", ev.RequestKey)
 	}
 }
@@ -152,18 +152,19 @@ func TestParseGitHubReviewAndPullRequest(t *testing.T) {
 	pr := `"pull_request":{"number":3,"state":"open","user":{"login":"sperano"},` +
 		`"head":{"ref":"kelos/vikunja-9","sha":"abc","repo":{"full_name":"sperano/vigie"}},"base":{"ref":"main"},"labels":[{"name":"kelos:gpt-sol"}]}`
 	repo := `"repository":{"full_name":"sperano/vigie"}`
-	review, err := ParseGitHub(github("pull_request_review", "g2", `{"action":"submitted",`+repo+`,"review":{"id":21,"body":"b"},`+pr+`}`))
+	review, err := ParseGitHub(github("pull_request_review", "g2", `{"action":"submitted",`+repo+`,"review":{"id":21,"node_id":"PRR_21","body":"b"},`+pr+`}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if review.RequestKey != "github/sperano/vigie/r/21" || review.GitHub.CommentKind != CommentKindReview || !review.GitHub.OnPullRequest {
+	if review.RequestKey != "github/sperano/vigie/r/21" || review.GitHub.CommentKind != CommentKindReview ||
+		!review.GitHub.OnPullRequest || review.GitHub.CommentNodeID != "PRR_21" {
 		t.Errorf("review %+v", review)
 	}
-	inline, err := ParseGitHub(github("pull_request_review_comment", "g3", `{"action":"created",`+repo+`,"comment":{"id":31,"body":"b"},`+pr+`}`))
+	inline, err := ParseGitHub(github("pull_request_review_comment", "g3", `{"action":"created",`+repo+`,"comment":{"id":31,"node_id":"PRRC_31","body":"b"},`+pr+`}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inline.RequestKey != "github/sperano/vigie/l/31" {
+	if inline.RequestKey != "github/sperano/vigie/l/31" || inline.GitHub.CommentNodeID != "PRRC_31" {
 		t.Errorf("inline request key %q", inline.RequestKey)
 	}
 	opened, err := ParseGitHub(github("pull_request", "g4", `{"action":"opened",`+repo+`,`+pr+`}`))
