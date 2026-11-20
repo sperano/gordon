@@ -19,6 +19,7 @@ const (
 	CodeNoTemplate       = "no-task-template"
 	CodeUnknownProject   = "unknown-project"
 	CodeUnknownVariant   = "unknown-variant"
+	CodeUnknownProfile   = "unknown-profile"
 	CodeTemplate         = "task-template-invalid"
 	CodePod              = "pod-invalid"
 	CodeSecretNotGranted = "secret-not-granted"
@@ -61,6 +62,11 @@ func (b Builder) Build(in Input) (kelos.Task, error) {
 	variant, ok := b.Config.Variants[id.Variant]
 	if !ok {
 		return kelos.Task{}, refuse(CodeUnknownVariant, "variant %q", id.Variant)
+	}
+	// Likewise a profile: without its entry the Task would lack the
+	// profile's pod pieces and network labels, and grant no Secret.
+	if _, ok := b.Config.Profiles[prof.Profile]; !ok {
+		return kelos.Task{}, refuse(CodeUnknownProfile, "profile %q", prof.Profile)
 	}
 	d := b.data(in, proj)
 	prompt, err := render("prompt", fam.Prompt, d)

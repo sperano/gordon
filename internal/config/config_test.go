@@ -255,3 +255,14 @@ func TestWorkerKelosDefaults(t *testing.T) {
 		t.Fatalf("kelos defaults %+v, shadow %v", c.Kelos, c.Shadow)
 	}
 }
+
+func TestExecuteWithInvalidDispatchConfigNamesOnlyTheFile(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_SHADOW"] = "false"
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"namespace":"default"}`)
+	_, err := LoadWorker(envOf(env))
+	if err == nil || !strings.Contains(err.Error(), `namespace "default"`) ||
+		strings.Contains(err.Error(), "GORDON_SHADOW=false needs") {
+		t.Fatalf("LoadWorker = %v, want the dispatch file's error alone", err)
+	}
+}

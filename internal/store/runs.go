@@ -11,7 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/route"
 )
 
-// ErrNoRun is a run (or its built Task) the store does not have.
+// ErrNoRun is a run the store does not have.
 var ErrNoRun = errors.New("no such run")
 
 // SubmitRun is what a submission needs: the generation's inbox row (the

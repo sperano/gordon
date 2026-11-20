@@ -158,7 +158,8 @@ func TestParseGitHubIssueCommentOnPullRequest(t *testing.T) {
 	}
 	if ev.RequestKey != "github/sperano/vigie/c/12" || gh.CommentNodeID != "IC_12" ||
 		gh.CommentURL != "https://github.com/sperano/vigie/pull/6#issuecomment-12" || gh.ReviewID != 0 {
-		t.Errorf("request key %q", ev.RequestKey)
+		t.Errorf("request key %q, node id %q, comment url %q, review id %d", ev.RequestKey, gh.CommentNodeID,
+			gh.CommentURL, gh.ReviewID)
 	}
 }
 

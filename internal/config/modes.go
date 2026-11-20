@@ -160,7 +160,7 @@ func LoadWorker(env Getenv) (Worker, error) {
 	}
 	r.jsonFile("GORDON_ROUTING_CONFIG_FILE", &c.Routing)
 	c.Kelos = r.kelos()
-	if !c.Shadow && c.Kelos == nil {
+	if !c.Shadow && r.str("GORDON_DISPATCH_CONFIG_FILE", "") == "" {
 		r.fail("GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE: nothing could be submitted")
 	}
 	if r.jsonFile("GORDON_OWNERSHIP_FILE", &c.Ownership) {

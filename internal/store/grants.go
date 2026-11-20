@@ -32,8 +32,9 @@ var workerUpdates = map[string]string{
 	"runs": "family, project, request_key, inbox_id, identity, profile, config_version, state, " +
 		"task_exists, generation, updated_at, task, task_uid, phase, observed_at",
 	"actions": "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, last_error, finished_at",
-	// A shadow Task's identity and build are fixed; its comparison and
-	// the pruning of its prompt are not.
+	// A shadow Task's identity is fixed; its comparison is not, and its
+	// built Task is only ever pruned (set NULL), which a column grant
+	// cannot narrow further.
 	"shadow_tasks": "task, result, diff, compared_at",
 }
 

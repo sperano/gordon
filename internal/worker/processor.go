@@ -102,8 +102,12 @@ func (p *Processor) Process(ctx context.Context, it store.Item) {
 	var readErr error
 	led := p.Store.Ledger(ctx)
 	ev, parseErr := event.Parse(d)
+	// The state read and the Task preparation share one deadline, so the
+	// rest of the lease stays for recording the decision.
+	readCtx, cancel := p.readContext(ctx)
+	defer cancel()
 	if parseErr == nil {
-		st, readErr = p.read(ctx, ev, led)
+		st, readErr = p.State.Read(readCtx, ev, led)
 	}
 	dec := p.Router.DecideAuthenticated(d, st, led)
 	switch {
@@ -113,31 +117,19 @@ func (p *Processor) Process(ctx context.Context, it store.Item) {
 		p.retry(ctx, log, it, source, RetryState, readErr)
 	default:
 		if p.Tasks != nil && parseErr == nil {
-			p.prepare(ctx, it.ID, ev, st, &dec)
+			p.Tasks.Prepare(readCtx, it.ID, ev, st, &dec)
 		}
 		p.complete(ctx, log, it, source, dec)
 	}
 }
 
-// prepare builds the decision's Tasks within the read share of the lease
-// (the task comments are one more read).
-func (p *Processor) prepare(ctx context.Context, inboxID int64, ev event.Event, st route.State, dec *route.Decision) {
-	if p.LeaseTTL > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.LeaseTTL/readShareOfLease)
-		defer cancel()
+// readContext is ctx cut at the read share of the lease: the state read
+// and the Task preparation (the task comments are one more read) together.
+func (p *Processor) readContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if p.LeaseTTL <= 0 {
+		return ctx, func() {}
 	}
-	p.Tasks.Prepare(ctx, inboxID, ev, st, dec)
-}
-
-// read reads the fresh state within its share of the lease.
-func (p *Processor) read(ctx context.Context, ev event.Event, led route.Ledger) (route.State, error) {
-	if p.LeaseTTL > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.LeaseTTL/readShareOfLease)
-		defer cancel()
-	}
-	return p.State.Read(ctx, ev, led)
+	return context.WithTimeout(ctx, p.LeaseTTL/readShareOfLease)
 }
 
 // transientRead reports a read that failed for a reason that may pass (an

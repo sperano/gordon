@@ -91,12 +91,24 @@ func TestNoCommentReadForGitHubRuns(t *testing.T) {
 // TestUnbuildableTaskRejectsTheFamily: a Task the configuration cannot
 // build (or admission would refuse) is an explicit reject naming why,
 // with no run and no write left, the 👀 included.
+// unbuildable is a dispatch config edit and the reject it makes.
+type unbuildable struct {
+	edit   func(*dispatch.Config)
+	sample sample
+	reason string
+}
+
+// withReviewPod edits the pr-review family's pod pieces.
+func withReviewPod(edit func(*dispatch.Pod), reason string) unbuildable {
+	return unbuildable{func(c *dispatch.Config) {
+		f := c.Families[run.PRReview]
+		edit(&f.Pod)
+		c.Families[run.PRReview] = f
+	}, prOpened(), reason}
+}
+
 func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
-	cases := map[string]struct {
-		edit   func(*dispatch.Config)
-		sample sample
-		reason string
-	}{
+	cases := map[string]unbuildable{
 		"no template": {func(c *dispatch.Config) { delete(c.Families, run.VikunjaFollowUp) },
 			commentCreated(vikunjaTask(gordonID, "in progress")), "task-spec-no-task-template"},
 		"missing variable": {func(c *dispatch.Config) {
@@ -129,6 +141,23 @@ func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
 		}, prOpened(), "task-spec-pod-invalid"},
 		"variant not configured": {func(c *dispatch.Config) { delete(c.Variants, "claude-opus") },
 			taskUpdated(vikunjaTask(gordonID), "claude-opus"), "task-spec-unknown-variant"},
+		"profile not configured": {func(c *dispatch.Config) { delete(c.Profiles, "review") },
+			prOpened(), "task-spec-unknown-profile"},
+		"secret volume not granted": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","secret":{"secretName":"vault-root"}}`))
+		}, "task-spec-secret-not-granted"),
+		"projected secret not granted": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","projected":{"sources":[{"secret":{"name":"vault-root"}}]}}`))
+		}, "task-spec-secret-not-granted"),
+		"csi secret not granted": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","csi":{"driver":"d","nodePublishSecretRef":{"name":"vault-root"}}}`))
+		}, "task-spec-secret-not-granted"),
+		"init envFrom not granted": withReviewPod(func(p *dispatch.Pod) {
+			p.ExtraInitContainers = append(p.ExtraInitContainers, json.RawMessage(`{"name":"i","envFrom":[{"secretRef":{"name":"vault-root"}}]}`))
+		}, "task-spec-secret-not-granted"),
+		"env entry not an object": withReviewPod(func(p *dispatch.Pod) {
+			p.Env = append(p.Env, json.RawMessage(`"FOO=bar"`))
+		}, "task-spec-pod-invalid"),
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -29,6 +29,9 @@ import (
 // that may have reached the provider: applied is true when the write is
 // already there, so it is not made twice. Any Recover error leaves the
 // outcome unknown: the action stays ambiguous and is never written blind.
+//
+// A write the provider cannot take yet (a full limit, a held branch)
+// returns Deferred: the action stays queued without counting an attempt.
 type Executor interface {
 	Execute(ctx context.Context, a action.Action) error
 	Recover(ctx context.Context, a action.Action) (applied bool, err error)

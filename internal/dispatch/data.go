@@ -58,15 +58,11 @@ func (b Builder) data(in Input, proj profile.Project) Data {
 
 func vikunjaData(d Data, in Input) {
 	v, id := in.Event.Vikunja, in.Run.Identity
+	// The fresh task is authoritative, an emptied description included;
+	// the delivery's copy stands in only without one.
 	task := v.Task
 	if in.State.Task != nil {
 		task = *in.State.Task
-	}
-	if task.Title == "" {
-		task.Title = v.Task.Title
-	}
-	if task.Description == "" {
-		task.Description = v.Task.Description
 	}
 	d["task"] = strconv.FormatInt(id.TaskID, 10)
 	d["Title"], d["description"], d["Body"] = task.Title, task.Description, task.Description

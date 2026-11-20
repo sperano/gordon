@@ -29,7 +29,8 @@ func (e *env) observations(state string) float64 {
 }
 
 // TestRunLifecycleFromKelos follows a run from its queued submission to
-// its Task's cleanup, after which the owner's next request runs again.
+// its Task's cleanup, after which the ledger frees its name for the
+// owner's next request.
 func TestRunLifecycleFromKelos(t *testing.T) {
 	e := newEnv(t, false, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")

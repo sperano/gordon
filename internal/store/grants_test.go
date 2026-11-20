@@ -282,15 +282,21 @@ func TestGrantWorkerDispatchRights(t *testing.T) {
 	if err := ws.ObserveRun(ctx, runName, id, false, ""); err != nil {
 		t.Fatalf("worker ObserveRun: %v", err)
 	}
-	id2 := accept(t, owner, "k2")
+	id2 := acceptRequest(t, owner, "k2", "vikunja/comment/2")
 	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, withTask("p"), true); err != nil {
 		t.Fatalf("worker shadow Complete: %v", err)
 	}
-	if _, err := ws.PendingShadow(ctx, 1); err != nil {
-		t.Fatalf("worker PendingShadow: %v", err)
+	pending, err := ws.PendingShadow(ctx, 1)
+	if err != nil || len(pending) != 1 || pending[0].InboxID != id2 {
+		t.Fatalf("worker PendingShadow = %+v, %v; want the shadow Task of k2", pending, err)
 	}
-	if err := ws.ShadowCompared(ctx, runName, id2, store.ShadowMatch, nil); err != nil {
+	if err := ws.ShadowCompared(ctx, pending[0].Name, pending[0].InboxID, store.ShadowMatch, nil); err != nil {
 		t.Fatalf("worker ShadowCompared: %v", err)
+	}
+	var result string
+	storetest.QueryRow(t, dbURL, `SELECT result FROM shadow_tasks WHERE inbox_id = $1`, []any{id2}, &result)
+	if result != store.ShadowMatch {
+		t.Fatalf("shadow result %q after the worker's compare, want %q", result, store.ShadowMatch)
 	}
 	if _, err := ws.PruneTasks(ctx, 0); err != nil {
 		t.Fatalf("worker PruneTasks: %v", err)

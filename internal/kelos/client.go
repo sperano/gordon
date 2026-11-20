@@ -62,7 +62,11 @@ type Client struct {
 // NewHTTPClient returns an HTTP client trusting caFile ("" keeps the
 // system roots) with the given per-request timeout.
 func NewHTTPClient(caFile string, timeout time.Duration) (*http.Client, error) {
-	tr := http.DefaultTransport.(*http.Transport).Clone()
+	def, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("http.DefaultTransport is a %T, not an *http.Transport", http.DefaultTransport)
+	}
+	tr := def.Clone()
 	if caFile != "" {
 		pem, err := os.ReadFile(caFile)
 		if err != nil {
@@ -143,13 +147,14 @@ func IsRefused(err error) bool {
 }
 
 // IsAmbiguous reports a write whose outcome is unknown: the request may
-// have been applied (a transport error after sending, a 5xx or a timeout).
+// have been applied (a transport error after sending, a 5xx or a timeout,
+// or a success answer that could not be read).
 func IsAmbiguous(err error) bool {
 	e, ok := asError(err)
 	if !ok {
 		return false
 	}
-	return e.Sent && (e.Status == 0 || e.Status >= http.StatusInternalServerError)
+	return e.Sent && (e.Status < http.StatusMultipleChoices || e.Status >= http.StatusInternalServerError)
 }
 
 func (c *Client) collection() string {
@@ -239,6 +244,9 @@ func (c *Client) send(ctx context.Context, op, method, u string, q url.Values, b
 	}
 	if err := c.authorize(req); err != nil {
 		return &Error{Op: op, Err: err}
+	}
+	if err := ctx.Err(); err != nil {
+		return &Error{Op: op, Err: err} // ended before the request left
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

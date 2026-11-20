@@ -166,7 +166,9 @@ func TestTokenFileRequired(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "token")
 			if content != "" {
-				os.WriteFile(path, []byte(content), 0o600) //nolint:errcheck // checked by the request
+				if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, TokenFile: path, HTTP: srv.Client()}
 			_, err := c.Create(context.Background(), task("a"))
@@ -260,7 +262,7 @@ func TestIsRefusedStatuses(t *testing.T) {
 		http.StatusBadRequest: true, http.StatusUnauthorized: true, http.StatusForbidden: true,
 		http.StatusNotFound: true, http.StatusMethodNotAllowed: true, http.StatusUnprocessableEntity: true,
 		http.StatusRequestEntityTooLarge: true,
-		http.StatusConflict: false, http.StatusTooManyRequests: false, http.StatusInternalServerError: false,
+		http.StatusConflict:              false, http.StatusTooManyRequests: false, http.StatusInternalServerError: false,
 	}
 	for status, want := range cases {
 		if got := kelos.IsRefused(&kelos.Error{Status: status, Sent: true}); got != want {
@@ -269,5 +271,46 @@ func TestIsRefusedStatuses(t *testing.T) {
 	}
 	if kelos.IsRefused(errors.New("plain")) {
 		t.Error("IsRefused of a non-Kelos error")
+	}
+}
+
+func TestCancelledCreateIsNotSent(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	c, _ := client(t, srv)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.Create(ctx, task("a"))
+	var e *kelos.Error
+	if !errors.As(err, &e) || e.Sent || kelos.IsAmbiguous(err) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Create with an ended context = %v, want unsent and not ambiguous", err)
+	}
+	if n := len(srv.Creates()); n != 0 {
+		t.Fatalf("%d creates reached the server", n)
+	}
+}
+
+func TestUnreadableCreateAnswerIsAmbiguous(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `not json`)
+	}))
+	defer srv.Close()
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	if _, err := c.Create(context.Background(), task("a")); !kelos.IsAmbiguous(err) || kelos.IsRefused(err) {
+		t.Fatalf("Create answered 201 with garbage = %v, want ambiguous", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestNewHTTPClientCustomDefaultTransport(t *testing.T) {
+	saved := http.DefaultTransport
+	defer func() { http.DefaultTransport = saved }()
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("x") })
+	if _, err := kelos.NewHTTPClient("", time.Second); err == nil || !strings.Contains(err.Error(), "not an *http.Transport") {
+		t.Fatalf("NewHTTPClient = %v, want a configuration error", err)
 	}
 }

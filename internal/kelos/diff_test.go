@@ -27,8 +27,9 @@ func TestDiff(t *testing.T) {
 	same := map[string]any{
 		"apiVersion": kelos.APIVersion, "kind": "Task",
 		"metadata": map[string]any{"name": "a", "uid": "u", "resourceVersion": "9",
+			// An ignored key is no difference on either side.
 			"labels":      map[string]any{"role": "x", "kelos.dev/taskspawner": "s"},
-			"annotations": map[string]any{"repo": "sperano/gordon"}},
+			"annotations": map[string]any{"repo": "sperano/gordon", "inbox": "7"}},
 		// Env in another order is the same env.
 		"spec": map[string]any{"prompt": "p", "branch": "b", "worker": map[string]any{"type": "claude-code",
 			"podOverrides": map[string]any{"env": []any{map[string]any{"name": "B", "value": "2"},

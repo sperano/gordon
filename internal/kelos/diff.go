@@ -32,6 +32,7 @@ func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
 	g = pick(g)
 	for _, k := range ignore {
 		deleteMeta(w, k)
+		deleteMeta(g, k)
 	}
 	if labels, ok := dig(g, "metadata", "labels").(map[string]any); ok {
 		maps.DeleteFunc(labels, func(k string, _ any) bool { return strings.HasPrefix(k, kelosLabelPrefix) })

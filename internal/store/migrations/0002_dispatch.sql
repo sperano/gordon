@@ -27,3 +27,6 @@ CREATE TABLE shadow_tasks (
 
 CREATE INDEX shadow_tasks_pending ON shadow_tasks (created_at) WHERE result = 'pending';
 CREATE INDEX runs_observed ON runs (observed_at, name) WHERE state <> 'finished' OR task_exists;
+-- PruneTasks: built Tasks of finished runs and compared shadow Tasks.
+CREATE INDEX runs_prunable ON runs (updated_at) WHERE task IS NOT NULL AND state = 'finished';
+CREATE INDEX shadow_tasks_prunable ON shadow_tasks (compared_at) WHERE task IS NOT NULL AND result <> 'pending';

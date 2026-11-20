@@ -103,6 +103,10 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 	if found, err := e.existing(ctx, r); found || err != nil {
 		return err
 	}
+	if !e.checked(r) {
+		created, err := e.Kelos.Create(ctx, *r.Task)
+		return e.created(ctx, r, created, err)
+	}
 	// The limit and branch check and the create that follows hold the
 	// database-wide admission lock together, so no two submissions, in
 	// any replica, both pass a check one of them fills.
@@ -118,6 +122,12 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 		return err
 	}
 	return e.created(ctx, r, created, createErr)
+}
+
+// checked reports a submission admission checks: its variant has a limit
+// or its Task a branch. Any other is created without the lock.
+func (e *Executor) checked(r store.SubmitRun) bool {
+	return e.Limits.For(r.Variant) > 0 || r.Task.Spec.Branch != ""
 }
 
 // created records the outcome of the run's create.
@@ -182,6 +192,11 @@ func (e *Executor) existing(ctx context.Context, r store.SubmitRun) (bool, error
 	switch {
 	case kelos.IsNotFound(err):
 		return false, nil
+	case kelos.IsRefused(err):
+		// The read itself is forbidden (RBAC, a bad token): retrying the
+		// submission cannot help.
+		e.count(ResultRefused)
+		return false, worker.Permanent(err)
 	case err != nil:
 		return false, err
 	}
@@ -203,9 +218,6 @@ func (e *Executor) existing(ctx context.Context, r store.SubmitRun) (bool, error
 func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 	limit := e.Limits.For(r.Variant)
 	branch, ws := r.Task.Spec.Branch, r.Task.WorkspaceName()
-	if limit <= 0 && branch == "" {
-		return nil
-	}
 	tasks, err := e.Kelos.List(ctx, "")
 	if err != nil {
 		return err

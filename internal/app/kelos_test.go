@@ -72,12 +72,13 @@ func TestServiceSubmitsToKelos(t *testing.T) {
 	eventually(t, "the finished run", func() bool {
 		return svc.count(t, `SELECT count(*) FROM runs WHERE state = 'finished' AND task_exists`) == 1
 	})
-	_, wm := httpGet(t, "http://"+svc.worker[ServerAdmin]+"/metrics")
+	// The observation is counted after its write: scrape until it shows.
 	for _, want := range []string{`gordon_kelos_submissions_total{result="created"} 1`,
 		`gordon_kelos_requests_total{op="create",result="ok"} 1`, `gordon_run_observations_total{state="finished"} 1`} {
-		if !strings.Contains(wm, want) {
-			t.Errorf("worker metrics lack %s", want)
-		}
+		eventually(t, want, func() bool {
+			_, wm := httpGet(t, "http://"+svc.worker[ServerAdmin]+"/metrics")
+			return strings.Contains(wm, want)
+		})
 	}
 	svc.cancel()
 	for range 2 {

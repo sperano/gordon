@@ -68,15 +68,19 @@ func (s *Server) Put(t kelos.Task) {
 	s.store(t)
 }
 
-// SetPhase sets a stored Task's status phase.
+// SetPhase sets a stored Task's status phase, keeping the rest of its
+// status; it panics on a Task the server does not have (a test's typo).
 func (s *Server) SetPhase(name, phase string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var t kelos.Task
-	if json.Unmarshal(s.tasks[name], &t) != nil {
-		return
+	if err := json.Unmarshal(s.tasks[name], &t); err != nil {
+		panic(fmt.Sprintf("kelostest: SetPhase of task %q: %v", name, err))
 	}
-	t.Status = &kelos.Status{Phase: phase}
+	if t.Status == nil {
+		t.Status = &kelos.Status{}
+	}
+	t.Status.Phase = phase
 	s.store(t)
 }
 

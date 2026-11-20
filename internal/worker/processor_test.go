@@ -315,25 +315,40 @@ func TestTransientRead(t *testing.T) {
 
 // deadlineTasks records the deadline its read was given.
 type deadlineTasks struct {
+	at   time.Time
 	left time.Duration
 	has  bool
 }
 
 func (d *deadlineTasks) Task(ctx context.Context, _ int64) (event.Task, error) {
-	var at time.Time
-	at, d.has = ctx.Deadline()
-	d.left = time.Until(at)
+	d.at, d.has = ctx.Deadline()
+	d.left = time.Until(d.at)
 	return eligible(), nil
+}
+
+// deadlinePreparer is fixedTask recording the deadline it was given.
+type deadlinePreparer struct {
+	fixedTask
+	at  time.Time
+	has bool
+}
+
+func (d *deadlinePreparer) Prepare(ctx context.Context, id int64, ev event.Event, st route.State, dec *route.Decision) {
+	d.at, d.has = ctx.Deadline()
+	d.fixedTask.Prepare(ctx, id, ev, st, dec)
 }
 
 func TestStateReadsGetPartOfTheLease(t *testing.T) {
 	e, id := implementDelivery(t)
-	reads := &deadlineTasks{}
-	e.proc.State.Tasks = reads
+	reads, prep := &deadlineTasks{}, &deadlinePreparer{}
+	e.proc.State.Tasks, e.proc.Tasks = reads, prep
 	e.tick(t)
 	if !reads.has || reads.left > testTTL/readShareOfLease {
 		t.Fatalf("read deadline set %v, %v left; want at most %v of the %v lease", reads.has, reads.left,
 			testTTL/readShareOfLease, testTTL)
+	}
+	if !prep.has || !prep.at.Equal(reads.at) {
+		t.Fatalf("prepare deadline set %v at %v; want the read's %v, one share for both", prep.has, prep.at, reads.at)
 	}
 	if d := recorded(t, e, id); d.Outcome != route.Dispatch {
 		t.Fatalf("decision %s, want dispatch", d.Outcome)
@@ -441,6 +456,9 @@ func TestPreparerNotCalledOnRetry(t *testing.T) {
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.down = true
 	e.tick(t)
+	if n := e.count(t, `SELECT count(*) FROM inbox WHERE state = 'pending' AND attempts = 1 AND next_attempt_at > now()`); n != 1 {
+		t.Fatal("the outage did not schedule a retry")
+	}
 	if p.calls != 0 {
 		t.Fatalf("prepared %d times for an item retried on its state", p.calls)
 	}

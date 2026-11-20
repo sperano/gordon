@@ -311,3 +311,60 @@ func containsEnv(env []json.RawMessage, name, value string) bool {
 	}
 	return false
 }
+
+func TestFreshTaskDescriptionIsAuthoritative(t *testing.T) {
+	s := taskUpdated(vikunjaTask(gordonID), "claude-opus")
+	fresh := *s.state.Task
+	fresh.Description = "" // the owner cleared it after the webhook
+	s.state.Task = &fresh
+	rn, _ := prepared(t, fixture(t), s, run.VikunjaImplement)
+	if strings.Contains(rn.Task.Spec.Prompt, "Make it so") {
+		t.Fatalf("prompt quotes the delivery's stale description: %s", rn.Task.Spec.Prompt)
+	}
+	if !strings.Contains(rn.Task.Spec.Prompt, title) {
+		t.Fatalf("prompt lacks the fresh title: %s", rn.Task.Spec.Prompt)
+	}
+}
+
+func envNamed(name string) json.RawMessage {
+	return json.RawMessage(`{"name":"` + name + `","value":"1"}`)
+}
+
+// TestPodPiecesComposeInOrder: env is the family's, the Workspace's, the
+// profile's then the variant's; a later piece's resources or affinity
+// wins. A discuss run takes its project's Workspace pieces, keyed by the
+// writing Workspace, though its Task names the read-only copy.
+func TestPodPiecesComposeInOrder(t *testing.T) {
+	cfg := fixture(t)
+	f := cfg.Families[run.VikunjaDiscuss]
+	f.Pod.Env = append(f.Pod.Env, envNamed("FROM_FAMILY"))
+	f.Pod.Resources, f.Pod.Affinity = json.RawMessage(`{"limits":{"cpu":"1"}}`), json.RawMessage(`{"a":"family"}`)
+	cfg.Families[run.VikunjaDiscuss] = f
+	cfg.Workspaces = map[string]dispatch.Pod{"gordon": {Env: []json.RawMessage{envNamed("FROM_WORKSPACE")}}}
+	p := cfg.Profiles["discuss-default"]
+	p.Pod.Env = append(p.Pod.Env, envNamed("FROM_PROFILE"))
+	p.Pod.Resources = json.RawMessage(`{"limits":{"cpu":"2"}}`)
+	cfg.Profiles["discuss-default"] = p
+	v := cfg.Variants["claude-opus"]
+	v.Pod.Env = append(v.Pod.Env, envNamed("FROM_VARIANT"))
+	v.Pod.Affinity = json.RawMessage(`{"a":"variant"}`)
+	cfg.Variants["claude-opus"] = v
+	rn, _ := prepared(t, cfg, taskUpdated(vikunjaTask(gordonID, "discuss"), "claude-opus"), run.VikunjaDiscuss)
+	po := rn.Task.Spec.Worker.PodOverrides
+	var order []string
+	for _, e := range po.Env {
+		var named struct{ Name string }
+		if err := json.Unmarshal(e, &named); err == nil && strings.HasPrefix(named.Name, "FROM_") {
+			order = append(order, named.Name)
+		}
+	}
+	if want := []string{"FROM_FAMILY", "FROM_WORKSPACE", "FROM_PROFILE", "FROM_VARIANT"}; !slices.Equal(order, want) {
+		t.Fatalf("env pieces %v, want %v", order, want)
+	}
+	if string(po.Resources) != `{"limits":{"cpu":"2"}}` || string(po.Affinity) != `{"a":"variant"}` {
+		t.Fatalf("resources %s affinity %s, want the profile's and the variant's", po.Resources, po.Affinity)
+	}
+	if rn.Task.WorkspaceName() != "gordon-readonly" {
+		t.Fatalf("workspace %s, want the read-only copy", rn.Task.WorkspaceName())
+	}
+}

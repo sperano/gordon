@@ -15,8 +15,12 @@ import (
 // decision time instead of a dead-lettered submission.
 func (b Builder) admit(t kelos.Task, prof profile.Resolved) error {
 	granted := append(slices.Clone(b.Config.CommonSecrets), b.Config.Profiles[prof.Profile].Secrets...)
+	referenced, err := referencedSecrets(t)
+	if err != nil {
+		return err
+	}
 	var denied []string
-	for _, s := range referencedSecrets(t) {
+	for _, s := range referenced {
 		if !slices.Contains(granted, s) && !slices.Contains(denied, s) {
 			denied = append(denied, s)
 		}
@@ -28,20 +32,20 @@ func (b Builder) admit(t kelos.Task, prof profile.Resolved) error {
 	return nil
 }
 
+type secretRef struct {
+	Name string `json:"name"`
+}
+
 type envVar struct {
 	ValueFrom *struct {
-		SecretKeyRef *struct {
-			Name string `json:"name"`
-		} `json:"secretKeyRef"`
+		SecretKeyRef *secretRef `json:"secretKeyRef"`
 	} `json:"valueFrom"`
 }
 
 type container struct {
 	Env     []envVar `json:"env"`
 	EnvFrom []struct {
-		SecretRef *struct {
-			Name string `json:"name"`
-		} `json:"secretRef"`
+		SecretRef *secretRef `json:"secretRef"`
 	} `json:"envFrom"`
 }
 
@@ -49,12 +53,21 @@ type volume struct {
 	Secret *struct {
 		SecretName string `json:"secretName"`
 	} `json:"secret"`
+	Projected *struct {
+		Sources []struct {
+			Secret *secretRef `json:"secret"`
+		} `json:"sources"`
+	} `json:"projected"`
+	CSI *struct {
+		NodePublishSecretRef *secretRef `json:"nodePublishSecretRef"`
+	} `json:"csi"`
 }
 
 // referencedSecrets lists the Secrets a Task's worker references: its
-// credentials, env, Secret volumes and init containers' env and envFrom,
-// as the admission policy's referencedSecrets.
-func referencedSecrets(t kelos.Task) []string {
+// credentials, env, Secret, projected and CSI volumes, and init
+// containers' env and envFrom. An entry that is not an object of its kind
+// is refused: its references could not be checked.
+func referencedSecrets(t kelos.Task) ([]string, error) {
 	w := t.Spec.Worker
 	var out []string
 	if w.Credentials != nil && w.Credentials.SecretRef != nil {
@@ -62,19 +75,26 @@ func referencedSecrets(t kelos.Task) []string {
 	}
 	p := w.PodOverrides
 	if p == nil {
-		return out
+		return out, nil
 	}
-	out = append(out, envSecrets(p.Env)...)
+	for _, raw := range p.Env {
+		var e envVar
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return nil, refuse(CodePod, "env entry: %v", err)
+		}
+		out = appendEnvSecret(out, e)
+	}
 	for _, raw := range p.Volumes {
 		var v volume
-		if json.Unmarshal(raw, &v) == nil && v.Secret != nil {
-			out = append(out, v.Secret.SecretName)
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, refuse(CodePod, "volume: %v", err)
 		}
+		out = append(out, volumeSecrets(v)...)
 	}
 	for _, raw := range p.ExtraInitContainers {
 		var c container
-		if json.Unmarshal(raw, &c) != nil {
-			continue
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return nil, refuse(CodePod, "init container: %v", err)
 		}
 		for _, e := range c.Env {
 			out = appendEnvSecret(out, e)
@@ -85,16 +105,23 @@ func referencedSecrets(t kelos.Task) []string {
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
-func envSecrets(env []json.RawMessage) []string {
+func volumeSecrets(v volume) []string {
 	var out []string
-	for _, raw := range env {
-		var e envVar
-		if json.Unmarshal(raw, &e) == nil {
-			out = appendEnvSecret(out, e)
+	if v.Secret != nil {
+		out = append(out, v.Secret.SecretName)
+	}
+	if v.Projected != nil {
+		for _, src := range v.Projected.Sources {
+			if src.Secret != nil {
+				out = append(out, src.Secret.Name)
+			}
 		}
+	}
+	if v.CSI != nil && v.CSI.NodePublishSecretRef != nil {
+		out = append(out, v.CSI.NodePublishSecretRef.Name)
 	}
 	return out
 }

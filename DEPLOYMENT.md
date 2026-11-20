@@ -87,7 +87,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_DISPATCH_CONFIG_FILE` | empty | JSON `dispatch.Config` (unknown fields refused; below). Without it runs carry no Task, nothing touches Kelos, and `GORDON_SHADOW=false` is refused |
 | `GORDON_KELOS_API_URL` | `https://kubernetes.default.svc` | Kubernetes API base |
 | `GORDON_KELOS_TOKEN_FILE` | the pod's ServiceAccount token | re-read per request (projected tokens rotate) |
-| `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | `""` keeps the system roots |
+| `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
 | `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit or a held branch |
 | `GORDON_SHADOW_WINDOW` | `15m` | how long a shadow Task waits for the legacy Task of its name before it is recorded `missing` |
 
@@ -110,7 +110,7 @@ the legacy ones.
 | `comments`, `comments_max_bytes` | quote `GET /tasks/{id}/comments` as `Context.comments` (default cap 256 KiB; a failed or larger read is quoted empty, as the legacy `failurePolicy: Ignore`) |
 | `common_secrets` | Secrets every profile may reference (the admission policy's `commonSecrets`: runner credentials, the variants' Vikunja and Authentik identities, Gordon's own, the run-link token) |
 | `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
-| `workspaces`, `profiles`, `variants` | pod pieces per Workspace, per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant needs a `variants` entry, `{}` at least: a run of a variant without one is rejected (`task-spec-unknown-variant`) |
+| `workspaces`, `profiles`, `variants` | pod pieces per Workspace (keyed by the project's writing Workspace; they apply to its read-only copy too), per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant and profile needs an entry, `{}` at least: a run without one is rejected (`task-spec-unknown-variant`, `task-spec-unknown-profile`) |
 | `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded |
 
 Prompt, label and annotation values, agent config names and pod strings
