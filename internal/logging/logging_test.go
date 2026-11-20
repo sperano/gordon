@@ -102,3 +102,18 @@ func TestStructuredValuesAreScrubbed(t *testing.T) {
 		t.Errorf("oversized structured value not truncated: %d bytes", len(big))
 	}
 }
+
+func TestUnmarshalableStructuredValueIsScrubbedAsText(t *testing.T) {
+	// JSON cannot encode a func field, so this value takes the fmt.Sprint fallback.
+	value := struct {
+		URL      string
+		Callback func()
+	}{URL: "url ?password=hunter2 x"}
+	if _, err := json.Marshal(value); err == nil {
+		t.Fatal("fixture marshals; it no longer reaches the fallback")
+	}
+	out := logged(t, "value", value)
+	if want := "{url ?" + Redacted + " x <nil>}"; out["value"] != want {
+		t.Errorf("unmarshalable value = %#v, want %q", out["value"], want)
+	}
+}

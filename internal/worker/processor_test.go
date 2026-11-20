@@ -84,6 +84,12 @@ func TestGordonOwnedDecisionQueuesItsActions(t *testing.T) {
 	if n := e.count(t, `SELECT count(*) FROM runs WHERE name = $1`, implementRun); n != 1 {
 		t.Fatal("run not recorded")
 	}
+	if v := testutil.ToFloat64(e.metric.Decisions.WithLabelValues("vikunja", "vikunja-implement", "dispatch", "true")); v != 1 {
+		t.Fatalf("executed decisions metric = %v, want 1", v)
+	}
+	if !strings.Contains(e.logs.String(), `"executed":true`) {
+		t.Fatalf("decision log does not say executed: %s", e.logs.String())
+	}
 }
 
 func TestShadowModeExecutesNothingEvenWhenGordonOwns(t *testing.T) {
