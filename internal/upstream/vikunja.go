@@ -78,7 +78,8 @@ const emptyPageBytes = 16
 // array: the raw JSON a prompt quotes, as the legacy spawners'
 // contextSources did, but with every page, not only the first. A task
 // whose comments fit one page gets that page's array as the API returned it.
-// maxBytes caps the pages' bytes: no page is read past what is left of it,
+// maxBytes caps the pages' bytes: no page is read past what is left of it
+// plus emptyPageBytes (so the empty page that ends the list still fits),
 // and comments over it are Invalid.
 func (v Vikunja) Comments(ctx context.Context, id int64, maxBytes int) (json.RawMessage, error) {
 	if id <= 0 || maxBytes <= 0 {
