@@ -330,7 +330,7 @@ func oversizedLists(t *testing.T, fits int) (*httptest.Server, func() []string) 
 		limits = append(limits, limit)
 		mu.Unlock()
 		var n int
-		fmt.Sscan(limit, &n) //nolint:errcheck // 0 is over any fit
+		fmt.Sscan(limit, &n) //nolint:errcheck // an unparsed limit reads as 0, which fits any cap
 		if n > fits {
 			fmt.Fprintf(w, `{"items":[{"spec":{"prompt":"%s"}}]}`, strings.Repeat("x", listCapBytes))
 			return
@@ -347,13 +347,50 @@ func oversizedLists(t *testing.T, fits int) (*httptest.Server, func() []string) 
 
 func TestListShrinksAPageOverTheCap(t *testing.T) {
 	srv, limits := oversizedLists(t, 40)
-	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	o := &observed{}
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client(), Observe: o.observe}
 	got, err := c.List(context.Background(), "")
 	if err != nil || len(got) != 1 || got[0].Metadata.Name != "page-of-31" {
 		t.Fatalf("List = %+v, %v; want the page read at limit 31", got, err)
 	}
 	if l := strings.Join(limits(), ","); l != "250,125,62,31" {
 		t.Fatalf("limits asked %s, want halved until the page fits", l)
+	}
+	if l := o.list(); l != "list=too_large,list=too_large,list=too_large,list=ok" {
+		t.Fatalf("observed %s, want the retries as too_large, not error", l)
+	}
+}
+
+// listPageBudget is the client's page cap (maxListPages).
+const listPageBudget = 400
+
+// TestListSizeRetriesSpendNoPages: a list of exactly the page budget
+// still completes after a page read again smaller.
+func TestListSizeRetriesSpendNoPages(t *testing.T) {
+	const fits = 125
+	var mu sync.Mutex
+	served := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var n int
+		fmt.Sscan(r.URL.Query().Get("limit"), &n) //nolint:errcheck // an unparsed limit reads as 0, which fits
+		if n > fits {
+			fmt.Fprintf(w, `{"items":[{"spec":{"prompt":"%s"}}]}`, strings.Repeat("x", listCapBytes))
+			return
+		}
+		mu.Lock()
+		served++
+		next := ""
+		if served < listPageBudget {
+			next = fmt.Sprint(served)
+		}
+		mu.Unlock()
+		fmt.Fprintf(w, `{"metadata":{"continue":%q},"items":[{"metadata":{"name":"t"}}]}`, next)
+	}))
+	defer srv.Close()
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	got, err := c.List(context.Background(), "")
+	if err != nil || len(got) != listPageBudget {
+		t.Fatalf("List = %d Tasks, %v; want all %d pages read", len(got), err, listPageBudget)
 	}
 }
 

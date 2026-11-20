@@ -204,7 +204,9 @@ var errTooLarge = errors.New("response too large")
 func (c *Client) List(ctx context.Context, selector string) ([]Task, error) {
 	var out []Task
 	token, size := "", listPageSize
-	for range maxListPages {
+	// Only pages read count against maxListPages: the size retries are
+	// bounded anyway, size never growing back.
+	for pages := 0; pages < maxListPages; {
 		q := url.Values{"limit": {fmt.Sprint(size)}}
 		if selector != "" {
 			q.Set("labelSelector", selector)
@@ -221,6 +223,7 @@ func (c *Client) List(ctx context.Context, selector string) ([]Task, error) {
 		if err != nil {
 			return nil, err
 		}
+		pages++
 		out = append(out, page.Items...)
 		if token = page.Metadata.Continue; token == "" {
 			return out, nil
@@ -324,10 +327,13 @@ const (
 	ResultNotFound = "not_found"
 	ResultRefused  = "refused"
 	ResultError    = "error"
+	// ResultTooLarge is a response over its byte cap: a list page read
+	// again smaller, not an API failure.
+	ResultTooLarge = "too_large"
 )
 
 // Results lists every result an observer may get, for bounded labels.
-var Results = []string{ResultOK, ResultNotFound, ResultRefused, ResultError}
+var Results = []string{ResultOK, ResultNotFound, ResultRefused, ResultError, ResultTooLarge}
 
 // Ops lists every observed operation.
 var Ops = []string{"create", "get", "list"}
@@ -343,6 +349,8 @@ func (c *Client) observe(op string, err error, d time.Duration) {
 		result = ResultNotFound
 	case IsRefused(err) || IsAlreadyExists(err):
 		result = ResultRefused
+	case errors.Is(err, errTooLarge):
+		result = ResultTooLarge
 	default:
 		result = ResultError
 	}

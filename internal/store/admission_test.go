@@ -79,12 +79,14 @@ func singleConnStore(t *testing.T, dbURL string) *store.Store {
 	return s
 }
 
-// waitForLockWaiter returns once a session waits on an advisory lock.
+// waitForLockWaiter returns once a session waits on an advisory lock in
+// this test's database.
 func waitForLockWaiter(t *testing.T, dbURL string) {
 	t.Helper()
 	deadline := time.Now().Add(lockWaitGuard)
 	for time.Now().Before(deadline) {
-		if count(t, dbURL, `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`) > 0 {
+		if count(t, dbURL, `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+			AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`) > 0 {
 			return
 		}
 		time.Sleep(admissionPoll)

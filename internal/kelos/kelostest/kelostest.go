@@ -41,6 +41,9 @@ type Server struct {
 	failCreates []int
 	uid         int
 	lastAuth    string
+	// snapshots are the lists being paged, by continue-token prefix: a
+	// later page reads the list as its first page saw it.
+	snapshots [][]json.RawMessage
 }
 
 // DropResponse in FailCreates applies the create and then cuts the
@@ -221,21 +224,11 @@ func (s *Server) get(w http.ResponseWriter, name string) {
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	selector := parseSelector(r.URL.Query().Get("labelSelector"))
-	s.mu.Lock()
-	var items []json.RawMessage
-	for _, name := range s.order {
-		var t kelos.Task
-		if json.Unmarshal(s.tasks[name], &t) == nil && selector.matches(t.Metadata.Labels) {
-			items = append(items, s.tasks[name])
-		}
-	}
-	s.mu.Unlock()
-	start := 0
-	fmt.Sscan(r.URL.Query().Get("continue"), &start) //nolint:errcheck // "" is the first page
+	items, snap, start := s.page(r)
 	end, next := len(items), ""
 	if s.PageSize > 0 && start+s.PageSize < len(items) {
-		end, next = start+s.PageSize, fmt.Sprint(start+s.PageSize)
+		end = start + s.PageSize
+		next = fmt.Sprintf("%d/%d", snap, end)
 	}
 	page := struct {
 		Metadata map[string]string `json:"metadata"`
@@ -243,6 +236,28 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	}{Metadata: map[string]string{"continue": next}, Items: items[min(start, len(items)):end]}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page) //nolint:errcheck // test server
+}
+
+// page returns the list a request pages through, its snapshot and the
+// offset of the page: the matching Tasks now on a first page, the snapshot its first
+// page took on a later one (a continue token "<snapshot>/<offset>"), as
+// the API server serves a list's pages from one resourceVersion.
+func (s *Server) page(r *http.Request) (items []json.RawMessage, snap, start int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := fmt.Sscanf(r.URL.Query().Get("continue"), "%d/%d", &snap, &start); err == nil &&
+		snap >= 0 && snap < len(s.snapshots) {
+		return s.snapshots[snap], snap, start
+	}
+	selector := parseSelector(r.URL.Query().Get("labelSelector"))
+	for _, name := range s.order {
+		var t kelos.Task
+		if json.Unmarshal(s.tasks[name], &t) == nil && selector.matches(t.Metadata.Labels) {
+			items = append(items, s.tasks[name])
+		}
+	}
+	s.snapshots = append(s.snapshots, items)
+	return items, len(s.snapshots) - 1, 0
 }
 
 type selector map[string]string

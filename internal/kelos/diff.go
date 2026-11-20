@@ -96,9 +96,12 @@ func deleteMeta(m map[string]any, key string) {
 	}
 }
 
-// unorderedLists are the fields whose lists of named objects Kubernetes
-// merges by name, so their order is no difference. Any other list
-// (agentConfigRefs, extraInitContainers) is compared in order.
+// unorderedLists are the fields whose lists of named objects are compared
+// by name, so their order is no difference: env and volumes (Kubernetes
+// merges them by name) and volumeMounts (merged by mountPath; a list
+// with a name twice, one volume mounted twice, falls back to the order).
+// Any other list (agentConfigRefs, extraInitContainers) is compared in
+// order.
 var unorderedLists = map[string]bool{"env": true, "volumes": true, "volumeMounts": true}
 
 // walk appends the paths where a and b differ: into objects key by key,

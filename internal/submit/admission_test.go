@@ -3,8 +3,11 @@ package submit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/kelos"
@@ -62,6 +65,28 @@ func TestRefusedReadDeadLettersTheSubmission(t *testing.T) {
 	st, attempts, _ := e.action(t, name)
 	if st != store.ActionFailed || attempts != 1 || e.submissions(ResultRefused) != 1 || len(e.kelos.Creates()) != 0 {
 		t.Fatalf("a refused read: %s after %d attempts, %d creates; want dead-lettered at once", st, attempts,
+			len(e.kelos.Creates()))
+	}
+}
+
+// busyAdmission never gets the lock: its wait runs out, as one queued
+// behind other submissions past the attempt deadline.
+type busyAdmission struct{ Runs }
+
+func (busyAdmission) WithAdmission(context.Context, func(context.Context) error) error {
+	return fmt.Errorf("admission lock: %w", context.DeadlineExceeded)
+}
+
+func TestAdmissionWaitTimeoutDefersUncounted(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	e.exec.Runs = busyAdmission{e.store}
+	name := e.implement(t, implementID, "claude-opus") // on its task's branch
+	e.perform(t)
+	st, attempts, msg := e.action(t, name)
+	if st != store.ActionPending || attempts != 0 || msg != "waiting: admission lock: context deadline exceeded" ||
+		len(e.kelos.Creates()) != 0 || e.submissions(ResultAdmission) != 1 ||
+		testutil.ToFloat64(e.metrics.Deferred.WithLabelValues(store.QueueActions, LimitAdmission)) != 1 {
+		t.Fatalf("lock wait ran out: %s, %d attempts, %q, %d creates; want deferred, uncounted", st, attempts, msg,
 			len(e.kelos.Creates()))
 	}
 }

@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome, a run's state, rerun fields and built Task, an action's queue columns, a shadow Task's comparison; nothing on `decisions`); on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, nothing else (no `delete`, no Secrets) |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields and built Task, an action's queue columns, a shadow Task's comparison; nothing on `decisions`); on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, nothing else (no `delete`, no Secrets) |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -115,6 +115,7 @@ the legacy ones.
 | `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded |
 
 Prompt, label and annotation values, agent config names and pod strings
+(pod `labels` aside: they are literal, and a `{{` in one is refused)
 holding `{{` are Go templates over the legacy Kelos variables (`.task`,
 `.comment`, `.Title`, `.Body`, `.description`, `.author`,
 `.Context.comments`, `.Number`, `.URL`, `.Branch`, `.Event`, `.Action`,
@@ -155,7 +156,7 @@ a `Waiting` Task in Kelos. The database must be UTF-8 (built Tasks are
   `gordon_upstream_requests_total{provider,result}`, `gordon_upstream_request_duration_seconds{provider}`,
   `gordon_kelos_requests_total{op,result}`, `gordon_kelos_request_duration_seconds{op}`,
   `gordon_kelos_submissions_total{result}` (`created`, `recovered`, `collision`, `deferred-limit`,
-  `deferred-branch`, `refused`, `ambiguous`, `error`), `gordon_run_observations_total{state}`,
+  `deferred-branch`, `deferred-admission`, `refused`, `ambiguous`, `error`), `gordon_run_observations_total{state}`,
   `gordon_shadow_comparisons_total{family,result}` (`match`, `differ`, `missing`),
   `gordon_reconcile_runs_total{result}`, `gordon_reconcile_duration_seconds`,
   `gordon_reconcile_last_success_timestamp_seconds`, `gordon_leases_expired_total{queue}`,

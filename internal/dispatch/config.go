@@ -190,6 +190,9 @@ func (c Config) Validate() error {
 		if err := checkKeys(p.Pod.Labels); err != nil {
 			return fmt.Errorf("dispatch config: profile %s: %w", name, err)
 		}
+		if err := checkLiteral(p.Pod.Labels); err != nil {
+			return fmt.Errorf("dispatch config: profile %s: %w", name, err)
+		}
 	}
 	return nil
 }
@@ -200,6 +203,18 @@ func checkKeys(sets ...map[string]string) error {
 			if slices.Contains(reservedKeys, k) {
 				return fmt.Errorf("%s is set by Gordon", k)
 			}
+		}
+	}
+	return nil
+}
+
+// checkLiteral refuses a template in a pod label: pod labels grant
+// network access, so they are the profile's literal values, never
+// rendered from task data.
+func checkLiteral(labels map[string]string) error {
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
+		if strings.Contains(k, "{{") || strings.Contains(labels[k], "{{") {
+			return fmt.Errorf("pod label %s: templates are not rendered in pod labels", k)
 		}
 	}
 	return nil

@@ -37,6 +37,12 @@ func TestValidateRefusals(t *testing.T) {
 		"profile reserved pod label": {func(c *dispatch.Config) {
 			c.Profiles["default"] = dispatch.ProfileSpec{Pod: dispatch.Pod{Labels: map[string]string{dispatch.ManagedLabel: "x"}}}
 		}, "profile default: " + dispatch.ManagedLabel},
+		"profile pod label template": {func(c *dispatch.Config) {
+			c.Profiles["default"] = dispatch.ProfileSpec{Pod: dispatch.Pod{Labels: map[string]string{"net": "{{.project}}"}}}
+		}, "profile default: pod label net: templates are not rendered in pod labels"},
+		"profile pod label key template": {func(c *dispatch.Config) {
+			c.Profiles["default"] = dispatch.ProfileSpec{Pod: dispatch.Pod{Labels: map[string]string{"{{.project}}": "true"}}}
+		}, "profile default: pod label {{.project}}: templates are not rendered"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -2,8 +2,11 @@ package kelostest_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -55,4 +58,57 @@ func TestAdmitMayReadTheServer(t *testing.T) {
 	if _, ok := srv.Task("a"); !ok || !ran || existed {
 		t.Fatalf("created %v, admission ran %v and saw the Task already %v", ok, ran, existed)
 	}
+}
+
+// TestListPagesReadOneSnapshot: a Task deleted between two pages of a
+// list still shows on the later page, and the next list no longer has it.
+func TestListPagesReadOneSnapshot(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	srv.PageSize = 1
+	for _, n := range []string{"a", "b", "c"} {
+		srv.Put(named(n))
+	}
+	first := listPage(t, srv, "")
+	srv.Delete("b")
+	second := listPage(t, srv, first.Metadata.Continue)
+	third := listPage(t, srv, second.Metadata.Continue)
+	got := []string{first.name(t), second.name(t), third.name(t)}
+	if !slices.Equal(got, []string{"a", "b", "c"}) || third.Metadata.Continue != "" {
+		t.Fatalf("pages = %v (last continue %q), want a b c from the first page's list", got, third.Metadata.Continue)
+	}
+	again := listPage(t, srv, "")
+	if next := listPage(t, srv, again.Metadata.Continue); next.name(t) != "c" {
+		t.Fatalf("a new list's second page = %s, want c with b deleted", next.name(t))
+	}
+}
+
+type listResponse struct {
+	Metadata struct {
+		Continue string `json:"continue"`
+	} `json:"metadata"`
+	Items []kelos.Task `json:"items"`
+}
+
+func (l listResponse) name(t *testing.T) string {
+	t.Helper()
+	if len(l.Items) != 1 {
+		t.Fatalf("page of %d items, want 1", len(l.Items))
+	}
+	return l.Items[0].Metadata.Name
+}
+
+func listPage(t *testing.T, srv *kelostest.Server, token string) listResponse {
+	t.Helper()
+	u := srv.URL + "/apis/" + kelos.APIVersion + "/namespaces/" + ns + "/tasks?continue=" + url.QueryEscape(token)
+	resp, err := srv.Client().Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out listResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

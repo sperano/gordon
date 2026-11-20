@@ -45,6 +45,7 @@ const (
 	ResultCollision = "collision"
 	ResultLimit     = "deferred-limit"
 	ResultBranch    = "deferred-branch"
+	ResultAdmission = "deferred-admission"
 	ResultRefused   = "refused"
 	ResultAmbiguous = "ambiguous"
 	ResultError     = "error"
@@ -52,12 +53,13 @@ const (
 
 // Results lists every submission result.
 var Results = []string{ResultCreated, ResultRecovered, ResultCollision, ResultLimit, ResultBranch,
-	ResultRefused, ResultAmbiguous, ResultError}
+	ResultAdmission, ResultRefused, ResultAmbiguous, ResultError}
 
 // Deferral limit labels (deferred_total{queue="actions"}).
 const (
-	LimitVariant = "variant"
-	LimitBranch  = "branch"
+	LimitVariant   = "variant"
+	LimitBranch    = "branch"
+	LimitAdmission = "admission"
 )
 
 // ErrNoTask is a submit action whose run has no built Task.
@@ -112,13 +114,21 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 	// any replica, both pass a check one of them fills.
 	var created kelos.Task
 	var createErr error
+	locked := false
 	if err := e.Runs.WithAdmission(ctx, func(ctx context.Context) error {
+		locked = true
 		if err := e.admit(ctx, r); err != nil {
 			return err
 		}
 		created, createErr = e.Kelos.Create(ctx, *r.Task)
 		return nil
 	}); err != nil {
+		if !locked && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+			// Queued behind other submissions, nothing sent: a deferral,
+			// not an ambiguous, counted attempt.
+			e.count(ResultAdmission)
+			return worker.Deferred(fmt.Errorf("waiting: %w", err), LimitAdmission, e.BusyDelay)
+		}
 		return err
 	}
 	return e.created(ctx, r, created, createErr)
