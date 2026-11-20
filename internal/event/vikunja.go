@@ -34,10 +34,12 @@ type vikunjaBody struct {
 
 type vikunjaData struct {
 	Task *struct {
-		ID        *int64 `json:"id"`
-		ProjectID int64  `json:"project_id"`
-		Done      bool   `json:"done"`
-		Labels    []struct {
+		ID          *int64 `json:"id"`
+		ProjectID   int64  `json:"project_id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Done        bool   `json:"done"`
+		Labels      []struct {
 			Title string `json:"title"`
 		} `json:"labels"`
 		Assignees []struct {
@@ -93,7 +95,7 @@ func ParseVikunja(body []byte) (Event, error) {
 
 func vikunjaTask(data vikunjaData) Task {
 	t := data.Task
-	task := Task{ID: *t.ID, ProjectID: t.ProjectID, Done: t.Done}
+	task := Task{ID: *t.ID, ProjectID: t.ProjectID, Title: t.Title, Description: t.Description, Done: t.Done}
 	for _, l := range t.Labels {
 		task.Labels = append(task.Labels, l.Title)
 	}

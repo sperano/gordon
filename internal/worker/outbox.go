@@ -29,6 +29,9 @@ import (
 // that may have reached the provider: applied is true when the write is
 // already there, so it is not made twice. Any Recover error leaves the
 // outcome unknown: the action stays ambiguous and is never written blind.
+//
+// A write the provider cannot take yet (a full limit, a held branch)
+// returns Deferred: the action stays queued without counting an attempt.
 type Executor interface {
 	Execute(ctx context.Context, a action.Action) error
 	Recover(ctx context.Context, a action.Action) (applied bool, err error)
@@ -44,6 +47,26 @@ type permanentError struct{ err error }
 func (e permanentError) Error() string { return "permanent: " + e.err.Error() }
 func (e permanentError) Unwrap() error { return e.err }
 
+// deferredError is a write not attempted because the provider is busy
+// for it (a limit or a lock outside this process).
+type deferredError struct {
+	err   error
+	limit string
+	delay time.Duration
+}
+
+func (e deferredError) Error() string { return "deferred: " + e.err.Error() }
+func (e deferredError) Unwrap() error { return e.err }
+
+// Deferred marks err as a write not made because the provider cannot
+// take it now (a full Kelos concurrency limit, a branch held by another
+// Task): the action stays queued with its attempts unchanged, due again
+// after delay (the outbox's DeferDelay when <= 0), and limit names the
+// deferred_total limit label.
+func Deferred(err error, limit string, delay time.Duration) error {
+	return deferredError{err: err, limit: limit, delay: delay}
+}
+
 // Ambiguous marks err as an outcome that may have applied the write.
 func Ambiguous(err error) error { return ambiguousError{err} }
 
@@ -51,7 +74,9 @@ func Ambiguous(err error) error { return ambiguousError{err} }
 func Permanent(err error) error { return permanentError{err} }
 
 func isAmbiguous(err error) bool { return errors.As(err, new(ambiguousError)) }
-func isPermanent(err error) bool { return errors.As(err, new(permanentError)) }
+
+// IsPermanent reports whether err, or an error it wraps, is Permanent.
+func IsPermanent(err error) bool { return errors.As(err, new(permanentError)) }
 
 // Action results, the action_attempts_total result label.
 const (
@@ -152,6 +177,14 @@ func (o *Outbox) Perform(ctx context.Context, c store.ClaimedAction) {
 	start := time.Now()
 	result, err := o.attempt(ctx, ex, c)
 	o.Metrics.ActionDuration.WithLabelValues(kind).Observe(time.Since(start).Seconds())
+	if d, ok := errors.AsType[deferredError](err); ok && result == ResultDeferred {
+		delay := d.delay
+		if delay <= 0 {
+			delay = o.DeferDelay
+		}
+		o.deferAction(ctx, log, c, kind, d.limit, delay, logging.Scrub(d.err.Error()))
+		return
+	}
 	o.finish(ctx, log, c, kind, result, err)
 }
 
@@ -178,7 +211,9 @@ func (o *Outbox) attempt(ctx context.Context, ex Executor, c store.ClaimedAction
 	switch {
 	case err == nil:
 		return ResultDone, nil
-	case isPermanent(err):
+	case errors.As(err, new(deferredError)):
+		return ResultDeferred, err
+	case IsPermanent(err):
 		return ResultFailed, err
 	case isAmbiguous(err):
 		return ResultAmbiguous, err

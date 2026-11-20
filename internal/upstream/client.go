@@ -96,6 +96,13 @@ func NewLimit(n int) chan struct{} {
 // out. valid, when set, checks the decoded response (that it is the object
 // asked for); its error is an invalid read, observed as such.
 func (c *Client) get(ctx context.Context, path string, query url.Values, out any, valid func() error) error {
+	return c.getCapped(ctx, path, query, out, valid, MaxResponseBytes)
+}
+
+// getCapped is get with the body capped at limit bytes (at most
+// MaxResponseBytes): a longer body is Invalid, read no further than the cap.
+func (c *Client) getCapped(ctx context.Context, path string, query url.Values, out any, valid func() error, limit int) error {
+	limit = min(limit, MaxResponseBytes)
 	if c.Limit != nil {
 		select {
 		case c.Limit <- struct{}{}:
@@ -131,12 +138,12 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 		io.Copy(io.Discard, io.LimitReader(resp.Body, MaxResponseBytes)) //nolint:errcheck // drained for reuse
 		return c.fail(class, resp.StatusCode, nil, time.Since(start))
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return c.fail(Unavailable, resp.StatusCode, err, time.Since(start))
 	}
-	if len(body) > MaxResponseBytes {
-		return c.fail(Invalid, resp.StatusCode, fmt.Errorf("response over %d bytes", MaxResponseBytes), time.Since(start))
+	if len(body) > limit {
+		return c.fail(Invalid, resp.StatusCode, fmt.Errorf("response over %d bytes", limit), time.Since(start))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return c.fail(Invalid, resp.StatusCode, err, time.Since(start))

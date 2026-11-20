@@ -32,6 +32,13 @@ const LimitProject = "project"
 // with the rest of the lease left for recording it.
 const readShareOfLease = 2
 
+// TaskPreparer builds the Kelos Task of every run a decision dispatches
+// (dispatch.Preparer), turning a family whose Task cannot be built into a
+// reject.
+type TaskPreparer interface {
+	Prepare(ctx context.Context, inboxID int64, ev event.Event, st route.State, dec *route.Decision)
+}
+
 // Processor decides inbox items: it reads the fresh upstream state,
 // routes the delivery against the ledger and records the decision with
 // its executed runs and actions in one fenced transaction.
@@ -39,6 +46,10 @@ type Processor struct {
 	Store  *store.Store
 	Router route.Router
 	State  StateReader
+	// Tasks, when set, builds each dispatched run's Task before the
+	// decision is recorded; without it runs carry no Task (a worker
+	// without dispatch configuration, shadow only).
+	Tasks TaskPreparer
 	// Shadow records every decision and executes none, whatever the
 	// ownership table says: no run and no action is queued.
 	Shadow bool
@@ -90,8 +101,13 @@ func (p *Processor) Process(ctx context.Context, it store.Item) {
 	var st route.State
 	var readErr error
 	led := p.Store.Ledger(ctx)
-	if ev, err := event.Parse(d); err == nil {
-		st, readErr = p.read(ctx, ev, led)
+	ev, parseErr := event.Parse(d)
+	// The state read and the Task preparation share one deadline, so the
+	// rest of the lease stays for recording the decision.
+	readCtx, cancel := p.readContext(ctx)
+	defer cancel()
+	if parseErr == nil {
+		st, readErr = p.State.Read(readCtx, ev, led)
 	}
 	dec := p.Router.DecideAuthenticated(d, st, led)
 	switch {
@@ -100,18 +116,20 @@ func (p *Processor) Process(ctx context.Context, it store.Item) {
 	case transientRead(readErr) || needsRetry(dec):
 		p.retry(ctx, log, it, source, RetryState, readErr)
 	default:
+		if p.Tasks != nil && parseErr == nil {
+			p.Tasks.Prepare(readCtx, it.ID, ev, st, &dec)
+		}
 		p.complete(ctx, log, it, source, dec)
 	}
 }
 
-// read reads the fresh state within its share of the lease.
-func (p *Processor) read(ctx context.Context, ev event.Event, led route.Ledger) (route.State, error) {
-	if p.LeaseTTL > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.LeaseTTL/readShareOfLease)
-		defer cancel()
+// readContext is ctx cut at the read share of the lease: the state read
+// and the Task preparation (the task comments are one more read) together.
+func (p *Processor) readContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if p.LeaseTTL <= 0 {
+		return ctx, func() {}
 	}
-	return p.State.Read(ctx, ev, led)
+	return context.WithTimeout(ctx, p.LeaseTTL/readShareOfLease)
 }
 
 // transientRead reports a read that failed for a reason that may pass (an

@@ -1,0 +1,639 @@
+{
+  "apiVersion": "kelos.dev/v1alpha2",
+  "kind": "Task",
+  "metadata": {
+    "annotations": {
+      "vikunja.spe.quebec/repository": "sperano/gordon",
+      "vikunja.spe.quebec/source": "vikunja",
+      "vikunja.spe.quebec/source-instance": "vikunja.spe.quebec"
+    },
+    "labels": {
+      "kelos.dev/taskspawner": "vikunja-gordon-claude-sonnet",
+      "kelos.spe.quebec/mode": "implement",
+      "kelos.spe.quebec/profile": "default",
+      "vikunja.spe.quebec/project": "gordon",
+      "vikunja.spe.quebec/task": "1624",
+      "vikunja.spe.quebec/variant": "claude-sonnet"
+    },
+    "name": "vikunja-gordon-claude-sonnet-1624",
+    "namespace": "kelos-agents"
+  },
+  "spec": {
+    "branch": "kelos/vikunja-1624",
+    "podFailurePolicy": {
+      "rules": [
+        {
+          "action": "Ignore",
+          "onPodConditions": [
+            {
+              "type": "DisruptionTarget"
+            }
+          ]
+        },
+        {
+          "action": "FailJob",
+          "onExitCodes": {
+            "containerName": "wait-for-blockers",
+            "operator": "In",
+            "values": [
+              2,
+              3,
+              143
+            ]
+          }
+        },
+        {
+          "action": "FailJob",
+          "onExitCodes": {
+            "containerName": "kelos-agent",
+            "operator": "In",
+            "values": [
+              75
+            ]
+          }
+        }
+      ]
+    },
+    "prompt": "Vikunja task 1624 in project Gordon: Ship the thing\n\n<p>Make it so.</p>\n\nTask comments, fetched from the Vikunja API when the task was picked\nup: raw JSON, one object per comment, \"comment\" is HTML, \"created\" is\nits timestamp. The description plus these comments are the spec; when\nthey conflict, the later comment wins.\n\n<vikunja-comments>\n[{\"id\":1,\"comment\":\"<p>earlier</p>\",\"author\":{\"username\":\"eric\"}}]\n</vikunja-comments>\n\nIf that block is empty, the fetch failed: read the comments with the\nvikunja MCP tools instead.\n\nThe task's attachments were downloaded into `/workspace/attachments` when this\npod started, each as `<attachment id>-<file name>` (the id in the\ndescription's `.../attachments/<id>` image URLs). `/workspace/attachments/index.md`\nlists every attachment with its path or why it was skipped; no index means\nthe download failed. Read the ones the task relies on before planning (the\nRead tool shows images).\n\nOpen the pull request with `gh pr create --base main --label kelos:claude-sonnet --label kelos:fix-suggestions`:\nthe label routes `/gordon` follow-up comments on it\nback to the same agent type.\n`kelos:fix-suggestions` also has the review follow-ups fix the reviewers' suggestions\ntoo, not only their Blocking findings.\n\nThis pod may have waited for the tasks blocking this one after the\nrepository was cloned. Before starting, run `git fetch origin\n\"$KELOS_BASE_BRANCH\" && git merge --ff-only FETCH_HEAD`; if the\nmerge refuses because the branch already has its own commits, leave\nit as it is.\nThe model-free PR-open automation comments on Vikunja task\n1624 with the PR link; do not duplicate it.\n",
+    "ttlSecondsAfterFinished": 259200,
+    "worker": {
+      "agentConfigRefs": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "vikunja-claude-sonnet"
+        }
+      ],
+      "credentials": {
+        "secretRef": {
+          "name": "claude-oauth"
+        },
+        "type": "oauth"
+      },
+      "effort": "medium",
+      "image": "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61",
+      "model": "claude-sonnet-5",
+      "podOverrides": {
+        "affinity": {
+          "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "node-role.kubernetes.io/control-plane",
+                      "operator": "DoesNotExist"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "podAntiAffinity": {
+            "preferredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "podAffinityTerm": {
+                  "labelSelector": {
+                    "matchExpressions": [
+                      {
+                        "key": "kelos.dev/component",
+                        "operator": "In",
+                        "values": [
+                          "task"
+                        ]
+                      }
+                    ]
+                  },
+                  "topologyKey": "kubernetes.io/hostname"
+                },
+                "weight": 100
+              }
+            ]
+          }
+        },
+        "env": [
+          {
+            "name": "KELOS_AGENT",
+            "value": "claude-sonnet"
+          },
+          {
+            "name": "AGENT_MODEL",
+            "value": "claude-sonnet-5"
+          },
+          {
+            "name": "AGENT_EFFORT",
+            "value": "medium"
+          },
+          {
+            "name": "CARGO_BUILD_JOBS",
+            "value": "8"
+          },
+          {
+            "name": "GIT_AUTHOR_NAME",
+            "value": "\u00c9ric Sp\u00e9rano"
+          },
+          {
+            "name": "GIT_AUTHOR_EMAIL",
+            "value": "eric.sperano@gmail.com"
+          },
+          {
+            "name": "GIT_COMMITTER_NAME",
+            "value": "\u00c9ric Sp\u00e9rano"
+          },
+          {
+            "name": "GIT_COMMITTER_EMAIL",
+            "value": "eric.sperano@gmail.com"
+          },
+          {
+            "name": "KELOS_PR_OPENER_URL",
+            "value": "http://127.0.0.1:8790"
+          },
+          {
+            "name": "KELOS_PR_OPENER_REPOSITORY",
+            "value": "sperano/gordon"
+          },
+          {
+            "name": "KELOS_AGENT_EXIT_MARKER",
+            "value": "/kelos/agent-lifecycle/agent-exited"
+          },
+          {
+            "name": "KELOS_AGENT_HEARTBEAT",
+            "value": "/kelos/agent-lifecycle/agent-heartbeat"
+          },
+          {
+            "name": "WIKI_PASSWORD",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "password",
+                "name": "authentik-agent-claude-sonnet"
+              }
+            }
+          },
+          {
+            "name": "WIKI_USERNAME",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "username",
+                "name": "authentik-agent-claude-sonnet"
+              }
+            }
+          },
+          {
+            "name": "VIKUNJA_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "url",
+                "name": "vikunja-agent-claude-sonnet"
+              }
+            }
+          },
+          {
+            "name": "VIKUNJA_API_TOKEN",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "token",
+                "name": "vikunja-agent-claude-sonnet"
+              }
+            }
+          }
+        ],
+        "extraInitContainers": [
+          {
+            "command": [
+              "python3",
+              "/opt/wait-for-blockers/wait_for_blockers.py"
+            ],
+            "env": [
+              {
+                "name": "VIKUNJA_URL",
+                "value": "https://vikunja.spe.quebec/api/v1"
+              },
+              {
+                "name": "VIKUNJA_AUTHORIZATION",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "authorization",
+                    "name": "vikunja-agent-gordon"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_TASK_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['kelos.dev/task']"
+                  }
+                }
+              },
+              {
+                "name": "AGENT_ERROR_LABEL",
+                "value": "agent-error"
+              },
+              {
+                "name": "ACTION_NEEDED_LABEL",
+                "value": "action-needed"
+              },
+              {
+                "name": "KELOS_CONSOLE_URL",
+                "value": "https://kelos.spe.quebec"
+              },
+              {
+                "name": "KELOS_TASK_NAMESPACE",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.namespace"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_NODE_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "spec.nodeName"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_AGENT",
+                "value": "claude-sonnet"
+              },
+              {
+                "name": "AGENT_MODEL",
+                "value": "claude-sonnet-5"
+              },
+              {
+                "name": "AGENT_EFFORT",
+                "value": "medium"
+              },
+              {
+                "name": "LUCARNE_URL",
+                "value": "https://lucarne.spe.quebec"
+              },
+              {
+                "name": "LUCARNE_CLUSTER",
+                "value": "hollingsworth"
+              },
+              {
+                "name": "KELOS_JOB_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['batch.kubernetes.io/job-name']"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_JOB_UID",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['batch.kubernetes.io/controller-uid']"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_POD_UID",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.uid"
+                  }
+                }
+              },
+              {
+                "name": "RUN_LINK_TOKEN_DIR",
+                "value": "/var/run/kelos-run-link"
+              },
+              {
+                "name": "SILLAGE_URL",
+                "value": "https://sillage.spe.quebec"
+              },
+              {
+                "name": "MAX_WAIT_SECONDS",
+                "value": "604800"
+              },
+              {
+                "name": "POLL_INTERVAL_SECONDS",
+                "value": "300"
+              },
+              {
+                "name": "MISSING_TASK_UNBLOCKS",
+                "value": "true"
+              },
+              {
+                "name": "IN_PROGRESS_LABEL",
+                "value": "in progress"
+              },
+              {
+                "name": "IN_PROGRESS_BUCKET",
+                "value": "Doing"
+              },
+              {
+                "name": "BACKLOG_BUCKET",
+                "value": "To-Do"
+              },
+              {
+                "name": "VIKUNJA_ASSIGNEE",
+                "value": "claude-sonnet"
+              },
+              {
+                "name": "VIKUNJA_AGENT_USERS",
+                "value": "claude-opus,claude-sonnet,claude-fable,claude-haiku,gpt-sol,gpt-astra,deepseek,qwen-coder"
+              }
+            ],
+            "image": "python:3.15-alpine3.24",
+            "name": "wait-for-blockers",
+            "volumeMounts": [
+              {
+                "mountPath": "/opt/wait-for-blockers",
+                "name": "wait-for-blockers",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/var/run/kelos-run-link",
+                "name": "run-link-token",
+                "readOnly": true
+              }
+            ]
+          },
+          {
+            "command": [
+              "sh",
+              "-c",
+              "python3 /opt/kelos-tools/fetch_attachments.py || true"
+            ],
+            "env": [
+              {
+                "name": "VIKUNJA_URL",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "url",
+                    "name": "vikunja-agent-claude-sonnet"
+                  }
+                }
+              },
+              {
+                "name": "VIKUNJA_AUTHORIZATION",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "authorization",
+                    "name": "vikunja-agent-claude-sonnet"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_TASK_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['kelos.dev/task']"
+                  }
+                }
+              },
+              {
+                "name": "ATTACHMENTS_DIR",
+                "value": "/workspace/attachments"
+              },
+              {
+                "name": "MAX_ATTACHMENTS",
+                "value": "10"
+              },
+              {
+                "name": "MAX_ATTACHMENT_BYTES",
+                "value": "10485760"
+              }
+            ],
+            "image": "python:3.15-alpine3.24",
+            "name": "fetch-attachments",
+            "securityContext": {
+              "runAsUser": 65534
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/opt/kelos-tools",
+                "name": "agent-tools",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/workspace/attachments",
+                "name": "vikunja-attachments"
+              }
+            ]
+          },
+          {
+            "command": [
+              "/opt/sidecar-guard/sidecar_guard.sh",
+              "/kelos/agent-lifecycle/agent-exited",
+              "/kelos/agent-lifecycle/agent-heartbeat",
+              "/kelos/agent-lifecycle/agent-exited.sidecar.pr-opener",
+              "python3",
+              "-I",
+              "-B",
+              "/opt/pr-opener/pr_opener.py"
+            ],
+            "env": [
+              {
+                "name": "PR_OPENER_PORT",
+                "value": "8790"
+              },
+              {
+                "name": "PR_OPENER_TOKEN_FILE",
+                "value": "/kelos/pr-opener-token/token"
+              },
+              {
+                "name": "PR_OPENER_REPOSITORY",
+                "value": "sperano/gordon"
+              },
+              {
+                "name": "PR_OPENER_BASE",
+                "value": "main"
+              },
+              {
+                "name": "PR_OPENER_API_URL",
+                "value": "https://api.github.com"
+              },
+              {
+                "name": "PR_OPENER_TASK_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['kelos.dev/task']"
+                  }
+                }
+              },
+              {
+                "name": "PR_OPENER_TASK_PATTERN",
+                "value": "vikunja-gordon-claude-sonnet-([0-9]+)(?:-retry[0-9]+)?"
+              },
+              {
+                "name": "PR_OPENER_HEAD_PREFIX",
+                "value": "kelos/vikunja-"
+              }
+            ],
+            "image": "python:3.15-alpine3.24",
+            "name": "pr-opener",
+            "resources": {
+              "limits": {
+                "memory": "64Mi"
+              },
+              "requests": {
+                "cpu": "10m",
+                "memory": "32Mi"
+              }
+            },
+            "restartPolicy": "Always",
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 61190,
+              "runAsNonRoot": true,
+              "runAsUser": 61190
+            },
+            "startupProbe": {
+              "exec": {
+                "command": [
+                  "python3",
+                  "-I",
+                  "-B",
+                  "/opt/pr-opener/pr_opener.py",
+                  "--probe"
+                ]
+              },
+              "failureThreshold": 60,
+              "periodSeconds": 1,
+              "timeoutSeconds": 5
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/kelos/pr-opener-token",
+                "name": "pr-opener-token",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/opt/pr-opener",
+                "name": "pr-opener",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/kelos/agent-lifecycle",
+                "name": "agent-lifecycle"
+              },
+              {
+                "mountPath": "/opt/sidecar-guard",
+                "name": "sidecar-guard",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "resources": {
+          "limits": {
+            "memory": "8Gi"
+          },
+          "requests": {
+            "cpu": "3",
+            "memory": "4Gi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/workspace/attachments",
+            "name": "vikunja-attachments"
+          },
+          {
+            "mountPath": "/opt/wiki",
+            "name": "wiki-gql",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/opt/kelos-tools",
+            "name": "agent-tools",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/kelos/agent-lifecycle",
+            "name": "agent-lifecycle"
+          }
+        ],
+        "volumes": [
+          {
+            "configMap": {
+              "name": "wait-for-blockers"
+            },
+            "name": "wait-for-blockers"
+          },
+          {
+            "name": "run-link-token",
+            "secret": {
+              "items": [
+                {
+                  "key": "token",
+                  "path": "token"
+                },
+                {
+                  "key": "ca.crt",
+                  "path": "ca.crt"
+                }
+              ],
+              "optional": true,
+              "secretName": "kelos-run-link-token"
+            }
+          },
+          {
+            "emptyDir": {},
+            "name": "vikunja-attachments"
+          },
+          {
+            "configMap": {
+              "name": "wiki-gql",
+              "optional": true
+            },
+            "name": "wiki-gql"
+          },
+          {
+            "configMap": {
+              "name": "agent-tools",
+              "optional": true
+            },
+            "name": "agent-tools"
+          },
+          {
+            "name": "pr-opener-token",
+            "secret": {
+              "defaultMode": 288,
+              "items": [
+                {
+                  "key": "GITHUB_TOKEN",
+                  "path": "token"
+                }
+              ],
+              "secretName": "github-token"
+            }
+          },
+          {
+            "configMap": {
+              "name": "pr-opener"
+            },
+            "name": "pr-opener"
+          },
+          {
+            "emptyDir": {},
+            "name": "agent-lifecycle"
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "sidecar-guard"
+            },
+            "name": "sidecar-guard"
+          }
+        ]
+      },
+      "type": "claude-code",
+      "workspaceRef": {
+        "name": "gordon"
+      }
+    }
+  }
+}

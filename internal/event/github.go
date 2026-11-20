@@ -41,15 +41,19 @@ type githubBody struct {
 
 // githubComment is a comment or a submitted review.
 type githubComment struct {
-	ID     int64  `json:"id"`
-	NodeID string `json:"node_id"`
-	Body   string `json:"body"`
+	ID       int64  `json:"id"`
+	NodeID   string `json:"node_id"`
+	Body     string `json:"body"`
+	HTMLURL  string `json:"html_url"`
+	ReviewID int64  `json:"pull_request_review_id"`
 }
 
 type githubPullRequest struct {
-	Number int    `json:"number"`
-	State  string `json:"state"`
-	Draft  bool   `json:"draft"`
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
+	Draft   bool   `json:"draft"`
 	// Merged is a pointer so that a closed delivery without it is
 	// refused instead of read as unmerged.
 	Merged *bool      `json:"merged"`
@@ -122,7 +126,7 @@ func ParseGitHub(d Delivery) (Event, error) {
 
 func pullRequest(repo string, p *githubPullRequest) PullRequest {
 	pr := PullRequest{
-		Repository: repo, Number: p.Number, State: p.State, Draft: p.Draft,
+		Repository: repo, Number: p.Number, Title: p.Title, URL: p.HTMLURL, State: p.State, Draft: p.Draft,
 		Merged: p.Merged != nil && *p.Merged, Author: p.User.Login, HeadRef: p.Head.Ref,
 		HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref,
 	}
@@ -145,6 +149,7 @@ func request(ev *Event, raw githubBody) error {
 			return fmt.Errorf("%w: issue_comment without comment or issue", ErrMalformed)
 		}
 		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindIssue, raw.Comment.ID, raw.Comment.NodeID, raw.Comment.Body
+		gh.CommentURL = raw.Comment.HTMLURL
 		gh.OnPullRequest = raw.Issue.PullRequest != nil
 		gh.PullRequest = PullRequest{Repository: gh.Repository, Number: raw.Issue.Number}
 	case GitHubReviewComment:
@@ -152,11 +157,13 @@ func request(ev *Event, raw githubBody) error {
 			return fmt.Errorf("%w: review comment without comment or pull_request", ErrMalformed)
 		}
 		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindInline, raw.Comment.ID, raw.Comment.NodeID, raw.Comment.Body
+		gh.CommentURL, gh.ReviewID = raw.Comment.HTMLURL, raw.Comment.ReviewID
 	case GitHubReview:
 		if raw.Review == nil || raw.PullRequest == nil {
 			return fmt.Errorf("%w: review without review or pull_request", ErrMalformed)
 		}
 		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindReview, raw.Review.ID, raw.Review.NodeID, raw.Review.Body
+		gh.CommentURL = raw.Review.HTMLURL
 	case GitHubPullRequest:
 		if raw.PullRequest == nil {
 			return fmt.Errorf("%w: pull_request event without pull_request", ErrMalformed)

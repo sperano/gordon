@@ -8,6 +8,7 @@ package route
 import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
@@ -67,6 +68,11 @@ type Run struct {
 	Branch   string           `json:"branch,omitempty"`
 	Identity run.Identity     `json:"identity"`
 	Profile  profile.Resolved `json:"profile"`
+	// Task is the Kelos Task the run submits, built after routing
+	// (internal/dispatch). It is not part of the recorded decision: its
+	// prompt quotes the task and its comments, which the runs table keeps
+	// only until body retention.
+	Task *kelos.Task `json:"-"`
 }
 
 // State is the fresh upstream state a decision reads: Gordon re-reads the

@@ -102,11 +102,14 @@ type Vikunja struct {
 
 // Task is a Vikunja task snapshot, from a delivery or a fresh read.
 type Task struct {
-	ID        int64    `json:"id"`
-	ProjectID int64    `json:"project_id"`
-	Done      bool     `json:"done"`
-	Labels    []string `json:"labels"`
-	Assignees []string `json:"assignees"`
+	ID        int64 `json:"id"`
+	ProjectID int64 `json:"project_id"`
+	// Title and Description (HTML) are what a run's prompt quotes.
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Done        bool     `json:"done"`
+	Labels      []string `json:"labels"`
+	Assignees   []string `json:"assignees"`
 	// Buckets holds bucket titles; nil when the snapshot did not carry
 	// them (a raw task.updated or any comment delivery).
 	Buckets []string `json:"buckets"`
@@ -135,6 +138,10 @@ type GitHub struct {
 	// addReaction needs: REST has no reactions on a submitted review.
 	CommentNodeID string
 	Body          string
+	// CommentURL is the comment's or review's html_url; ReviewID is the
+	// review an inline comment belongs to (0 otherwise).
+	CommentURL string
+	ReviewID   int64
 	// OnPullRequest is false for an issue_comment on a plain issue.
 	OnPullRequest bool
 	PullRequest   PullRequest
@@ -145,6 +152,8 @@ type GitHub struct {
 type PullRequest struct {
 	Repository string   `json:"repository"`
 	Number     int      `json:"number"`
+	Title      string   `json:"title,omitempty"`
+	URL        string   `json:"url,omitempty"`
 	State      string   `json:"state"`
 	Draft      bool     `json:"draft"`
 	Merged     bool     `json:"merged"`

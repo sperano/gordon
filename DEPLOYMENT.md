@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs` and `actions`, and `UPDATE` of their mutable columns only (a request's outcome, a run's state and rerun fields, an action's queue columns; nothing on `decisions`); on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | none in this stage; Gordon 04 adds `create/get/list/delete` on `kelos.dev` Tasks in `kelos-agents` |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison; nothing on `decisions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, nothing else (no `delete`, no Secrets) |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -78,12 +78,67 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT`; an item's fresh-state reads, and each outbox attempt (recovery and write), are cut at half of it, the write then being ambiguous |
 | `GORDON_UPSTREAM_TIMEOUT` | `10s` | one upstream request |
 | `GORDON_POLL_INTERVAL` | `1s` | idle wait between claims |
-| `GORDON_MAX_ATTEMPTS` | `20` | inbox retries and attempted actions; then the row is dead-lettered (`failed`). A deferred action (no executor yet, or a full limit) counts no attempt and stays queued |
+| `GORDON_MAX_ATTEMPTS` | `20` | inbox retries and attempted actions; then the row is dead-lettered (`failed`). A deferred action (no executor yet, a full limit, a held branch) counts no attempt and stays queued |
 | `GORDON_RETRY_BASE`, `GORDON_RETRY_MAX` | `5s`, `10m` | exponential backoff |
-| `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full limit |
+| `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full provider or project limit; a full Kelos variant limit, a held branch or a timed-out admission lock wait waits `GORDON_KELOS_BUSY_DELAY` |
 | `GORDON_RECONCILE_INTERVAL` | `30s` | lease expiry, queue gauges, body pruning |
-| `GORDON_BODY_RETENTION` | `168h` | stored bodies of finished rows are dropped after this; keys, decisions, requests and runs stay |
+| `GORDON_BODY_RETENTION` | `168h` | stored bodies of finished rows, and the built Tasks (prompts) of finished runs and compared shadow Tasks, are dropped after this; keys, decisions, requests and runs stay |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight items on SIGTERM; past it their leases expire and another worker recovers them |
+| `GORDON_DISPATCH_CONFIG_FILE` | empty | JSON `dispatch.Config` (unknown fields refused; below). Without it runs carry no Task, nothing touches Kelos, and `GORDON_SHADOW=false` is refused |
+| `GORDON_KELOS_API_URL` | `https://kubernetes.default.svc` | Kubernetes API base |
+| `GORDON_KELOS_TOKEN_FILE` | the pod's ServiceAccount token | re-read per request (projected tokens rotate) |
+| `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
+| `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit, a held branch or a timed-out wait for the admission lock |
+| `GORDON_SHADOW_WINDOW` | `15m` | how long a shadow Task waits for the legacy Task of its name before it is recorded `missing` |
+
+## Dispatch configuration
+
+`GORDON_DISPATCH_CONFIG_FILE` is the trusted half of the legacy spawners'
+`taskTemplate`s; the routing configuration (`GORDON_ROUTING_CONFIG_FILE`,
+`profile.Config`) already resolves each run's agent, image, model, effort,
+credentials, ServiceAccount and (read-only) Workspace. Hollingsworth's
+`helm/gordon` (Gordon 05) renders it from the same templates as the
+spawners; `internal/dispatch/testdata/hollingsworth.json` is made from the
+TaskSpawners rendered from `helm/kelos` at `bf18aa5`, with their variables
+substituted, and the tests hold Gordon's Tasks equal to
+the legacy ones.
+
+| Field | |
+|---|---|
+| `version` | required; recorded on each Task (`gordon.spe.quebec/config-version`, after the routing version) |
+| `namespace` | `kelos-agents` (the only value: every submit action names it) |
+| `comments`, `comments_max_bytes` | quote `GET /tasks/{id}/comments` as `Context.comments` (default cap 256 KiB; a failed or larger read is quoted empty, as the legacy `failurePolicy: Ignore`) |
+| `common_secrets` | Secrets every profile may reference (the admission policy's `commonSecrets`: runner credentials, the variants' Vikunja and Authentik identities, Gordon's own, the run-link token) |
+| `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
+| `workspaces`, `profiles`, `variants` | pod pieces per Workspace (keyed by the project's writing Workspace; they apply to its read-only copy too), per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant and profile needs an entry, `{}` at least: a run without one is rejected (`task-spec-unknown-variant`, `task-spec-unknown-profile`) |
+| `pod` (each piece) | `labels` (profiles only), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`: `resources` and `affinity` objects, each list entry an object with a `name`. Lists concatenate family, Workspace, profile, variant; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
+| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded; a `variants` key not in `variants` is refused |
+
+Prompt, label and annotation values, agent config names and pod strings
+(pod `labels` aside: they are literal, and a `{{` in one is refused)
+holding `{{` are Go templates over the legacy Kelos variables (`.task`,
+`.comment`, `.Title`, `.Body`, `.description`, `.author`,
+`.Context.comments`, `.Number`, `.URL`, `.Branch`, `.Event`, `.Action`,
+`.CommentURL`, `.CommentBody`, `.Payload...`) plus `.project`,
+`.project_title`, `.workspace`, `.repository`, `.variant`, `.reviewer`,
+`.profile`, `.mode`, `.model`, `.effort`, `.branch` (`dispatch.Data`); a
+template that does not parse refuses the config at startup, a missing
+variable refuses the run. Gordon alone sets
+`kelos.spe.quebec/profile`, `kelos.spe.quebec/mode`,
+`vikunja.spe.quebec/discuss` (discuss), `vikunja.spe.quebec/variant`,
+`gordon.spe.quebec/managed` and the `gordon.spe.quebec/inbox` annotation
+(the generation's marker that tells its own Task from another
+submitter's); the ServiceAccount and Workspace come from the profile. A
+pod is the family's, Workspace's, profile's and variant's pieces in that
+order. A run that cannot be built, or whose Task references a Secret its
+profile does not grant, is a `reject` (`task-spec-<code>`) with nothing
+queued.
+
+Limits and the branch check are exact across worker replicas: each
+check and the create it admits hold a Postgres advisory lock. A held branch (an unfinished Task on the same
+Workspace and `spec.branch`) keeps the submission in the outbox instead of
+a `Waiting` Task in Kelos. The database must be UTF-8 (built Tasks are
+`jsonb` with non-ASCII text).
 
 ## Probes and metrics
 
@@ -100,6 +155,10 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
   `gordon_action_attempts_total{kind,result}`, `gordon_action_duration_seconds{kind}`,
   `gordon_action_latency_seconds{kind}`,
   `gordon_upstream_requests_total{provider,result}`, `gordon_upstream_request_duration_seconds{provider}`,
+  `gordon_kelos_requests_total{op,result}`, `gordon_kelos_request_duration_seconds{op}`,
+  `gordon_kelos_submissions_total{result}` (`created`, `recovered`, `collision`, `deferred-limit`,
+  `deferred-branch`, `deferred-admission`, `refused`, `ambiguous`, `error`), `gordon_run_observations_total{state}`,
+  `gordon_shadow_comparisons_total{family,result}` (`match`, `differ`, `missing`),
   `gordon_reconcile_runs_total{result}`, `gordon_reconcile_duration_seconds`,
   `gordon_reconcile_last_success_timestamp_seconds`, `gordon_leases_expired_total{queue}`,
   `gordon_bodies_pruned_total`, plus the Go and process collectors.
@@ -107,13 +166,17 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 Suggested alerts: `gordon_queue_oldest_age_seconds{state="pending"}` above
 the retry cap, any `gordon_queue_depth{state="failed"}` or
 `{queue="actions",state="ambiguous"}`, reconciliation not successful for
-several intervals, `gordon_intake_requests_total{result="unavailable"}`.
+several intervals, `gordon_intake_requests_total{result="unavailable"}`,
+`gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
+a submission's request: the lookup or the admission list before the
+create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
 
 ## Logs
 
 One JSON object per line on stdout. Correlation keys: `inbox_id`,
-`delivery_key`, `request_key`, `source`, `kind`, `action_id`, `action_key`;
-a decision's run names are in its family's `runs` field. Bodies, comments and prompts are never logged; credential-shaped
+`delivery_key`, `request_key`, `source`, `kind`, `action_id`, `action_key`,
+`task` (a Kelos Task name);
+a decision's run names are in its family's `runs` field. Bodies, comments and prompts are never logged (a built Task, prompt included, lives in `runs.task` or `shadow_tasks.task` until `GORDON_BODY_RETENTION` after the run finished or the comparison); credential-shaped
 values in any field are masked and long values truncated.
 
 ## Answers to senders

@@ -1,7 +1,10 @@
 package worker
 
 import (
+	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,7 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/rollout"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
 
@@ -46,5 +50,69 @@ func TestReconcileReleasesLeasesAndReportsQueues(t *testing.T) {
 	}
 	if testutil.ToFloat64(m.Reconciles.WithLabelValues(ReconcileError)) != 1 {
 		t.Fatal("failed run not counted")
+	}
+}
+
+// countingPass counts its runs and fails with err.
+type countingPass struct {
+	runs int
+	err  error
+}
+
+func (p *countingPass) Once(context.Context) error {
+	p.runs++
+	return p.err
+}
+
+func TestReconcileRunsEveryPassAndReportsAFailure(t *testing.T) {
+	e := newEnv(t, rollout.Table{})
+	failing, next := &countingPass{err: errors.New("kelos unavailable")}, &countingPass{}
+	r := &Reconciler{Store: e.store, Passes: []Pass{failing, next}, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
+	err := r.Once(ctx)
+	if err == nil || err.Error() != "kelos unavailable" || failing.runs != 1 || next.runs != 1 {
+		t.Fatalf("Once = %v with runs %d/%d; want the pass error after both ran", err, failing.runs, next.runs)
+	}
+	if testutil.ToFloat64(e.metric.Reconciles.WithLabelValues(ReconcileError)) != 1 {
+		t.Fatal("the failed pass was not counted")
+	}
+}
+
+func TestReconcilePrunesBuiltTasks(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.tasks[implementTaskID] = eligible()
+	e.proc.Tasks = fixedTask{}
+	e.tick(t)
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET state = 'finished', updated_at = now() - interval '2 hours'`)
+	storetest.Exec(t, e.dbURL, `UPDATE inbox SET body = NULL`)
+	r := &Reconciler{Store: e.store, BodyRetention: time.Hour, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
+	if err := r.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM runs WHERE task IS NULL`); n != 1 {
+		t.Fatal("the finished run kept its Task past retention")
+	}
+	if v := testutil.ToFloat64(e.metric.BodiesPruned); v != 1 {
+		t.Fatalf("pruned %v, want the one Task", v)
+	}
+}
+
+func TestReconcilePrunesTasksWhenBodyPruneFails(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.tasks[implementTaskID] = eligible()
+	e.proc.Tasks = fixedTask{}
+	e.tick(t)
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET state = 'finished', updated_at = now() - interval '2 hours'`)
+	storetest.Exec(t, e.dbURL, `CREATE FUNCTION refuse_body_prune() RETURNS trigger LANGUAGE plpgsql AS
+		$$ BEGIN RAISE EXCEPTION 'body prune refused'; END $$`)
+	storetest.Exec(t, e.dbURL, `CREATE TRIGGER refuse_body_prune BEFORE UPDATE OF body ON inbox
+		FOR EACH STATEMENT EXECUTE FUNCTION refuse_body_prune()`)
+	r := &Reconciler{Store: e.store, BodyRetention: time.Hour, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
+	if err := r.Once(ctx); err == nil || !strings.Contains(err.Error(), "body prune refused") {
+		t.Fatalf("Once = %v, want the body prune's error", err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM runs WHERE task IS NULL`); n != 1 {
+		t.Fatal("a failed body prune kept the finished run's Task past retention")
 	}
 }

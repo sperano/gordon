@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -15,13 +16,21 @@ const (
 	ReconcileError = "error"
 )
 
+// Pass is one more step of each reconciliation (the Kelos run observer,
+// the shadow comparison).
+type Pass interface {
+	Once(ctx context.Context) error
+}
+
 // Reconciler is the periodic upkeep of the queues: it releases the leases
 // of crashed or stalled workers (a running action becomes ambiguous, to be
-// recovered), refreshes the queue depth and age gauges, and drops stored
-// bodies past their retention.
+// recovered), refreshes the queue depth and age gauges, drops stored
+// bodies and built Tasks past their retention, then runs its Passes. A
+// failed pass does not stop the next one; the run fails if any did.
 type Reconciler struct {
 	Store         *store.Store
 	BodyRetention time.Duration
+	Passes        []Pass
 	Metrics       *metrics.Metrics
 	Log           *slog.Logger
 }
@@ -42,6 +51,14 @@ func (r *Reconciler) Once(ctx context.Context) error {
 }
 
 func (r *Reconciler) run(ctx context.Context) error {
+	errs := []error{r.upkeep(ctx)}
+	for _, p := range r.Passes {
+		errs = append(errs, p.Once(ctx))
+	}
+	return errors.Join(errs...)
+}
+
+func (r *Reconciler) upkeep(ctx context.Context) error {
 	inbox, actions, err := r.Store.ExpireLeases(ctx)
 	if err != nil {
 		return err
@@ -59,7 +76,10 @@ func (r *Reconciler) run(ctx context.Context) error {
 	if r.BodyRetention <= 0 {
 		return nil
 	}
-	n, err := r.Store.PruneBodies(ctx, r.BodyRetention)
+	// Each prune runs whatever the other's outcome.
+	n, bodiesErr := r.Store.PruneBodies(ctx, r.BodyRetention)
 	r.Metrics.BodiesPruned.Add(float64(n))
-	return err
+	n, tasksErr := r.Store.PruneTasks(ctx, r.BodyRetention)
+	r.Metrics.BodiesPruned.Add(float64(n))
+	return errors.Join(bodiesErr, tasksErr)
 }

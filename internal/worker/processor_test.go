@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
@@ -314,25 +315,40 @@ func TestTransientRead(t *testing.T) {
 
 // deadlineTasks records the deadline its read was given.
 type deadlineTasks struct {
+	at   time.Time
 	left time.Duration
 	has  bool
 }
 
 func (d *deadlineTasks) Task(ctx context.Context, _ int64) (event.Task, error) {
-	var at time.Time
-	at, d.has = ctx.Deadline()
-	d.left = time.Until(at)
+	d.at, d.has = ctx.Deadline()
+	d.left = time.Until(d.at)
 	return eligible(), nil
+}
+
+// deadlinePreparer is fixedTask recording the deadline it was given.
+type deadlinePreparer struct {
+	fixedTask
+	at  time.Time
+	has bool
+}
+
+func (d *deadlinePreparer) Prepare(ctx context.Context, id int64, ev event.Event, st route.State, dec *route.Decision) {
+	d.at, d.has = ctx.Deadline()
+	d.fixedTask.Prepare(ctx, id, ev, st, dec)
 }
 
 func TestStateReadsGetPartOfTheLease(t *testing.T) {
 	e, id := implementDelivery(t)
-	reads := &deadlineTasks{}
-	e.proc.State.Tasks = reads
+	reads, prep := &deadlineTasks{}, &deadlinePreparer{}
+	e.proc.State.Tasks, e.proc.Tasks = reads, prep
 	e.tick(t)
 	if !reads.has || reads.left > testTTL/readShareOfLease {
 		t.Fatalf("read deadline set %v, %v left; want at most %v of the %v lease", reads.has, reads.left,
 			testTTL/readShareOfLease, testTTL)
+	}
+	if !prep.has || !prep.at.Equal(reads.at) {
+		t.Fatalf("prepare deadline set %v at %v; want the read's %v, one share for both", prep.has, prep.at, reads.at)
 	}
 	if d := recorded(t, e, id); d.Outcome != route.Dispatch {
 		t.Fatalf("decision %s, want dispatch", d.Outcome)
@@ -381,5 +397,69 @@ func TestGordonFamilyWithNothingQueuedIsNotExecuted(t *testing.T) {
 	}
 	if !strings.Contains(e.logs.String(), `"executed":false`) {
 		t.Fatalf("decision log lacks the family's executed flag: %s", e.logs.String())
+	}
+}
+
+// fixedTask gives every run a Task named after it.
+type fixedTask struct{}
+
+func (fixedTask) Prepare(_ context.Context, _ int64, _ event.Event, _ route.State, dec *route.Decision) {
+	for i := range dec.Families {
+		for j := range dec.Families[i].Runs {
+			rn := &dec.Families[i].Runs[j]
+			rn.Task = &kelos.Task{Metadata: kelos.Metadata{Name: rn.Name}, Spec: kelos.Spec{Prompt: "built"}}
+		}
+	}
+}
+
+// rejecting rejects every family, as an unbuildable Task does.
+type rejecting struct{ calls int }
+
+func (r *rejecting) Prepare(_ context.Context, _ int64, _ event.Event, _ route.State, dec *route.Decision) {
+	r.calls++
+	for i := range dec.Families {
+		fd := &dec.Families[i]
+		fd.Outcome, fd.Reason, fd.Runs, fd.Actions = route.Reject, "task-spec-x", nil, nil
+	}
+	dec.Outcome = route.Overall(dec.Families)
+}
+
+func TestPreparedTaskIsRecordedWithTheRun(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e.proc.Tasks = fixedTask{}
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.tasks[implementTaskID] = eligible()
+	e.tick(t)
+	if n := e.count(t, `SELECT count(*) FROM runs WHERE name = $1 AND task->'spec'->>'prompt' = 'built'`, implementRun); n != 1 {
+		t.Fatal("run recorded without its prepared Task")
+	}
+}
+
+func TestPreparerRejectIsRecorded(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	p := &rejecting{}
+	e.proc.Tasks = p
+	id := e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.tasks[implementTaskID] = eligible()
+	e.tick(t)
+	dec := recorded(t, e, id)
+	if p.calls != 1 || dec.Outcome != route.Reject || dec.Families[0].Reason != "task-spec-x" ||
+		e.count(t, `SELECT count(*) FROM actions`)+e.count(t, `SELECT count(*) FROM runs`) != 0 {
+		t.Fatalf("decision %+v after %d prepares; want the reject recorded, nothing queued", dec, p.calls)
+	}
+}
+
+func TestPreparerNotCalledOnRetry(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	p := &rejecting{}
+	e.proc.Tasks = p
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.down = true
+	e.tick(t)
+	if n := e.count(t, `SELECT count(*) FROM inbox WHERE state = 'pending' AND attempts = 1 AND next_attempt_at > now()`); n != 1 {
+		t.Fatal("the outage did not schedule a retry")
+	}
+	if p.calls != 0 {
+		t.Fatalf("prepared %d times for an item retried on its state", p.calls)
 	}
 }

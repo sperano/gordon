@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -46,11 +47,11 @@ func TestVikunjaTask(t *testing.T) {
 			r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("request %s %s auth %q", r.Method, r.URL, r.Header.Get("Authorization"))
 		}
-		fmt.Fprint(w, `{"id":42,"project_id":7,"done":false,"labels":[{"title":"in progress"}],
+		fmt.Fprint(w, `{"id":42,"project_id":7,"title":"T","description":"<p>D</p>","done":false,"labels":[{"title":"in progress"}],
 			"assignees":[{"username":"claude-opus"},{"username":"eric"}],"buckets":[{"title":"Doing"}]}`)
 	})
 	got, err := Vikunja{c}.Task(ctx, 42)
-	want := event.Task{ID: 42, ProjectID: 7, Labels: []string{"in progress"},
+	want := event.Task{ID: 42, ProjectID: 7, Title: "T", Description: "<p>D</p>", Labels: []string{"in progress"},
 		Assignees: []string{"claude-opus", "eric"}, Buckets: []string{"Doing"}}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Task = %+v, %v; want %+v", got, err, want)
@@ -194,7 +195,7 @@ func TestGitHubPullRequestWithFiles(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/repos/sperano/gordon/pulls/7":
-			fmt.Fprint(w, `{"number":7,"state":"open","draft":true,"merged":false,"user":{"login":"bot"},
+			fmt.Fprint(w, `{"number":7,"title":"Fix","html_url":"https://github.com/sperano/gordon/pull/7","state":"open","draft":true,"merged":false,"user":{"login":"bot"},
 				"head":{"ref":"kelos/vikunja-5","sha":"abc","repo":{"full_name":"sperano/gordon"}},
 				"base":{"ref":"main"},"labels":[{"name":"kelos:claude-opus"}]}`)
 		case r.URL.Query().Get("page") == "1":
@@ -212,7 +213,8 @@ func TestGitHubPullRequestWithFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Repository != "sperano/gordon" || pr.Number != 7 || pr.State != "open" || !pr.Draft || pr.Author != "bot" ||
+	if pr.Repository != "sperano/gordon" || pr.Number != 7 || pr.Title != "Fix" || pr.URL != "https://github.com/sperano/gordon/pull/7" ||
+		pr.State != "open" || !pr.Draft || pr.Author != "bot" ||
 		pr.HeadRef != "kelos/vikunja-5" || pr.HeadSHA != "abc" || pr.HeadRepo != "sperano/gordon" ||
 		pr.BaseRef != "main" || !reflect.DeepEqual(pr.Labels, []string{"kelos:claude-opus"}) {
 		t.Fatalf("pull request = %+v", pr)
@@ -298,5 +300,126 @@ func TestGitHubRefusesUnsafeRepository(t *testing.T) {
 	}
 	if _, err := (GitHub{c}).PullRequest(ctx, "a/b", 0, false); ClassOf(err) != Invalid {
 		t.Errorf("PullRequest(#0) = %v, want invalid", err)
+	}
+}
+
+func TestVikunjaComments(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tasks/42/comments" || r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("request %s auth %q", r.URL, r.Header.Get("Authorization"))
+		}
+		if r.URL.Query().Get("page") != "1" {
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		fmt.Fprint(w, ` [{"id":1,"comment":"<p>hi</p>"}]`)
+	})
+	got, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
+	if err != nil || string(got) != `[{"id":1,"comment":"<p>hi</p>"}]` {
+		t.Fatalf("Comments = %s, %v; want the raw array", got, err)
+	}
+	if !reflect.DeepEqual(o.results, []string{"vikunja/ok", "vikunja/ok"}) {
+		t.Fatalf("observed %v, want the page and the empty page after it", o.results)
+	}
+}
+
+func TestVikunjaCommentsFollowsPages(t *testing.T) {
+	pages := map[string]string{"1": `[{"id":1},{"id":2}]`, "2": `[{"id":3}]`, "3": `[]`}
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, pages[r.URL.Query().Get("page")])
+	})
+	got, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
+	if err != nil || string(got) != `[{"id":1},{"id":2},{"id":3}]` {
+		t.Fatalf("Comments = %s, %v; want every page's comments in order", got, err)
+	}
+	if len(o.results) != len(pages) {
+		t.Fatalf("observed %v, want one request per page", o.results)
+	}
+}
+
+func TestVikunjaCommentsPageCap(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[{"id":1}]`) // a server that ignores page
+	})
+	_, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
+	if ClassOf(err) != Invalid || !strings.Contains(err.Error(), "more than 20 pages") || len(o.results) != maxCommentPages+1 {
+		t.Fatalf("Comments = %v after %d requests, want invalid after %d pages", err, len(o.results), maxCommentPages+1)
+	}
+}
+
+// TestVikunjaCommentsExactlyAtPageCap: maxCommentPages full pages and
+// the empty page after them are read, not refused.
+func TestVikunjaCommentsExactlyAtPageCap(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page > maxCommentPages {
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		fmt.Fprintf(w, `[{"id":%d}]`, page)
+	})
+	got, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
+	var want []string
+	for page := 1; page <= maxCommentPages; page++ {
+		want = append(want, fmt.Sprintf(`{"id":%d}`, page))
+	}
+	if err != nil || string(got) != "["+strings.Join(want, ",")+"]" {
+		t.Fatalf("Comments = %s, %v; want the %d pages' comments", got, err, maxCommentPages)
+	}
+	if len(o.results) != maxCommentPages+1 {
+		t.Fatalf("%d requests, want %d", len(o.results), maxCommentPages+1)
+	}
+}
+
+// commentBudget is the comment budget of the tests that do not test it.
+const commentBudget = 1 << 10
+
+// TestVikunjaCommentsBudget: comments over the budget are invalid,
+// a page is not read past what is left of it, and the empty page that
+// ends a list using the whole budget is still read.
+func TestVikunjaCommentsBudget(t *testing.T) {
+	const page1 = `[{"id":1}]`
+	cases := map[string]struct {
+		pages  map[string]string
+		budget int
+		want   string // the comments, or the error text
+	}{
+		"one page at the budget":   {map[string]string{"1": page1, "2": `[]`}, len(page1), page1},
+		"one page over the budget": {map[string]string{"1": page1}, len(page1) - 1, "over 9 bytes"},
+		"pages over the budget":    {map[string]string{"1": page1, "2": page1, "3": `[]`}, len(page1) + 1, "over 11 bytes"},
+		"pages at the budget":      {map[string]string{"1": page1, "2": page1, "3": "[]\n"}, 2 * len(page1), `[{"id":1},{"id":1}]`},
+		"page beyond the read cap": {map[string]string{"1": strings.Repeat(" ", 2*commentBudget) + page1}, commentBudget, "response over 1040 bytes"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, tc.pages[r.URL.Query().Get("page")])
+			})
+			got, err := Vikunja{c}.Comments(ctx, 42, tc.budget)
+			if err != nil {
+				if ClassOf(err) != Invalid || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("Comments = %v, want invalid with %q", err, tc.want)
+				}
+				return
+			}
+			if string(got) != tc.want {
+				t.Fatalf("Comments = %s, want %s", got, tc.want)
+			}
+		})
+	}
+	if _, err := (Vikunja{nil}).Comments(ctx, 42, 0); ClassOf(err) != Invalid {
+		t.Fatalf("no budget = %v, want invalid without a request", err)
+	}
+}
+
+func TestVikunjaCommentsRefusals(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"message":"not a list"}`)
+	})
+	if _, err := (Vikunja{c}).Comments(ctx, 42, commentBudget); ClassOf(err) != Invalid {
+		t.Fatalf("object answer = %v, want invalid", err)
+	}
+	if _, err := (Vikunja{c}).Comments(ctx, 0, commentBudget); ClassOf(err) != Invalid || len(o.results) != 1 {
+		t.Fatalf("Comments(0) = %v after %d requests, want invalid without a request", err, len(o.results))
 	}
 }

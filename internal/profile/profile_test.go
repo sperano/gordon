@@ -2,6 +2,7 @@ package profile
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 )
@@ -10,9 +11,9 @@ import (
 // LegacyVersion), written out so the test does not read the defaults'
 // own constants.
 const (
-	legacyClaudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f"
-	legacyCodexImage    = "ericsperano/kelos-codex:0.64.0-20261119-055920-d9bba7f"
-	legacyOpenCodeImage = "ericsperano/kelos-opencode:0.64.0-20261119-055920-d9bba7f"
+	legacyClaudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61"
+	legacyCodexImage    = "ericsperano/kelos-codex:0.64.0-20261120-031945-6f37b61"
+	legacyOpenCodeImage = "ericsperano/kelos-opencode:0.64.0-20261120-031945-6f37b61"
 )
 
 // legacyRunner is what a variant resolves to: agent, model, effort, and
@@ -69,8 +70,11 @@ func TestDefaultsProjects(t *testing.T) {
 			t.Errorf("PRProject(%s) = %+v", repo, p)
 		}
 	}
-	if p, ok := c.Project(48); !ok || p.Name != "portal" || p.Workspace != "hollingsworth" {
+	if p, ok := c.Project(48); !ok || p.Name != "portal" || p.Title != "Portal" || p.Workspace != "hollingsworth" {
 		t.Errorf("Project(48) = %+v", p)
+	}
+	if p, ok := c.Project(141); !ok || p.Name != "cocovm-3d" || p.Title != "CoCoVM 3D" {
+		t.Errorf("Project(141) = %+v", p)
 	}
 	if _, ok := c.Project(85); ok {
 		t.Error("project 85 has no spawner")
@@ -93,6 +97,9 @@ func TestResolveServiceAccountsByProjectAndMode(t *testing.T) {
 		{"vigie", ModeAnswer, "", "vigie", false},
 		{"vigie", ModeDiscuss, "", "vigie-readonly", true},
 		{"vigie", ModeReview, "pr-review", "vigie", false},
+		{"puckdb", ModeReview, "pr-review", "puckdb", false},
+		{"solitaire", ModeImplement, "", "solitaire", false},
+		{"solitaire", ModeDiscuss, "", "solitaire-readonly", true},
 	}
 	for _, x := range cases {
 		got, err := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
@@ -104,9 +111,45 @@ func TestResolveServiceAccountsByProjectAndMode(t *testing.T) {
 			t.Errorf("%s/%s: %+v", x.project, x.mode, got)
 		}
 	}
-	puck, _ := c.Resolve(Request{Project: "puckdb", Variant: "claude-opus", Mode: ModeImplement})
-	if !slices.Equal(puck.Capabilities, []Capability{GitHubWrite, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}) {
-		t.Errorf("puckdb capabilities %v", puck.Capabilities)
+	profiles := map[string]string{}
+	for _, x := range []struct {
+		project string
+		mode    Mode
+	}{{"puckdb", ModeReview}, {"solitaire", ModeImplement}, {"solitaire", ModeDiscuss}, {"vigie", ModeFollowUp}} {
+		got, err := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
+		if err != nil {
+			t.Fatalf("%s/%s: %v", x.project, x.mode, err)
+		}
+		profiles[x.project+"/"+string(x.mode)] = got.Profile
+	}
+	wantProfiles := map[string]string{"puckdb/review": ProfilePuckDBReview, "solitaire/implement": ProfileMactest,
+		"solitaire/discuss": ProfileMactestDiscuss, "vigie/followup": ProfileDefault}
+	if !maps.Equal(profiles, wantProfiles) {
+		t.Errorf("profiles %v, want %v", profiles, wantProfiles)
+	}
+}
+
+// TestResolveCapabilities pins the capability sets of Hollingsworth's
+// Gordon 02 admission table.
+func TestResolveCapabilities(t *testing.T) {
+	c := Defaults()
+	cases := []struct {
+		project string
+		mode    Mode
+		want    []Capability
+	}{
+		{"puckdb", ModeImplement, []Capability{GitHubWrite, GitHubReadOnly, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}},
+		{"puckdb", ModeReview, []Capability{GitHubWrite, GitHubReadOnly, PostgresTest, PuckDBProdReadOnly}},
+		{"vigie", ModeImplement, []Capability{GitHubWrite, GitHubReadOnly}},
+		{"vigie", ModeReview, []Capability{GitHubWrite, GitHubReadOnly}},
+		{"solitaire", ModeImplement, []Capability{GitHubWrite, GitHubReadOnly, Mactest}},
+		{"solitaire", ModeDiscuss, []Capability{GitHubReadOnly, Mactest}},
+	}
+	for _, x := range cases {
+		got, err := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
+		if err != nil || !slices.Equal(got.Capabilities, x.want) {
+			t.Errorf("%s/%s capabilities %v (%v), want %v", x.project, x.mode, got.Capabilities, err, x.want)
+		}
 	}
 }
 
@@ -180,7 +223,7 @@ func TestCapabilityWrites(t *testing.T) {
 	cases := map[Capability][2]bool{
 		GitHubWrite: {true, true}, ImageBuildSubmit: {true, true},
 		GitHubReadOnly: {false, true}, ClusterRead: {false, true}, PostgresTest: {false, true},
-		PuckDBProdReadOnly: {false, true}, "vault-admin": {false, false},
+		PuckDBProdReadOnly: {false, true}, Mactest: {false, true}, "vault-admin": {false, false},
 	}
 	for c, want := range cases {
 		if writing, known := c.Writes(); writing != want[0] || known != want[1] {

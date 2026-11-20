@@ -38,13 +38,15 @@ const (
 	// PuckDBProdReadOnly is the puckdb_readonly role on the
 	// shared-postgres replica (Secret puckdb-prod-readonly).
 	PuckDBProdReadOnly Capability = "puckdb-prod-readonly"
+	// Mactest is the mactest client certificate (Secret mactest-client).
+	Mactest Capability = "mactest"
 )
 
 // writes classifies every known capability: true when it can change
 // something outside the pod. A capability missing here is unknown.
 var writes = map[Capability]bool{
 	GitHubWrite: true, ImageBuildSubmit: true,
-	GitHubReadOnly: false, ClusterRead: false, PostgresTest: false, PuckDBProdReadOnly: false,
+	GitHubReadOnly: false, ClusterRead: false, PostgresTest: false, PuckDBProdReadOnly: false, Mactest: false,
 }
 
 // Writes reports whether the capability can change state outside the
@@ -81,7 +83,9 @@ type Profile struct {
 
 // Project is one Vikunja project and the Workspace its runs use.
 type Project struct {
-	Name         string   `json:"name"`
+	Name string `json:"name"`
+	// Title is the Vikunja project's display name the prompts quote.
+	Title        string   `json:"title,omitempty"`
 	VikunjaID    int64    `json:"vikunja_id"`
 	Workspace    string   `json:"workspace"`
 	Repository   string   `json:"repository"`

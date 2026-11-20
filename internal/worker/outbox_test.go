@@ -311,13 +311,13 @@ func TestAmbiguousAtMaxAttemptsIsDeadLetteredAsUnknown(t *testing.T) {
 
 func TestErrorClassification(t *testing.T) {
 	base := errors.New("x")
-	if !isAmbiguous(Ambiguous(base)) || isPermanent(Ambiguous(base)) || !errors.Is(Ambiguous(base), base) {
+	if !isAmbiguous(Ambiguous(base)) || IsPermanent(Ambiguous(base)) || !errors.Is(Ambiguous(base), base) {
 		t.Fatal("Ambiguous misclassified or does not unwrap")
 	}
-	if !isPermanent(Permanent(base)) || isAmbiguous(Permanent(base)) || !errors.Is(Permanent(base), base) {
+	if !IsPermanent(Permanent(base)) || isAmbiguous(Permanent(base)) || !errors.Is(Permanent(base), base) {
 		t.Fatal("Permanent misclassified or does not unwrap")
 	}
-	if isAmbiguous(base) || isPermanent(base) {
+	if isAmbiguous(base) || IsPermanent(base) {
 		t.Fatal("plain error classified")
 	}
 	if provider(action.KelosTask("ns", "n")) != "kelos" || provider(action.VikunjaTask(1)) != "vikunja" {
@@ -387,5 +387,55 @@ func TestRefusedWriteBeforeTheDeadlineRetries(t *testing.T) {
 	o := &Outbox{LeaseTTL: testTTL}
 	if result, err := o.attempt(ctx, p, store.ClaimedAction{}); result != ResultRetry || !errors.Is(err, refused) || isAmbiguous(err) {
 		t.Fatalf("refused write = %s, %v; want a plain retry", result, err)
+	}
+}
+
+func (e *env) nextAttemptIn(t *testing.T) time.Duration {
+	t.Helper()
+	var secs float64
+	storetest.QueryRow(t, e.dbURL, `SELECT extract(epoch FROM next_attempt_at - now())::float8 FROM actions
+		WHERE kind = 'submit-task'`, nil, &secs)
+	return time.Duration(secs * float64(time.Second))
+}
+
+func TestDeferredWriteStaysQueuedWithoutAnAttempt(t *testing.T) {
+	p := newProvider()
+	p.execute = func(action.Action) error {
+		return Deferred(errors.New("variant claude-opus runs 4 of 4"), "variant", 5*time.Minute)
+	}
+	e, o := outboxEnv(t, p)
+	perform(t, o)
+	if st, attempts, msg := e.actionRow(t); st != store.ActionPending || attempts != 0 || msg != "variant claude-opus runs 4 of 4" {
+		t.Fatalf("deferred action: %s, %d attempts, %q; want pending, 0, the reason", st, attempts, msg)
+	}
+	if d := e.nextAttemptIn(t); d < 4*time.Minute || d > 5*time.Minute {
+		t.Fatalf("due in %s, want the deferral's 5m", d)
+	}
+	if e.results(o, ResultDeferred) != 1 ||
+		testutil.ToFloat64(o.Metrics.Deferred.WithLabelValues(store.QueueActions, "variant")) != 1 {
+		t.Fatal("deferral not counted under its limit")
+	}
+}
+
+func TestDeferredWithoutDelayTakesDeferDelay(t *testing.T) {
+	p := newProvider()
+	p.execute = func(action.Action) error { return Deferred(errors.New("branch held"), "branch", 0) }
+	e, o := outboxEnv(t, p)
+	perform(t, o)
+	if d := e.nextAttemptIn(t); d <= 0 || d > o.DeferDelay {
+		t.Fatalf("due in %s, want within DeferDelay %s", d, o.DeferDelay)
+	}
+}
+
+func TestDeferredAfterAnAmbiguousWriteStillRecovers(t *testing.T) {
+	p := newProvider()
+	p.execute = func(action.Action) error { return Ambiguous(errors.New("timeout")) }
+	e, o := outboxEnv(t, p)
+	perform(t, o)
+	p.execute = func(action.Action) error { return Deferred(errors.New("branch held"), "branch", time.Second) }
+	e.due(t)
+	perform(t, o)
+	if st, attempts, _ := e.actionRow(t); st != store.ActionAmbiguous || attempts != 1 || p.recovers != 1 {
+		t.Fatalf("state %s attempts %d recovers %d; want still ambiguous, the deferral uncounted", st, attempts, p.recovers)
 	}
 }

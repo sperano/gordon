@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -64,6 +66,9 @@ func TestWorkerDefaults(t *testing.T) {
 	if c.Routing.Version != profile.Defaults().Version || len(c.Ownership.Rules) != 0 {
 		t.Fatal("routing defaults or empty ownership not applied")
 	}
+	if c.Kelos != nil {
+		t.Fatalf("Kelos configured without a dispatch configuration: %+v", c.Kelos)
+	}
 	if strings.Contains(c.String(), "pw") || strings.Contains(c.String(), "token") {
 		t.Fatalf("String() leaks a secret: %s", c)
 	}
@@ -79,9 +84,23 @@ func TestWorkerOverrides(t *testing.T) {
 	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"version":"custom-1"}`)
 	env["GORDON_OWNERSHIP_FILE"] = file(t, "own.json",
 		`{"rules":[{"project":"*","family":"pr-review","owner":"shadow","evidence":["replay-parity"]}]}`)
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "dispatch.json", `{"version":"d-1","namespace":"kelos-agents"}`)
+	env["GORDON_KELOS_API_URL"] = "https://k8s.example:6443/"
+	env["GORDON_KELOS_TOKEN_FILE"] = "/run/token"
+	env["GORDON_KELOS_CA_FILE"] = "/run/ca.crt"
+	env["GORDON_KELOS_BUSY_DELAY"] = "7s"
+	env["GORDON_SHADOW_WINDOW"] = "1h"
 	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
+	}
+	want := Kelos{Dispatch: dispatch.Config{Version: "d-1", Namespace: "kelos-agents"}, APIURL: "https://k8s.example:6443",
+		TokenFile: "/run/token", CAFile: "/run/ca.crt", BusyDelay: 7 * time.Second, ShadowWindow: time.Hour}
+	if c.Kelos == nil || !reflect.DeepEqual(*c.Kelos, want) {
+		t.Fatalf("kelos %+v, want %+v", c.Kelos, want)
+	}
+	if !strings.Contains(c.String(), "dispatch=d-1 kelos=https://k8s.example:6443") {
+		t.Fatalf("String() %s lacks the dispatch version and Kelos URL", c)
 	}
 	if c.Shadow || c.UpstreamLimit["github"] != 9 || c.UpstreamLimit["vikunja"] != 1 ||
 		c.Backoff.Base != time.Second || c.Backoff.Max != 3*time.Second || c.LogLevel != slog.LevelDebug ||
@@ -111,9 +130,9 @@ func TestWorkerRefusals(t *testing.T) {
 		"root vikunja url": {map[string]string{"GORDON_VIKUNJA_URL": "/"}, `GORDON_VIKUNJA_URL="": want an http or https URL`},
 		"no scheme":        {map[string]string{"GORDON_GITHUB_API_URL": "api.github.com"}, `GORDON_GITHUB_API_URL="api.github.com"`},
 		"ftp url":          {map[string]string{"GORDON_VIKUNJA_URL": "ftp://vikunja"}, `GORDON_VIKUNJA_URL="ftp://vikunja"`},
-		"url with query":   {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?x=1"}, `GORDON_VIKUNJA_URL="https://v/api/v1?x=1": want a base URL without a query or fragment`},
+		"url with query":   {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?x=1"}, "GORDON_VIKUNJA_URL: want a base URL without a query or fragment"},
 		"url with bare ?":  {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?"}, "without a query or fragment"},
-		"url fragment":     {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#top"}, `GORDON_GITHUB_API_URL="https://api.github.com#top": want a base URL without a query or fragment`},
+		"url fragment":     {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#top"}, "GORDON_GITHUB_API_URL: want a base URL without a query or fragment"},
 		"url bare #":       {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#"}, "without a query or fragment"},
 		"backoff inverted": {map[string]string{"GORDON_RETRY_BASE": "1m", "GORDON_RETRY_MAX": "1s"}, "below GORDON_RETRY_BASE"},
 		"lease too short":  {map[string]string{"GORDON_LEASE_TTL": "5s"}, "must exceed GORDON_UPSTREAM_TIMEOUT"},
@@ -121,6 +140,33 @@ func TestWorkerRefusals(t *testing.T) {
 		"no vikunja url":   {map[string]string{"GORDON_VIKUNJA_URL": ""}, "GORDON_VIKUNJA_URL is required"},
 		"unknown field":    {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "ROUTING"}, "unknown field"},
 		"ungated owner":    {map[string]string{"GORDON_OWNERSHIP_FILE": "OWNERSHIP"}, "lacks gate"},
+		"execute, no dispatch": {map[string]string{"GORDON_SHADOW": "false"},
+			"GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE"},
+		"dispatch namespace": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_NS"},
+			`namespace "default", want "kelos-agents"`},
+		"dispatch unknown field": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_FIELD"}, `unknown field "namespaec"`},
+		"bad kelos url": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH", "GORDON_KELOS_API_URL": "k8s"},
+			`GORDON_KELOS_API_URL="k8s"`},
+		"kelos url userinfo": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH",
+			"GORDON_KELOS_API_URL": "https://admin:hunter2@k8s:6443"}, "GORDON_KELOS_API_URL: want a URL without user information"},
+		"vikunja url userinfo": {map[string]string{"GORDON_VIKUNJA_URL": "https://bot@v/api/v1"},
+			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, wrong scheme": {map[string]string{"GORDON_VIKUNJA_URL": "ftp://admin:hunter2@v"},
+			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, no host": {map[string]string{"GORDON_VIKUNJA_URL": "https://admin:hunter2@"},
+			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, no scheme": {map[string]string{"GORDON_VIKUNJA_URL": "admin:hunter2@v"},
+			"GORDON_VIKUNJA_URL: want an http or https URL with a host"},
+		"userinfo, no scheme or port": {map[string]string{"GORDON_GITHUB_API_URL": "admin:hunter2@api.github.com"},
+			"GORDON_GITHUB_API_URL: want an http or https URL with a host"},
+		"secret in query": {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?sig=hunter2"},
+			"GORDON_VIKUNJA_URL: want a base URL without a query or fragment"},
+		"secret in fragment": {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#t=hunter2"},
+			"GORDON_GITHUB_API_URL: want a base URL without a query or fragment"},
+		"at sign in query": {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?u=admin:hunter2@x"},
+			"GORDON_VIKUNJA_URL: want a base URL without a query or fragment"},
+		"userinfo, unparseable": {map[string]string{"GORDON_VIKUNJA_URL": "https://admin:hunter2@v:port"},
+			"GORDON_VIKUNJA_URL: want an http or https URL with a host"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -135,6 +181,12 @@ func TestWorkerRefusals(t *testing.T) {
 					v = file(t, "o.json", `{"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				case "NULL":
 					v = file(t, "n.json", " null\n")
+				case "DISPATCH":
+					v = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
+				case "DISPATCH_NS":
+					v = file(t, "d.json", `{"version":"d-1","namespace":"default"}`)
+				case "DISPATCH_FIELD":
+					v = file(t, "d.json", `{"namespaec":"kelos-agents"}`)
 				case "TRAILING":
 					v = file(t, "t.json", `{"rules":[]} {"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				}
@@ -143,6 +195,9 @@ func TestWorkerRefusals(t *testing.T) {
 			_, err := LoadWorker(envOf(env))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("LoadWorker = %v, want an error containing %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "hunter2") {
+				t.Fatalf("LoadWorker = %v: the URL's password reached the error", err)
 			}
 		})
 	}
@@ -207,5 +262,30 @@ func TestMigrate(t *testing.T) {
 	c, err := LoadMigrate(envOf(env))
 	if err != nil || c.ReceiverRole != "gordon_receiver" || c.WorkerRole != "gordon_worker" || c.DatabaseURL != "postgres://owner@db/g" {
 		t.Fatalf("LoadMigrate = %+v, %v", c, err)
+	}
+}
+
+func TestWorkerKelosDefaults(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
+	c, err := LoadWorker(envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Kelos == nil || c.Kelos.APIURL != kelos.InClusterURL || c.Kelos.TokenFile != kelos.InClusterTokenFile ||
+		c.Kelos.CAFile != kelos.InClusterCAFile || c.Kelos.BusyDelay != DefaultBusyDelay ||
+		c.Kelos.ShadowWindow != DefaultShadowWindow || !c.Shadow {
+		t.Fatalf("kelos defaults %+v, shadow %v", c.Kelos, c.Shadow)
+	}
+}
+
+func TestLoadWorkerWithInvalidDispatchConfigNamesOnlyTheFile(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_SHADOW"] = "false"
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"default"}`)
+	_, err := LoadWorker(envOf(env))
+	if err == nil || !strings.Contains(err.Error(), `namespace "default"`) ||
+		strings.Contains(err.Error(), "GORDON_SHADOW=false needs") {
+		t.Fatalf("LoadWorker = %v, want the dispatch file's error alone", err)
 	}
 }

@@ -1,15 +1,15 @@
 package profile
 
 // LegacyVersion names the Hollingsworth configuration Defaults mirrors:
-// helm/kelos/values-hollingsworth.yaml at sperano/hollingsworth 4a50f33
-// (2026-11-19).
-const LegacyVersion = "hollingsworth-4a50f33"
+// helm/kelos/values-hollingsworth.yaml at sperano/hollingsworth bf18aa5
+// (2026-11-20), the Gordon 02 execution profiles included.
+const LegacyVersion = "hollingsworth-bf18aa5"
 
 // Runner images, as pinned at LegacyVersion.
 const (
-	claudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f"
-	codexImage    = "ericsperano/kelos-codex:0.64.0-20261119-055920-d9bba7f"
-	opencodeImage = "ericsperano/kelos-opencode:0.64.0-20261119-055920-d9bba7f"
+	claudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61"
+	codexImage    = "ericsperano/kelos-codex:0.64.0-20261120-031945-6f37b61"
+	opencodeImage = "ericsperano/kelos-opencode:0.64.0-20261120-031945-6f37b61"
 )
 
 // Profile names.
@@ -21,6 +21,10 @@ const (
 	ProfileDiscussDefault    = "discuss-default"
 	ProfilePuckDBDiscuss     = "puckdb-discuss"
 	ProfileReview            = "review"
+	ProfilePuckDBReview      = "puckdb-review"
+	ProfileMactest           = "mactest"
+	ProfileMactestDiscuss    = "mactest-discuss"
+	reviewServiceAccount     = "pr-review"
 	effortMedium             = "medium"
 	defaultVariant           = "claude-opus"
 	sonnetVariant            = "claude-sonnet"
@@ -31,10 +35,8 @@ const (
 )
 
 // Defaults returns the configuration that reproduces the legacy
-// TaskSpawner routing exactly, with one deliberate change: the puckdb
-// discuss profile is read-only (legacy runs it as the writing
-// image-build-submitter ServiceAccount because the project sets no
-// discussServiceAccountName).
+// TaskSpawner routing and the Gordon 02 execution profiles (names,
+// ServiceAccounts, capabilities) the Kelos admission policy enforces.
 func Defaults() Config {
 	return Config{
 		Version:        LegacyVersion,
@@ -80,19 +82,23 @@ func variants() map[string]Variant {
 
 func profiles() map[string]Profile {
 	return map[string]Profile{
-		ProfileDefault: {Capabilities: []Capability{GitHubWrite}},
+		ProfileDefault: {Capabilities: []Capability{GitHubWrite, GitHubReadOnly}},
 		ProfileImageBuild: {ServiceAccount: imageBuildServiceAccount,
-			Capabilities: []Capability{GitHubWrite, ImageBuildSubmit, ClusterRead}},
+			Capabilities: []Capability{GitHubWrite, GitHubReadOnly, ImageBuildSubmit, ClusterRead}},
 		ProfilePuckDB: {ServiceAccount: imageBuildServiceAccount,
-			Capabilities: []Capability{GitHubWrite, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}},
+			Capabilities: []Capability{GitHubWrite, GitHubReadOnly, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}},
+		ProfileMactest: {Capabilities: []Capability{GitHubWrite, GitHubReadOnly, Mactest}},
 		ProfileDiscuss: {ServiceAccount: discussServiceAccount, ReadOnly: true,
 			Capabilities: []Capability{GitHubReadOnly, ClusterRead}},
 		ProfileDiscussDefault: {ReadOnly: true, Capabilities: []Capability{GitHubReadOnly}},
 		ProfilePuckDBDiscuss: {ServiceAccount: discussServiceAccount, ReadOnly: true,
 			Capabilities: []Capability{GitHubReadOnly, ClusterRead, PostgresTest, PuckDBProdReadOnly}},
+		ProfileMactestDiscuss: {ReadOnly: true, Capabilities: []Capability{GitHubReadOnly, Mactest}},
 		// The agent container's token is shadowed: only the supersede init
 		// container uses pr-review's Task rights.
-		ProfileReview: {ServiceAccount: "pr-review", Capabilities: []Capability{GitHubWrite}},
+		ProfileReview: {ServiceAccount: reviewServiceAccount, Capabilities: []Capability{GitHubWrite, GitHubReadOnly}},
+		ProfilePuckDBReview: {ServiceAccount: reviewServiceAccount,
+			Capabilities: []Capability{GitHubWrite, GitHubReadOnly, PostgresTest, PuckDBProdReadOnly}},
 	}
 }
 

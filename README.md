@@ -15,8 +15,11 @@ periodic reconciliation) and `gordon migrate` (schema and role grants).
 The worker starts in shadow mode, recording decisions and executing none,
 and no production routing changes: every family is owned by the legacy
 Hollingsworth glue until a rollout rule with its gate evidence says
-otherwise. No action has an executor yet (Kelos submission is the next
-stage), so even an executed decision's actions stay queued.
+otherwise. With a dispatch configuration, every dispatched run gets the
+Kelos Task it would submit, built from trusted templates; outside shadow
+mode the outbox submits it, and in shadow it is compared with the legacy
+spawner's Task of the same name. Kelos submission is the only executor so
+far: the Vikunja and GitHub writes stay queued until their stages.
 [DEPLOYMENT.md](DEPLOYMENT.md) is the deployment contract.
 
 ## Contracts
@@ -26,11 +29,13 @@ stage), so even an executed decision's actions stay queued.
 | `internal/event` | Typed Vikunja and GitHub events. A *delivery key* names one transport delivery (GitHub's `X-GitHub-Delivery`; a Vikunja comment's id; a `task.updated`'s data digest, as the legacy `$.data` cache). A *request key* names the owner request behind it, so a reconciler resend is the same request and a new `/gordon` comment is a new one. |
 | `internal/auth` | Per-source signature checks in the legacy formats (`X-Vikunja-Signature`, `X-Hub-Signature-256`, `X-Kelos-Signature-256`), body caps and the 401/403/404/413 answers. |
 | `internal/run` | Run identities and deterministic Kelos Task names and branches, identical to the legacy spawner `nameTemplate`s that pod hooks still parse. |
-| `internal/profile` | Resolved execution profiles: variant (agent, model, image, credentials), effort, permission mode and a named capability profile (ServiceAccount, read-only Workspace, capabilities) from trusted configuration only. Discuss is always read-only. `Defaults()` mirrors `values-hollingsworth.yaml`. |
+| `internal/profile` | Resolved execution profiles: variant (agent, model, image, credentials), effort, permission mode and a named capability profile (ServiceAccount, read-only Workspace, capabilities) from trusted configuration only. Discuss is always read-only. `Defaults()` mirrors `values-hollingsworth.yaml`, its execution profiles included. |
 | `internal/action` | Intended writes with durable keys, so an ambiguous write can be recovered before a retry. |
 | `internal/rollout` | One active dispatcher per (project, family): `legacy`, `shadow` (decisions recorded, nothing executed) or `gordon`, with the gate evidence each owner requires. |
 | `internal/route` | Decisions: `dispatch`, `act`, `ignore`, `reject`, `duplicate`, `stale`, `conflict` or `retry`, per family, from the delivery, the fresh upstream state and the ledger. |
 | `internal/inventory` | Every legacy dispatch family, hook and reconciler with its future owner, decision and stages, and the Hollingsworth files each later stage changes. `go run ./cmd/gordon-inventory` prints it as Markdown. |
+| `internal/dispatch` | The Task a run submits: the resolved profile (agent, model, effort, ServiceAccount, Workspace) plus per-family, per-Workspace, per-profile and per-variant templates (prompt, labels, annotations, agent configs, pod pieces) that mirror the legacy spawner `taskTemplate`s; a Task referencing a Secret its profile does not grant is refused when built, as Kelos admission would refuse it. A new model or effort is one more entry, never one more TaskSpawner. |
+| `internal/kelos` | The `kelos.dev/v1alpha2` Task resource, a create/get/list client for one namespace (in-cluster ServiceAccount token, re-read per request) and `Diff` of two Tasks; `kelostest` is a fake API for tests. |
 | `internal/replay` | Sanitized legacy deliveries in `testdata/` with their exact expected decisions and the Task names the legacy spawners created. |
 
 ## Service
@@ -39,8 +44,9 @@ stage), so even an executed decision's actions stay queued.
 |---|---|
 | `internal/intake` | The receiver: method, declared length against the source cap, bounded slots per client address, body read under the request deadline, signature, delivery keys, then the stored row; 2xx only once stored. |
 | `internal/store` | Postgres: the inbox, decisions, handled requests, runs and the action outbox; migrations under an advisory lock; leases fenced by a token, so a worker that lost its lease writes nothing; role grants. |
-| `internal/worker` | Inbox processor (fresh state, route, one fenced transaction), outbox (recover an ambiguous write before retrying it), limits, backoff, graceful loops and the reconciler. |
-| `internal/upstream` | GET-only Vikunja and GitHub readers, bounded per provider. |
+| `internal/worker` | Inbox processor (fresh state, route, build the Tasks, one fenced transaction), outbox (recover an ambiguous write before retrying it, defer one the provider cannot take yet), limits, backoff, graceful loops and the reconciler. |
+| `internal/submit` | The Kelos submit executor (a Task of the run's name found first: this generation's is the lost create, another submitter's takes the run; per-variant limits and held branches keep submissions queued), the run observer (state and `task_exists` from Kelos) and the shadow comparison. |
+| `internal/upstream` | GET-only Vikunja (task, comments) and GitHub readers, bounded per provider. |
 | `internal/metrics`, `internal/logging` | Prometheus metrics with fixed label sets; JSON logs with redaction. |
 | `internal/config`, `internal/app`, `cmd/gordon` | Environment configuration, the three modes, health, readiness and metrics. |
 
@@ -53,7 +59,11 @@ go build ./... && go vet ./... && go test ./...
 The store, worker and service tests need Postgres: they skip without
 `GORDON_TEST_DATABASE_URL` (an admin URL that may create databases and
 roles). `scripts/test-postgres.sh` starts a throwaway server from
-`initdb`/`pg_ctl` on `PATH` (or `PG_BIN`) and runs the checks against it.
+`initdb`/`pg_ctl` on `PATH` (or `PG_BIN`), UTF-8 like the shared Postgres,
+and runs the checks against it. `internal/dispatch/testdata` holds a
+dispatch configuration and the legacy Tasks rendered from Hollingsworth's
+chart: the tests require Gordon's Task for each permission mode to equal
+the legacy spawner's.
 
 ## Mascot
 
