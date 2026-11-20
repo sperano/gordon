@@ -42,6 +42,9 @@ func TestSetQueuesZeroesEmptyStates(t *testing.T) {
 	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("inbox", Other)); v != 5 {
 		t.Fatalf("unknown inbox states recorded as %v under other, want their sum 5", v)
 	}
+	if total := depthTotal(m); total != 5 {
+		t.Fatalf("depth across all series = %v, want 5: the unknown queue's 9 must be dropped", total)
+	}
 	if v := testutil.ToFloat64(m.QueueOldest.WithLabelValues("inbox", Other)); v != 60 {
 		t.Fatalf("unknown inbox states' age = %v, want the oldest, 60", v)
 	}
@@ -49,4 +52,15 @@ func TestSetQueuesZeroesEmptyStates(t *testing.T) {
 	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("inbox", Other)); v != 0 {
 		t.Fatalf("other depth = %v once the unknown states are gone, want 0", v)
 	}
+}
+
+// depthTotal sums the queue depth over every fixed series.
+func depthTotal(m *Metrics) float64 {
+	var total float64
+	for q, states := range QueueStates {
+		for _, st := range states {
+			total += testutil.ToFloat64(m.QueueDepth.WithLabelValues(q, st))
+		}
+	}
+	return total
 }

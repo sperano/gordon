@@ -48,7 +48,7 @@ Every mode:
 | `GORDON_GITHUB_KEY_FILE` | — | `X-Hub-Signature-256` key (GitHub webhook secret) |
 | `GORDON_WIKI_COMMENT_KEY_FILE`, `GORDON_IMAGE_BUILD_KEY_FILE` | — | `X-Kelos-Signature-256` dispatch keys |
 | `GORDON_MAX_IN_FLIGHT` | `32` | requests read and stored at once; one client address gets a quarter |
-| `GORDON_TRUSTED_PROXIES` | empty | comma-separated addresses or CIDRs of the webhook ingress (e.g. the pod CIDR its proxy and `cloudflared` run in); a request from one is charged to the nearest untrusted `X-Forwarded-For` address. Required behind a proxy: otherwise every sender shares the proxy's quarter |
+| `GORDON_TRUSTED_PROXIES` | empty | comma-separated addresses or CIDRs of the webhook ingress proxy only (its pod or Service address, never the whole pod CIDR: any pod in a trusted range can choose its `X-Forwarded-For` and so the client its slots are charged to); a request from one is charged to the nearest untrusted `X-Forwarded-For` address. Required behind a proxy: otherwise every sender shares the proxy's quarter. Keep the receiver reachable from the ingress only (a NetworkPolicy) |
 | `GORDON_REQUEST_DEADLINE` | `30s` | whole request: slot wait and body |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight requests on SIGTERM (keep under `terminationGracePeriodSeconds`) |
 
@@ -71,7 +71,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_ROUTING_CONFIG_FILE` | `profile.Defaults()` | JSON `profile.Config` (unknown fields refused) |
 | `GORDON_OWNERSHIP_FILE` | empty (all legacy) | JSON `rollout.Table`; refused when invalid or ungated |
 | `GORDON_WORKER_CONCURRENCY` | `4` | items decided (and actions performed) at once |
-| `GORDON_PROJECT_LIMIT` | `2` | per project or repository, inbox and outbox together; `0` is unbounded |
+| `GORDON_PROJECT_LIMIT` | `2` | per project or repository (the delivery's Vikunja project or GitHub repository), inbox and outbox together; `0` is unbounded |
 | `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | per provider: reads in flight, and separately outbox actions in flight; each provider at most once |
 | `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT` |
 | `GORDON_UPSTREAM_TIMEOUT` | `10s` | one upstream request |

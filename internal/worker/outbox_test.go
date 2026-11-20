@@ -232,26 +232,58 @@ func TestProviderLimitDefers(t *testing.T) {
 	}
 }
 
-func TestProjectLimitDefers(t *testing.T) {
+// inboxScope is the scope of the inbox row the queued action came from:
+// the key the processor holds while it decides that row.
+func (e *env) inboxScope(t *testing.T) string {
+	t.Helper()
+	var scope string
+	storetest.QueryRow(t, e.dbURL, `SELECT i.scope FROM inbox i JOIN actions a ON a.inbox_id = i.id
+		WHERE a.kind = 'submit-task'`, nil, &scope)
+	if scope == "" {
+		t.Fatal("queued action's inbox row has no scope")
+	}
+	return scope
+}
+
+func TestProjectLimitSharedWithInboxDefers(t *testing.T) {
 	p := newProvider()
 	e, o := outboxEnv(t, p)
-	var project string
-	storetest.QueryRow(t, e.dbURL, `SELECT project FROM actions WHERE kind = 'submit-task'`, nil, &project)
 	o.Projects = &Limiter{Default: 1}
-	o.Projects.TryAcquire(project)
+	o.Projects.TryAcquire(e.inboxScope(t)) // the processor deciding the same project
 	perform(t, o)
-	if st, attempts, _ := e.actionRow(t); project == "" || st != store.ActionPending || attempts != 0 || p.executes != 0 {
-		t.Fatalf("project %q: state %s attempts %d executes %d, want deferred untouched", project, st, attempts, p.executes)
+	if st, attempts, _ := e.actionRow(t); st != store.ActionPending || attempts != 0 || p.executes != 0 {
+		t.Fatalf("state %s attempts %d executes %d, want deferred untouched", st, attempts, p.executes)
 	}
 	if v := testutil.ToFloat64(o.Metrics.Deferred.WithLabelValues("actions", LimitProject)); v != 1 {
 		t.Fatalf("deferred metric = %v", v)
 	}
 }
 
-func TestActionWithoutProjectTakesNoProjectSlot(t *testing.T) {
+func TestPerformedActionReleasesProjectSlot(t *testing.T) {
 	p := newProvider()
 	e, o := outboxEnv(t, p)
-	storetest.Exec(t, e.dbURL, `UPDATE actions SET project = ''`)
+	o.Projects = &Limiter{Default: 1}
+	scope := e.inboxScope(t)
+	var held int
+	p.execute = func(action.Action) error {
+		o.Projects.mu.Lock()
+		held = o.Projects.inUse[scope]
+		o.Projects.mu.Unlock()
+		return nil
+	}
+	perform(t, o)
+	if st, _, _ := e.actionRow(t); st != store.ActionDone || held != 1 || o.Projects.inUse[scope] != 0 {
+		t.Fatalf("state %s, slot held %d during the write, %v after; want done, 1, then freed", st, held, o.Projects.inUse)
+	}
+	if !o.Projects.TryAcquire(scope) {
+		t.Fatal("project slot not free after the action was performed")
+	}
+}
+
+func TestActionWithoutScopeTakesNoProjectSlot(t *testing.T) {
+	p := newProvider()
+	e, o := outboxEnv(t, p)
+	storetest.Exec(t, e.dbURL, `UPDATE inbox SET scope = ''`)
 	o.Projects = &Limiter{Default: 1}
 	perform(t, o) // released an untaken "" slot (a nil-map write) before the fix
 	if st, _, _ := e.actionRow(t); st != store.ActionDone || len(o.Projects.inUse) != 0 {

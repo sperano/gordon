@@ -59,7 +59,8 @@ func TestClaimActionsCarriesTheIntent(t *testing.T) {
 	s, _ := queued(t)
 	a := claimAction(t, s, "w")
 	want := action.New(action.SubmitTask, action.KelosTask("kelos-agents", runName), "")
-	if a.Action != want || a.Family != "vikunja-followup" || a.Project != "gordon" || a.Recover || a.Attempts != 1 {
+	if a.Action != want || a.Family != "vikunja-followup" || a.Project != "gordon" ||
+		a.Scope != "vikunja/project/7" || a.Recover || a.Attempts != 1 {
 		t.Fatalf("claimed %+v, want the submit action, fresh", a)
 	}
 }

@@ -23,6 +23,9 @@ type ClaimedAction struct {
 	Action  action.Action
 	Family  string
 	Project string
+	// Scope is the inbox row's scope (event.Scope), the key the
+	// per-project limit shares with the inbox processor.
+	Scope   string
 	InboxID int64
 	// Attempts counts claims, this one included.
 	Attempts int
@@ -49,7 +52,8 @@ func (s *Store) ClaimActions(ctx context.Context, owner string, limit int, ttl t
 			lease_until = now() + make_interval(secs => $3)
 		FROM due WHERE a.id = due.id
 		RETURNING a.id, a.lease_token::text, a.key, a.kind, a.target, a.value, a.detail,
-			a.family, a.project, a.inbox_id, a.attempts, due.state <> 'pending', a.created_at`,
+			a.family, a.project,
+			coalesce((SELECT i.scope FROM inbox i WHERE i.id = a.inbox_id), ''), a.inbox_id, a.attempts, due.state <> 'pending', a.created_at`,
 		limit, owner, ttl.Seconds())
 	if err != nil {
 		return nil, err
@@ -58,7 +62,7 @@ func (s *Store) ClaimActions(ctx context.Context, owner string, limit int, ttl t
 		var c ClaimedAction
 		var kind, target string
 		err := r.Scan(&c.ID, &c.Token, &c.Action.Key, &kind, &target, &c.Action.Value, &c.Action.Detail,
-			&c.Family, &c.Project, &c.InboxID, &c.Attempts, &c.Recover, &c.CreatedAt)
+			&c.Family, &c.Project, &c.Scope, &c.InboxID, &c.Attempts, &c.Recover, &c.CreatedAt)
 		c.Action.Kind, c.Action.Target = action.Kind(kind), action.Target(target)
 		return c, err
 	})

@@ -85,7 +85,8 @@ type Outbox struct {
 	MaxAttempts int
 	Backoff     Backoff
 	// Providers limits actions in flight per provider (the target's
-	// first segment: vikunja, github, kelos); Projects per project.
+	// first segment: vikunja, github, kelos); Projects per project, keyed
+	// on the inbox scope like the processor's, so they share one cap.
 	Providers  *Limiter
 	Projects   *Limiter
 	DeferDelay time.Duration
@@ -134,12 +135,12 @@ func (o *Outbox) Perform(ctx context.Context, c store.ClaimedAction) {
 		return
 	}
 	defer o.Providers.Release(prov)
-	if c.Project != "" {
-		if !o.Projects.TryAcquire(c.Project) {
+	if c.Scope != "" {
+		if !o.Projects.TryAcquire(c.Scope) {
 			o.deferAction(ctx, log, c, kind, LimitProject, o.DeferDelay, "project limit full")
 			return
 		}
-		defer o.Projects.Release(c.Project)
+		defer o.Projects.Release(c.Scope)
 	}
 	start := time.Now()
 	result, err := o.attempt(ctx, ex, c)
