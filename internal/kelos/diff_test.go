@@ -103,6 +103,16 @@ func TestDiffVolumesByName(t *testing.T) {
 	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want volumes and mounts in another order to be the same", diff, err)
 	}
+	changed := []any{map[string]any{"name": "a", "readOnly": true}}
+	got = raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
+		"podOverrides": map[string]any{"volumes": changed, "volumeMounts": changed}}}})
+	diff, err := kelos.Diff(want, got)
+	wantPaths := []string{"spec.worker.podOverrides.volumeMounts[name=a].readOnly",
+		"spec.worker.podOverrides.volumeMounts[name=b]", "spec.worker.podOverrides.volumes[name=a].readOnly",
+		"spec.worker.podOverrides.volumes[name=b]"}
+	if err != nil || !slices.Equal(diff, wantPaths) {
+		t.Fatalf("Diff = %v, %v\nwant %v: a changed or dropped volume or mount is a difference", diff, err, wantPaths)
+	}
 }
 
 func TestDiffOrderedNamedLists(t *testing.T) {

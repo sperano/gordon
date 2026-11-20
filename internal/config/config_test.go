@@ -155,6 +155,12 @@ func TestWorkerRefusals(t *testing.T) {
 			"GORDON_VIKUNJA_URL: want a URL without user information"},
 		"userinfo, no host": {map[string]string{"GORDON_VIKUNJA_URL": "https://admin:hunter2@"},
 			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, no scheme": {map[string]string{"GORDON_VIKUNJA_URL": "admin:hunter2@v"},
+			"GORDON_VIKUNJA_URL: want an http or https URL with a host"},
+		"userinfo, no scheme or port": {map[string]string{"GORDON_GITHUB_API_URL": "admin:hunter2@api.github.com"},
+			"GORDON_GITHUB_API_URL: want an http or https URL with a host"},
+		"at sign in query": {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?u=admin:hunter2@x"},
+			"GORDON_VIKUNJA_URL: want a base URL without a query or fragment"},
 		"userinfo, unparseable": {map[string]string{"GORDON_VIKUNJA_URL": "https://admin:hunter2@v:port"},
 			"GORDON_VIKUNJA_URL: want an http or https URL with a host"},
 	}

@@ -182,13 +182,23 @@ func (r *reader) baseURL(name, def string) string {
 		// Credentials go in their files; the URL is logged at start.
 		r.fail("%s: want a URL without user information", name)
 	} else if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		r.fail("%s=%q: want an http or https URL with a host", name, v)
+		r.fail("%s: want an http or https URL with a host", quotedURL(name, v))
 	} else if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(v, "#") {
 		// Endpoint paths are appended to the base: a query or fragment
 		// would swallow them.
-		r.fail("%s=%q: want a base URL without a query or fragment", name, v)
+		r.fail("%s: want a base URL without a query or fragment", quotedURL(name, v))
 	}
 	return v
+}
+
+// quotedURL names the variable with its value, or alone when the value has
+// an "@": without a scheme, url.Parse leaves "admin:hunter2@v" without user
+// information, so its password would reach the error.
+func quotedURL(name, v string) string {
+	if strings.Contains(v, "@") {
+		return name
+	}
+	return fmt.Sprintf("%s=%q", name, v)
 }
 
 func (r *reader) common() Common {
