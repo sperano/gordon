@@ -10,6 +10,7 @@
 package event
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -157,4 +158,17 @@ func contains(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// Parse parses an authenticated delivery of a routed source (Vikunja or
+// GitHub); any other source is ErrUnsupported.
+func Parse(d Delivery) (Event, error) {
+	switch d.Source {
+	case SourceGitHub:
+		return ParseGitHub(d)
+	case SourceVikunja:
+		return ParseVikunja(d.Body)
+	default:
+		return Event{}, fmt.Errorf("%w: source %q", ErrUnsupported, d.Source)
+	}
 }

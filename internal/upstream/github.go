@@ -1,0 +1,106 @@
+package upstream
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"regexp"
+	"strconv"
+
+	"github.com/sperano/gordon/internal/event"
+)
+
+// GitHub reads pull requests.
+type GitHub struct{ Client *Client }
+
+// GitHubAPIVersion is the REST API version Gordon reads.
+const GitHubAPIVersion = "2022-11-28"
+
+// GitHubHeaders are the headers every GitHub read sends.
+var GitHubHeaders = map[string]string{
+	"Accept":               "application/vnd.github+json",
+	"X-GitHub-Api-Version": GitHubAPIVersion,
+}
+
+// filesPerPage is the page size of the files list; maxFilePages stops at
+// GitHub's own limit of 3000 files.
+const (
+	filesPerPage = 100
+	maxFilePages = 30
+)
+
+// repository is an owner/name pair; anything else (a path segment, a
+// query) is refused before it reaches a URL.
+var repository = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+type githubPR struct {
+	Number int    `json:"number"`
+	State  string `json:"state"`
+	Draft  bool   `json:"draft"`
+	Merged bool   `json:"merged"`
+	User   struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	Head struct {
+		Ref  string `json:"ref"`
+		SHA  string `json:"sha"`
+		Repo *struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+	Labels []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
+}
+
+// PullRequest reads a pull request; withFiles also lists its changed
+// files (the reviewers' file patterns need them).
+func (g GitHub) PullRequest(ctx context.Context, repo string, number int, withFiles bool) (event.PullRequest, error) {
+	if !repository.MatchString(repo) || number <= 0 {
+		return event.PullRequest{}, &Error{Provider: ProviderGitHub, Class: Invalid,
+			Err: fmt.Errorf("pull request %q#%d", repo, number)}
+	}
+	base := fmt.Sprintf("/repos/%s/pulls/%d", repo, number)
+	var raw githubPR
+	if err := g.Client.get(ctx, base, nil, &raw); err != nil {
+		return event.PullRequest{}, err
+	}
+	pr := event.PullRequest{Repository: repo, Number: raw.Number, State: raw.State, Draft: raw.Draft,
+		Merged: raw.Merged, Author: raw.User.Login, HeadRef: raw.Head.Ref, HeadSHA: raw.Head.SHA,
+		BaseRef: raw.Base.Ref}
+	if raw.Head.Repo != nil {
+		pr.HeadRepo = raw.Head.Repo.FullName
+	}
+	for _, l := range raw.Labels {
+		pr.Labels = append(pr.Labels, l.Name)
+	}
+	if !withFiles {
+		return pr, nil
+	}
+	files, err := g.files(ctx, base)
+	pr.Files = files
+	return pr, err
+}
+
+func (g GitHub) files(ctx context.Context, base string) ([]string, error) {
+	var out []string
+	for page := 1; page <= maxFilePages; page++ {
+		var batch []struct {
+			Filename string `json:"filename"`
+		}
+		q := url.Values{"per_page": {strconv.Itoa(filesPerPage)}, "page": {strconv.Itoa(page)}}
+		if err := g.Client.get(ctx, base+"/files", q, &batch); err != nil {
+			return nil, err
+		}
+		for _, f := range batch {
+			out = append(out, f.Filename)
+		}
+		if len(batch) < filesPerPage {
+			break
+		}
+	}
+	return out, nil
+}

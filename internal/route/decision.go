@@ -103,3 +103,7 @@ func overall(families []FamilyDecision) Outcome {
 	}
 	return Ignore
 }
+
+// Overall is the delivery outcome of family decisions, by precedence:
+// what a store recomputes after it drops a run another worker took.
+func Overall(families []FamilyDecision) Outcome { return overall(families) }

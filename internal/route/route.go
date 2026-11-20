@@ -46,6 +46,13 @@ func (r Router) Decide(d event.Delivery, st State, led Ledger) Decision {
 	if err := r.Keys.Verify(d); err != nil {
 		return Decision{Outcome: Reject, Reason: authReason(err), Status: auth.Status(err)}
 	}
+	return r.DecideAuthenticated(d, st, led)
+}
+
+// DecideAuthenticated parses and routes a delivery whose signature the
+// receiver already verified before persisting it, so the worker deciding
+// it holds no webhook key.
+func (r Router) DecideAuthenticated(d event.Delivery, st State, led Ledger) Decision {
 	switch d.Source {
 	case event.SourceWikiComment:
 		return Decision{Outcome: Ignore, Reason: ReasonRetired}
@@ -82,12 +89,7 @@ func (r Router) route(ev event.Event, st State, led Ledger) Decision {
 	}
 }
 
-func parse(d event.Delivery) (event.Event, error) {
-	if d.Source == event.SourceGitHub {
-		return event.ParseGitHub(d)
-	}
-	return event.ParseVikunja(d.Body)
-}
+func parse(d event.Delivery) (event.Event, error) { return event.Parse(d) }
 
 func authReason(err error) string {
 	switch {

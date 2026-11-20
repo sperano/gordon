@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -236,5 +237,22 @@ func TestParseGitHubClosedPullRequestMerged(t *testing.T) {
 		if ev.GitHub.PullRequest.Merged != merged {
 			t.Errorf("merged = %t, want %t", ev.GitHub.PullRequest.Merged, merged)
 		}
+	}
+}
+
+func TestParseBySource(t *testing.T) {
+	if _, err := Parse(Delivery{Source: SourceWikiComment, Body: []byte(`{}`)}); !errors.Is(err, ErrUnsupported) ||
+		!strings.Contains(err.Error(), `"wiki-comment"`) {
+		t.Fatalf("Parse(wiki-comment) = %v, want unsupported naming the source", err)
+	}
+	ev, err := Parse(Delivery{Source: SourceVikunja,
+		Body: []byte(`{"event_name":"task.comment.created","data":{"task":{"id":1},"comment":{"id":2}}}`)})
+	if err != nil || ev.Kind != VikunjaTaskCommentCreated {
+		t.Fatalf("Parse(vikunja) = %+v, %v", ev, err)
+	}
+	ev, err = Parse(Delivery{Source: SourceGitHub, Headers: map[string]string{GitHubEventHeader: "push",
+		GitHubDeliveryHeader: "g"}, Body: []byte(`{"repository":{"full_name":"a/b"}}`)})
+	if err != nil || ev.Kind != GitHubPush {
+		t.Fatalf("Parse(github) = %+v, %v", ev, err)
 	}
 }

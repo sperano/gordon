@@ -104,6 +104,12 @@ func (k Keys) Verify(d event.Delivery) error {
 	return nil
 }
 
+// MaxBodyBytes is the body cap of source; false for an unknown source.
+func MaxBodyBytes(source event.Source) (int, bool) {
+	s, ok := schemes[source]
+	return s.maxBytes, ok
+}
+
 // Header is the signature header of source; false for an unknown source.
 func Header(source event.Source) (string, bool) {
 	s, ok := schemes[source]
