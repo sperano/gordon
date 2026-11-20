@@ -204,7 +204,9 @@ func TestNewHTTPClient(t *testing.T) {
 		t.Fatal("missing CA file accepted")
 	}
 	bad := filepath.Join(t.TempDir(), "ca")
-	os.WriteFile(bad, []byte("not a pem"), 0o600) //nolint:errcheck // read next
+	if err := os.WriteFile(bad, []byte("not a pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := kelos.NewHTTPClient(bad, time.Second); err == nil || !strings.Contains(err.Error(), "no certificate") {
 		t.Fatalf("NewHTTPClient(bad) = %v", err)
 	}
@@ -402,5 +404,37 @@ func TestListFailsWhenTheSmallestPageIsOverTheCap(t *testing.T) {
 	}
 	if l := strings.Join(limits(), ","); l != "250,125,62,31,15,8" {
 		t.Fatalf("limits asked %s, want halved down to 8 (a page sure to fit), then given up", l)
+	}
+}
+
+// listTotalCapBytes is the client's cap over a list's pages
+// (maxListTotalBytes).
+const listTotalCapBytes = 256 << 20
+
+// TestListFailsOverTheTotalCap: pages each under the page cap still fail
+// the list once they hold more than the total cap.
+func TestListFailsOverTheTotalCap(t *testing.T) {
+	// pagesUnderCap pages fit the total cap; the page JSON around the
+	// prompt is under pageSlack bytes.
+	const pagesUnderCap, pageSlack = 16, 1 << 10
+	const pageBytes = listTotalCapBytes/pagesUnderCap - pageSlack
+	var mu sync.Mutex
+	served := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		served++
+		mu.Unlock()
+		fmt.Fprintf(w, `{"metadata":{"continue":"more"},"items":[{"spec":{"prompt":"%s"}}]}`, strings.Repeat("x", pageBytes))
+	}))
+	defer srv.Close()
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	_, err := c.List(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("list over %d bytes", listTotalCapBytes)) {
+		t.Fatalf("List = %v, want the total cap", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if want := pagesUnderCap + 1; served != want {
+		t.Fatalf("served %d pages, want %d: the first page past the cap ends the list", served, want)
 	}
 }

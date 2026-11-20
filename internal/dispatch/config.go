@@ -15,12 +15,7 @@ package dispatch
 
 import (
 	"encoding/json"
-	"fmt"
-	"maps"
-	"slices"
-	"strings"
 
-	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 )
 
@@ -149,84 +144,6 @@ func (l Limits) For(variant string) int {
 		return n
 	}
 	return l.Default
-}
-
-// Validate refuses a Config that could build a Task admission refuses or
-// that names a reserved key.
-func (c Config) Validate() error {
-	if c.Namespace != route.KelosNamespace {
-		// Every submit action targets kelos/<route.KelosNamespace>/<name>.
-		return fmt.Errorf("dispatch config: namespace %q, want %q", c.Namespace, route.KelosNamespace)
-	}
-	if c.CommentsMaxBytes < 0 {
-		return fmt.Errorf("dispatch config: comments_max_bytes %d is negative", c.CommentsMaxBytes)
-	}
-	for _, f := range slices.Sorted(maps.Keys(c.Families)) {
-		if !slices.Contains(run.Families, f) || (run.Identity{Family: f}).Name() == "" {
-			return fmt.Errorf("dispatch config: family %q submits no Task", f)
-		}
-		fam := c.Families[f]
-		if strings.TrimSpace(fam.Prompt) == "" {
-			return fmt.Errorf("dispatch config: family %s: prompt is required", f)
-		}
-		if err := checkKeys(fam.Labels, fam.Annotations); err != nil {
-			return fmt.Errorf("dispatch config: family %s: %w", f, err)
-		}
-		if err := fam.Pod.checkNoLabels(); err != nil {
-			return fmt.Errorf("dispatch config: family %s: %w", f, err)
-		}
-	}
-	for name, p := range c.Workspaces {
-		if err := p.checkNoLabels(); err != nil {
-			return fmt.Errorf("dispatch config: workspace %s: %w", name, err)
-		}
-	}
-	for name, v := range c.Variants {
-		if err := v.Pod.checkNoLabels(); err != nil {
-			return fmt.Errorf("dispatch config: variant %s: %w", name, err)
-		}
-	}
-	for name, p := range c.Profiles {
-		if err := checkKeys(p.Pod.Labels); err != nil {
-			return fmt.Errorf("dispatch config: profile %s: %w", name, err)
-		}
-		if err := checkLiteral(p.Pod.Labels); err != nil {
-			return fmt.Errorf("dispatch config: profile %s: %w", name, err)
-		}
-	}
-	return nil
-}
-
-func checkKeys(sets ...map[string]string) error {
-	for _, m := range sets {
-		for k := range m {
-			if slices.Contains(reservedKeys, k) {
-				return fmt.Errorf("%s is set by Gordon", k)
-			}
-		}
-	}
-	return nil
-}
-
-// checkLiteral refuses a template in a pod label: pod labels grant
-// network access, so they are the profile's literal values, never
-// rendered from task data.
-func checkLiteral(labels map[string]string) error {
-	for _, k := range slices.Sorted(maps.Keys(labels)) {
-		if strings.Contains(k, "{{") || strings.Contains(labels[k], "{{") {
-			return fmt.Errorf("pod label %s: templates are not rendered in pod labels", k)
-		}
-	}
-	return nil
-}
-
-// checkNoLabels refuses pod labels outside a profile: reserved pod labels
-// grant network access, which only a profile may.
-func (p Pod) checkNoLabels() error {
-	if len(p.Labels) > 0 {
-		return fmt.Errorf("pod labels are granted by profiles only")
-	}
-	return nil
 }
 
 // commentsMax is the comments cap in effect.

@@ -24,7 +24,9 @@ type SubmitRun struct {
 	Task    *kelos.Task
 }
 
-// Submitted reports a run whose Task this generation already created.
+// Submitted reports a run no longer submitting: its Task created by this
+// generation, taken by another submitter's Task, or the run finished.
+// Either way nothing is left to submit.
 func (r SubmitRun) Submitted() bool { return r.State != runSubmitting }
 
 // RunToSubmit reads a run by Task name; ErrNoRun when there is none.

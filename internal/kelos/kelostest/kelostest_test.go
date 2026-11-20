@@ -112,3 +112,39 @@ func listPage(t *testing.T, srv *kelostest.Server, token string) listResponse {
 	}
 	return out
 }
+
+// TestRawIsACopy: changing the returned JSON leaves the stored Task as it
+// was.
+func TestRawIsACopy(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	srv.Put(named("a"))
+	want := string(srv.Raw("a"))
+	got := srv.Raw("a")
+	for i := range got {
+		got[i] = ' '
+	}
+	if string(srv.Raw("a")) != want {
+		t.Fatalf("Raw after a caller's change = %s, want %s", srv.Raw("a"), want)
+	}
+}
+
+// TestListRefusesUnsupportedSelectors: a selector the fake cannot match
+// exactly answers 400, never a wrong, empty list.
+func TestListRefusesUnsupportedSelectors(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	srv.Put(named("a"))
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	for _, sel := range []string{"k!=v", "k==v", "k in (a,b)", "k", "a=b,", "=v"} {
+		_, err := c.List(context.Background(), sel)
+		var e *kelos.Error
+		if !errors.As(err, &e) || e.Status != http.StatusBadRequest || !strings.Contains(e.Message, "unsupported label selector") {
+			t.Errorf("List(%q) = %v, want 400 unsupported label selector", sel, err)
+		}
+	}
+	got, err := c.List(context.Background(), "")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("List(\"\") = %d Tasks, %v; want the one Task", len(got), err)
+	}
+}

@@ -69,6 +69,25 @@ func TestRefusedReadDeadLettersTheSubmission(t *testing.T) {
 	}
 }
 
+// refusingLists refuses every List, as an API server without the RBAC.
+type refusingLists struct{ TaskAPI }
+
+func (refusingLists) List(context.Context, string) ([]kelos.Task, error) {
+	return nil, &kelos.Error{Op: "list", Status: http.StatusForbidden, Sent: true}
+}
+
+func TestRefusedAdmissionListDeadLettersTheSubmission(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	e.exec.Kelos = refusingLists{e.api}
+	name := e.implement(t, implementID, "claude-opus") // on its task's branch: admission lists
+	e.perform(t)
+	st, attempts, _ := e.action(t, name)
+	if st != store.ActionFailed || attempts != 1 || e.submissions(ResultRefused) != 1 || len(e.kelos.Creates()) != 0 {
+		t.Fatalf("a refused admission list: %s after %d attempts, %d creates; want dead-lettered at once", st,
+			attempts, len(e.kelos.Creates()))
+	}
+}
+
 // busyAdmission never gets the lock: its wait runs out, as one queued
 // behind other submissions past the attempt deadline.
 type busyAdmission struct{ Runs }

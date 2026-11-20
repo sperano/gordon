@@ -38,6 +38,10 @@ const (
 	minListPageSize = maxListBytes / maxObjectBytes
 	// maxListPages stops a list that never ends (a misbehaving server).
 	maxListPages = 400
+	// maxListTotalBytes caps the pages one List keeps, so a namespace
+	// of large Tasks fails the list instead of exhausting the worker's
+	// memory: over a thousand Tasks at the default comments cap.
+	maxListTotalBytes = 256 << 20
 	// maxMessageBytes caps the API server message an error keeps.
 	maxMessageBytes = 512
 )
@@ -200,10 +204,11 @@ type taskList struct {
 var errTooLarge = errors.New("response too large")
 
 // List returns every Task matching selector ("" for all), page by page.
-// A page over maxListBytes (large Tasks) is read again in smaller pages.
+// A page over maxListBytes (large Tasks) is read again in smaller pages;
+// pages over maxListTotalBytes in all fail the list.
 func (c *Client) List(ctx context.Context, selector string) ([]Task, error) {
 	var out []Task
-	token, size := "", listPageSize
+	token, size, total := "", listPageSize, 0
 	// Only pages read count against maxListPages: the size retries are
 	// bounded anyway, size never growing back.
 	for pages := 0; pages < maxListPages; {
@@ -214,14 +219,21 @@ func (c *Client) List(ctx context.Context, selector string) ([]Task, error) {
 		if token != "" {
 			q.Set("continue", token)
 		}
-		var page taskList
-		err := c.do(ctx, "list", http.MethodGet, c.collection(), q, nil, maxListBytes, &page)
+		var data json.RawMessage
+		err := c.do(ctx, "list", http.MethodGet, c.collection(), q, nil, maxListBytes, &data)
 		if errors.Is(err, errTooLarge) && size > minListPageSize {
 			size = max(size/2, minListPageSize)
 			continue
 		}
 		if err != nil {
 			return nil, err
+		}
+		if total += len(data); total > maxListTotalBytes {
+			return nil, &Error{Op: "list", Err: fmt.Errorf("%w: list over %d bytes", errTooLarge, maxListTotalBytes)}
+		}
+		var page taskList
+		if err := json.Unmarshal(data, &page); err != nil {
+			return nil, &Error{Op: "list", Err: err}
 		}
 		pages++
 		out = append(out, page.Items...)

@@ -131,3 +131,28 @@ func TestDiffOrderedNamedLists(t *testing.T) {
 		t.Fatalf("Diff = %v, %v\nwant %v", diff, err, wantPaths)
 	}
 }
+
+// TestDiffDependentEnvInOrder: an env referencing another variable
+// expands from the variables before it, so its order is compared.
+func TestDiffDependentEnvInOrder(t *testing.T) {
+	env := func(items ...string) []json.RawMessage {
+		out := make([]json.RawMessage, len(items))
+		for i, s := range items {
+			out[i] = json.RawMessage(s)
+		}
+		return out
+	}
+	a, url := `{"name":"HOST","value":"db"}`, `{"name":"URL","value":"postgres://$(HOST)"}`
+	want := kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{PodOverrides: &kelos.PodOverrides{Env: env(a, url)}}}}
+	swapped, err := json.Marshal(kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{
+		PodOverrides: &kelos.PodOverrides{Env: env(url, a)}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff, err := kelos.Diff(want, swapped)
+	wantPaths := []string{"spec.worker.podOverrides.env[0].name", "spec.worker.podOverrides.env[0].value",
+		"spec.worker.podOverrides.env[1].name", "spec.worker.podOverrides.env[1].value"}
+	if err != nil || !slices.Equal(diff, wantPaths) {
+		t.Fatalf("Diff = %v, %v\nwant %v", diff, err, wantPaths)
+	}
+}

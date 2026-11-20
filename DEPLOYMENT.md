@@ -105,14 +105,14 @@ the legacy ones.
 
 | Field | |
 |---|---|
-| `version` | recorded on each Task (`gordon.spe.quebec/config-version`, after the routing version) |
+| `version` | required; recorded on each Task (`gordon.spe.quebec/config-version`, after the routing version) |
 | `namespace` | `kelos-agents` (the only value: every submit action names it) |
 | `comments`, `comments_max_bytes` | quote `GET /tasks/{id}/comments` as `Context.comments` (default cap 256 KiB; a failed or larger read is quoted empty, as the legacy `failurePolicy: Ignore`) |
 | `common_secrets` | Secrets every profile may reference (the admission policy's `commonSecrets`: runner credentials, the variants' Vikunja and Authentik identities, Gordon's own, the run-link token) |
 | `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
 | `workspaces`, `profiles`, `variants` | pod pieces per Workspace (keyed by the project's writing Workspace; they apply to its read-only copy too), per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant and profile needs an entry, `{}` at least: a run without one is rejected (`task-spec-unknown-variant`, `task-spec-unknown-profile`) |
-| `pod` (each piece) | `labels` (profiles only), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`. Lists concatenate family, Workspace, profile, variant; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
-| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded |
+| `pod` (each piece) | `labels` (profiles only), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`: `resources` and `affinity` objects, each list entry an object with a `name`. Lists concatenate family, Workspace, profile, variant; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
+| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded; a `variants` key not in `variants` is refused |
 
 Prompt, label and annotation values, agent config names and pod strings
 (pod `labels` aside: they are literal, and a `{{` in one is refused)
@@ -122,7 +122,8 @@ holding `{{` are Go templates over the legacy Kelos variables (`.task`,
 `.CommentURL`, `.CommentBody`, `.Payload...`) plus `.project`,
 `.project_title`, `.workspace`, `.repository`, `.variant`, `.reviewer`,
 `.profile`, `.mode`, `.model`, `.effort`, `.branch` (`dispatch.Data`); a
-missing variable refuses the run. Gordon alone sets
+template that does not parse refuses the config at startup, a missing
+variable refuses the run. Gordon alone sets
 `kelos.spe.quebec/profile`, `kelos.spe.quebec/mode`,
 `vikunja.spe.quebec/discuss` (discuss), `vikunja.spe.quebec/variant`,
 `gordon.spe.quebec/managed` and the `gordon.spe.quebec/inbox` annotation
@@ -167,8 +168,8 @@ the retry cap, any `gordon_queue_depth{state="failed"}` or
 `{queue="actions",state="ambiguous"}`, reconciliation not successful for
 several intervals, `gordon_intake_requests_total{result="unavailable"}`,
 `gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
-a submission's request: the lookup before the create, through RBAC or
-authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
+a submission's request: the lookup or the admission list before the
+create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
 
 ## Logs
 

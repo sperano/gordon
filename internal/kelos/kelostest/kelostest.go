@@ -7,6 +7,7 @@
 package kelostest
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,11 +109,11 @@ func (s *Server) Task(name string) (kelos.Task, bool) {
 	return t, true
 }
 
-// Raw returns a stored Task's JSON as the server keeps it.
+// Raw returns a copy of a stored Task's JSON as the server keeps it.
 func (s *Server) Raw(name string) json.RawMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.tasks[name]
+	return bytes.Clone(s.tasks[name])
 }
 
 // Creates returns every well-formed create request body (a Task with a
@@ -224,7 +225,12 @@ func (s *Server) get(w http.ResponseWriter, name string) {
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
-	items, snap, start := s.page(r)
+	sel, err := parseSelector(r.URL.Query().Get("labelSelector"))
+	if err != nil {
+		writeStatus(w, http.StatusBadRequest, "BadRequest", err.Error())
+		return
+	}
+	items, snap, start := s.page(r, sel)
 	end, next := len(items), ""
 	if s.PageSize > 0 && start+s.PageSize < len(items) {
 		end = start + s.PageSize
@@ -242,17 +248,16 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 // offset of the page: the matching Tasks now on a first page, the snapshot its first
 // page took on a later one (a continue token "<snapshot>/<offset>"), as
 // the API server serves a list's pages from one resourceVersion.
-func (s *Server) page(r *http.Request) (items []json.RawMessage, snap, start int) {
+func (s *Server) page(r *http.Request, sel selector) (items []json.RawMessage, snap, start int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := fmt.Sscanf(r.URL.Query().Get("continue"), "%d/%d", &snap, &start); err == nil &&
 		snap >= 0 && snap < len(s.snapshots) {
 		return s.snapshots[snap], snap, start
 	}
-	selector := parseSelector(r.URL.Query().Get("labelSelector"))
 	for _, name := range s.order {
 		var t kelos.Task
-		if json.Unmarshal(s.tasks[name], &t) == nil && selector.matches(t.Metadata.Labels) {
+		if json.Unmarshal(s.tasks[name], &t) == nil && sel.matches(t.Metadata.Labels) {
 			items = append(items, s.tasks[name])
 		}
 	}
@@ -262,15 +267,22 @@ func (s *Server) page(r *http.Request) (items []json.RawMessage, snap, start int
 
 type selector map[string]string
 
-// parseSelector reads equality selectors (k=v,k2=v2), all the client uses.
-func parseSelector(s string) selector {
+// parseSelector reads equality selectors (k=v,k2=v2), all the client
+// uses; any other syntax (k!=v, k==v, k in (...), a bare k) is an
+// error, so a test cannot pass on a selector the fake misread.
+func parseSelector(s string) (selector, error) {
 	out := selector{}
-	for part := range strings.SplitSeq(s, ",") {
-		if k, v, ok := strings.Cut(part, "="); ok {
-			out[k] = v
-		}
+	if s == "" {
+		return out, nil
 	}
-	return out
+	for part := range strings.SplitSeq(s, ",") {
+		k, v, ok := strings.Cut(part, "=")
+		if !ok || k == "" || strings.ContainsAny(k, "!=() ") || strings.ContainsAny(v, "=!() ") {
+			return nil, fmt.Errorf("unsupported label selector %q", part)
+		}
+		out[k] = v
+	}
+	return out, nil
 }
 
 func (s selector) matches(labels map[string]string) bool {

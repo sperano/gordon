@@ -100,8 +100,9 @@ func deleteMeta(m map[string]any, key string) {
 // by name, so their order is no difference: env and volumes (Kubernetes
 // merges them by name) and volumeMounts (merged by mountPath; a list
 // with a name twice, one volume mounted twice, falls back to the order).
-// Any other list (agentConfigRefs, extraInitContainers) is compared in
-// order.
+// An env where a value references another variable ($(NAME), expanded
+// from the variables defined before it) is compared in order, as is any
+// other list (agentConfigRefs, extraInitContainers).
 var unorderedLists = map[string]bool{"env": true, "volumes": true, "volumeMounts": true}
 
 // walk appends the paths where a and b differ: into objects key by key,
@@ -124,7 +125,8 @@ func walk(path string, a, b any, out *[]string) {
 	}
 	al, aok := a.([]any)
 	bl, bok := b.([]any)
-	if am, bm, ok := byName(al), byName(bl), aok && bok && unorderedLists[field(path)]; ok && am != nil && bm != nil {
+	unordered := aok && bok && unorderedLists[field(path)] && !(field(path) == "env" && (references(al) || references(bl)))
+	if am, bm := byName(al), byName(bl); unordered && am != nil && bm != nil {
 		// Env, volumes and volume mounts: by name, not position.
 		keys := slices.Collect(maps.Keys(am))
 		for k := range bm {
@@ -146,6 +148,22 @@ func walk(path string, a, b any, out *[]string) {
 	if !reflect.DeepEqual(a, b) {
 		*out = append(*out, path)
 	}
+}
+
+// envReference starts a dependent environment variable reference.
+const envReference = "$("
+
+// references reports whether an env value references another variable,
+// which makes the env's order part of its meaning.
+func references(env []any) bool {
+	for _, item := range env {
+		if m, ok := item.(map[string]any); ok {
+			if v, ok := m["value"].(string); ok && strings.Contains(v, envReference) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // byName indexes a list of objects by their "name"; nil for an empty

@@ -16,6 +16,7 @@ import (
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
+	"github.com/sperano/gordon/internal/store/storetest"
 )
 
 const kelosToken = "kelos-sa-token"
@@ -58,6 +59,13 @@ func TestServiceSubmitsToKelos(t *testing.T) {
 		task.Spec.Worker.PodOverrides.ServiceAccountName != "image-build-submitter" ||
 		!strings.Contains(task.Spec.Prompt, `<p>earlier</p>`) || !strings.Contains(task.Spec.Prompt, "in project Hollingsworth: Ship it") {
 		t.Fatalf("submitted Task %+v\n%s", task.Metadata, task.Spec.Prompt)
+	}
+	// The whole submitted Task is the one decided: the dispatch tests
+	// check that Task against the legacy spawners'.
+	var decided kelos.Task
+	storetest.QueryRow(t, svc.ownerURL, `SELECT task FROM runs WHERE name = $1`, []any{name}, &decided)
+	if diff, err := kelos.Diff(decided, srv.Raw(name)); err != nil || len(diff) != 0 {
+		t.Fatalf("submitted Task differs from the decided one at %v, %v", diff, err)
 	}
 	if srv.Authorization() != "Bearer "+kelosToken {
 		t.Fatalf("Kelos Authorization %q", srv.Authorization())

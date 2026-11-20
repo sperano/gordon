@@ -229,6 +229,11 @@ func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 	limit := e.Limits.For(r.Variant)
 	branch, ws := r.Task.Spec.Branch, r.Task.WorkspaceName()
 	tasks, err := e.Kelos.List(ctx, "")
+	if kelos.IsRefused(err) {
+		// The list is forbidden, as a refused lookup: dead-letter.
+		e.count(ResultRefused)
+		return worker.Permanent(err)
+	}
 	if err != nil {
 		return err
 	}

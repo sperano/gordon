@@ -178,9 +178,9 @@ func TestWorkerRefusals(t *testing.T) {
 				case "NULL":
 					v = file(t, "n.json", " null\n")
 				case "DISPATCH":
-					v = file(t, "d.json", `{"namespace":"kelos-agents"}`)
+					v = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
 				case "DISPATCH_NS":
-					v = file(t, "d.json", `{"namespace":"default"}`)
+					v = file(t, "d.json", `{"version":"d-1","namespace":"default"}`)
 				case "DISPATCH_FIELD":
 					v = file(t, "d.json", `{"namespaec":"kelos-agents"}`)
 				case "TRAILING":
@@ -263,7 +263,7 @@ func TestMigrate(t *testing.T) {
 
 func TestWorkerKelosDefaults(t *testing.T) {
 	env := workerEnv(t)
-	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"namespace":"kelos-agents"}`)
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
 	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func TestWorkerKelosDefaults(t *testing.T) {
 func TestLoadWorkerWithInvalidDispatchConfigNamesOnlyTheFile(t *testing.T) {
 	env := workerEnv(t)
 	env["GORDON_SHADOW"] = "false"
-	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"namespace":"default"}`)
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"default"}`)
 	_, err := LoadWorker(envOf(env))
 	if err == nil || !strings.Contains(err.Error(), `namespace "default"`) ||
 		strings.Contains(err.Error(), "GORDON_SHADOW=false needs") {
