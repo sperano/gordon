@@ -99,7 +99,8 @@ func (t Table) Executes(project string, family run.Family) bool {
 }
 
 // Validate refuses a table with an unknown family or owner, two rules for
-// one scope, or a rule lacking its owner's gate evidence.
+// one scope, a rule lacking its owner's gate evidence, or a family Gordon
+// owns in a project without its coupled families (checkCoupled).
 func (t Table) Validate() error {
 	seen := map[[2]string]bool{}
 	for _, r := range t.Rules {

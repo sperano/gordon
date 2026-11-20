@@ -178,7 +178,11 @@ func (f *fakeVikunja) addLabel(w http.ResponseWriter, r *http.Request, ids []int
 	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck // test server
 	t := f.task(w, ids[0])
 	i := slices.IndexFunc(f.labels, func(l Label) bool { return l.ID == body.LabelID })
-	if t == nil || i < 0 {
+	if t == nil {
+		return
+	}
+	if i < 0 {
+		http.Error(w, `{"code":4002}`, http.StatusNotFound)
 		return
 	}
 	t.Labels = append(t.Labels, f.labels[i])
@@ -255,7 +259,11 @@ func (f *fakeVikunja) react(w http.ResponseWriter, r *http.Request, ids []int64)
 	if f.reactions[ids[0]] == nil {
 		f.reactions[ids[0]] = map[string][]User{}
 	}
-	f.reactions[ids[0]][body.Value] = append(f.reactions[ids[0]][body.Value], User{ID: 80, Username: gordon})
+	// Repeating a reaction is a no-op on Vikunja.
+	me := User{ID: 80, Username: gordon}
+	if !slices.Contains(f.reactions[ids[0]][body.Value], me) {
+		f.reactions[ids[0]][body.Value] = append(f.reactions[ids[0]][body.Value], me)
+	}
 	reply(w, map[string]string{})
 }
 

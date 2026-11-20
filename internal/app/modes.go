@@ -100,7 +100,8 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		return err
 	}
 	// One Vikunja reader for the router and the reconciliation, so the
-	// Vikunja upstream limit bounds every read of this process.
+	// Vikunja upstream limit bounds their reads together (the lifecycle
+	// writer reads through its own client, under the outbox's limiter).
 	vikunja := vikunjaReader(cfg, m)
 	proc := processor(cfg, s, m, log, projects, vikunja)
 	g := newGroup(ctx)

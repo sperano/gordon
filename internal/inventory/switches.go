@@ -34,10 +34,10 @@ const (
 // Switches lists the Vikunja families' contracts, in run.Families order.
 func Switches() []Switch {
 	return []Switch{
-		{run.VikunjaImplement, chartPath("templates/taskspawners.yaml", "scripts/wait_for_blockers.py"),
+		{run.VikunjaImplement, chartPath("templates/taskspawners.yaml", "scripts/wait_for_blockers.py", "scripts/sillage_marker.py"),
 			"the project's `vikunja-<project>-<variant>` implementation TaskSpawners",
 			[]string{needKelos, needWriter, needNoWait, needReconcile}},
-		{run.VikunjaDiscuss, chartPath("templates/taskspawners.yaml", "scripts/wait_for_blockers.py"),
+		{run.VikunjaDiscuss, chartPath("templates/taskspawners.yaml", "scripts/wait_for_blockers.py", "scripts/sillage_marker.py"),
 			"the project's discuss TaskSpawners",
 			[]string{needKelos, needWriter, needNoWait, needReconcile}},
 		{run.VikunjaFollowUp, followUpLegacy(), followUpOff, []string{needKelos, needWriter, needNoWait, needReconcile}},
@@ -50,7 +50,7 @@ func Switches() []Switch {
 		{run.VikunjaDoneCleanup, chartPath("scripts/done_unlabel.py", "scripts/action_needed.py", "scripts/report_failures.py"),
 			"the enricher's done-unlabel and action-needed hooks (`IN_PROGRESS_LABEL`, `ACTION_NEEDED_LABEL`) and the failure reporter's done sweeps",
 			[]string{needWriter, needReconcile}},
-		{run.VikunjaChain, chartPath("scripts/subtask_chain.py", "templates/subtask-chain-reconcile.yaml"),
+		{run.VikunjaChain, chartPath("scripts/subtask_chain.py", "templates/subtask-chain-reconcile.yaml", "templates/_subtask-chain.tpl"),
 			"the enricher's chain hook (`CHAIN_LABEL`) and the `subtask-chain-reconcile` CronJob",
 			[]string{needWriter, needReconcile}},
 		{run.VikunjaFailure, chartPath("scripts/report_failures.py", "templates/failure-reporter.yaml"),
@@ -73,7 +73,8 @@ Decisions Gordon recorded while it owned the scope keep their queued actions: th
 submission still looks up its Task name before creating (a legacy spawner's Task of that name takes the run, as legacy's own
 name deduplication refuses Gordon's), and each notice is found by its marker before it is posted, so neither a Task nor a
 comment is made twice. New deliveries are decided by the new owner from then on. Drain first when possible:
-` + "`SELECT family, state, count(*) FROM actions WHERE state <> 'done' GROUP BY 1, 2`" + ` empty for the scope's families.`
+` + "`SELECT family, state, count(*) FROM actions WHERE state NOT IN ('done', 'failed') GROUP BY 1, 2`" + ` empty for the scope's
+families; ` + "`failed`" + ` actions are dead-lettered (never retried), so review them separately.`
 
 // SwitchesMarkdown renders the contracts.
 func SwitchesMarkdown(switches []Switch) string {

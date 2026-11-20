@@ -20,7 +20,7 @@ func TestPullRequestTextsEqualLegacy(t *testing.T) {
 }
 
 func TestPRURLRefusesMalformedReferences(t *testing.T) {
-	for _, ref := range []string{"", "vigie#4", "sperano/vigie", "sperano/vigie#x", "sperano/vigie#0", "a/b/c#4"} {
+	for _, ref := range []string{"", "vigie#4", "sperano/vigie", "sperano/vigie#x", "sperano/vigie#0", "a/b/c#4", "/vigie#4", "sperano/#4", "/#4"} {
 		if url, err := PRURL(ref); err == nil {
 			t.Errorf("PRURL(%q) = %q, want an error", ref, url)
 		}

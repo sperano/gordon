@@ -15,9 +15,9 @@ import (
 	"github.com/sperano/gordon/internal/worker"
 )
 
-// Reactions maps the router's reaction names to the emoji Vikunja stores
-// (webhook_enricher.FOLLOWUP_REACTION, the reconciler's ⏳).
-var Reactions = map[string]string{"eyes": "👀", "hourglass": "⏳"}
+// reactionEmoji maps the router's reaction names to the emoji Vikunja
+// stores (webhook_enricher.FOLLOWUP_REACTION, the reconciler's ⏳).
+var reactionEmoji = map[string]string{"eyes": "👀", "hourglass": "⏳"}
 
 // Runs reads the runs a notice names.
 type Runs interface {

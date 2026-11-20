@@ -334,7 +334,7 @@ func TestDeleteAnswersASuccessStatus(t *testing.T) {
 	srv := kelostest.New(ns)
 	defer srv.Close()
 	srv.Put(named("a"))
-	u := srv.URL + "/apis/" + kelos.Group + "/" + kelos.Version + "/namespaces/" + ns + "/tasks/a"
+	u := srv.URL + "/apis/" + kelos.APIVersion + "/namespaces/" + ns + "/tasks/a"
 	req, err := http.NewRequest(http.MethodDelete, u, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -349,5 +349,8 @@ func TestDeleteAnswersASuccessStatus(t *testing.T) {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil || resp.StatusCode != http.StatusOK || st.Status != "Success" {
 		t.Fatalf("delete answered %d %+v (%v), want 200 Success", resp.StatusCode, st, err)
+	}
+	if _, ok := srv.Task("a"); ok {
+		t.Fatal("Task a still stored after the delete")
 	}
 }

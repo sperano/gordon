@@ -385,7 +385,6 @@ func (s *Server) resume(token string) (items []json.RawMessage, snap, start int,
 	return items, snap, start, nil
 }
 
-// requirement is one k=v term of a label selector.
 // requirement is key=value, or with absent the key's absence (!key).
 type requirement struct {
 	key, value string

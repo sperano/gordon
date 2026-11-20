@@ -120,35 +120,33 @@ func (it listedTask) toListed() ListedTask {
 	return l
 }
 
-// NewestComments reads a task's newest page of comments, newest first:
-// for a task whose embedded comments were cut at a page.
-func (v Vikunja) NewestComments(ctx context.Context, id int64) ([]event.TaskComment, error) {
-	var items []vikunjaComment
-	q := url.Values{"order_by": {"desc"}}
-	if err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d/comments", id), q, &items, nil); err != nil {
-		return nil, err
-	}
-	out := make([]event.TaskComment, len(items))
-	for i, c := range items {
-		out[i] = c.toComment()
-	}
-	return out, nil
-}
-
 // LabelID is the id of the label titled exactly title that the token
-// sees (GET /labels?s=), and false when it sees none.
+// sees (GET /labels?s=, paged until a short page or one with nothing new,
+// at most maxTaskPages), and false when it sees none.
 func (v Vikunja) LabelID(ctx context.Context, title string) (int64, bool, error) {
-	var labels []struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
-	}
-	if err := v.Client.get(ctx, "/labels", url.Values{"s": {title}}, &labels, nil); err != nil {
-		return 0, false, err
-	}
-	for _, l := range labels {
-		if l.Title == title {
-			return l.ID, true, nil
+	seen := map[int64]bool{}
+	for page := 1; page <= maxTaskPages; page++ {
+		var labels []struct {
+			ID    int64  `json:"id"`
+			Title string `json:"title"`
+		}
+		q := url.Values{"s": {title}, "page": {strconv.Itoa(page)}, "per_page": {strconv.Itoa(TaskPageSize)}}
+		if err := v.Client.get(ctx, "/labels", q, &labels, nil); err != nil {
+			return 0, false, err
+		}
+		fresh := 0
+		for _, l := range labels {
+			if l.Title == title {
+				return l.ID, true, nil
+			}
+			if !seen[l.ID] {
+				seen[l.ID], fresh = true, fresh+1
+			}
+		}
+		if len(labels) < TaskPageSize || fresh == 0 {
+			return 0, false, nil
 		}
 	}
-	return 0, false, nil
+	return 0, false, &Error{Provider: ProviderVikunja, Class: Invalid,
+		Err: fmt.Errorf("labels matching %q: more than %d pages", title, maxTaskPages)}
 }

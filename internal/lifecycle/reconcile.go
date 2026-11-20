@@ -1,12 +1,14 @@
 package lifecycle
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +32,7 @@ const (
 // TaskLister lists Vikunja tasks.
 type TaskLister interface {
 	Tasks(ctx context.Context, filter string, comments bool) ([]upstream.ListedTask, error)
-	NewestComments(ctx context.Context, id int64) ([]event.TaskComment, error)
+	TaskComments(ctx context.Context, id int64) ([]event.TaskComment, error)
 	LabelID(ctx context.Context, title string) (int64, bool, error)
 }
 
@@ -98,13 +100,17 @@ func (r *Reconciler) pass(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	byID := make(map[int64]upstream.ListedTask, len(open))
+	for _, lt := range open {
+		byID[lt.Task.ID] = lt
+	}
 	var ds []store.Delivery
 	for _, lt := range append(open, done...) {
 		if !r.candidate(lt.Task) {
 			continue
 		}
 		d, err := store.TaskUpdate(lt.Task.ID, lt.Task.ProjectID,
-			event.Synthetic{Reconcile: digest(lt), Depth: route.MaxRequeueDepth})
+			event.Synthetic{Reconcile: digest(lt, r.openSubtasks(lt.Task, byID)), Depth: route.MaxRequeueDepth})
 		if err != nil {
 			r.Log.Warn("vikunja reconciliation skipped a task", "task", lt.Task.ID, "error", err)
 			continue
@@ -169,15 +175,45 @@ func (r *Reconciler) candidate(t event.Task) bool {
 	return false
 }
 
+// openSubtasks are the listed open subtasks of a chain parent (none for
+// another task): a subtask's blocker getting done changes no field of its
+// parent, yet may let the chain go on, and reconciliation deliveries
+// requeue no parent (route.MaxRequeueDepth).
+func (r *Reconciler) openSubtasks(t event.Task, open map[int64]upstream.ListedTask) []upstream.ListedTask {
+	if l := r.Config.Policy.ChainLabel; l == "" || !t.HasLabel(l) {
+		return nil
+	}
+	var out []upstream.ListedTask
+	for _, s := range t.Relations.Subtasks {
+		if lt, ok := open[s.ID]; ok {
+			out = append(out, lt)
+		}
+	}
+	slices.SortFunc(out, func(a, b upstream.ListedTask) int { return cmp.Compare(a.Task.ID, b.Task.ID) })
+	return out
+}
+
 // digest names a listed task's state: a change of labels, assignees,
-// buckets, relations (a blocker done) or its update time is a new state.
-func digest(lt upstream.ListedTask) string {
-	t := lt.Task
-	t.Title, t.Description = "", ""
-	b, _ := json.Marshal(struct { //nolint:errcheck // plain structs
+// buckets, relations (a blocker done) or its update time is a new state,
+// and so is one of a chain parent's open subtasks.
+func digest(lt upstream.ListedTask, subtasks []upstream.ListedTask) string {
+	type state struct {
 		T event.Task `json:"t"`
 		U time.Time  `json:"u"`
-	}{t, lt.Updated})
+	}
+	of := func(lt upstream.ListedTask) state {
+		t := lt.Task
+		t.Title, t.Description = "", ""
+		return state{t, lt.Updated}
+	}
+	subs := make([]state, len(subtasks))
+	for i, s := range subtasks {
+		subs[i] = of(s)
+	}
+	b, _ := json.Marshal(struct { //nolint:errcheck // plain structs
+		state
+		S []state `json:"s,omitempty"`
+	}{of(lt), subs})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:digestBytes])
 }

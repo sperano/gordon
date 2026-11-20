@@ -90,7 +90,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
 | `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit, a held branch or a timed-out wait for the admission lock |
 | `GORDON_SHADOW_WINDOW` | `15m` | how long a shadow Task waits for the legacy Task of its name before it is recorded `missing` |
-| `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | empty | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. Without it Vikunja actions stay queued (deferred); outside shadow a Gordon-owned family that writes to Vikunja is refused without it |
+| `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | empty | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. Without it Vikunja actions stay queued (deferred); outside shadow a Gordon-owned family that writes to Vikunja is refused without it, or with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction` |
 | `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
 | `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`); unset, no link |
@@ -214,8 +214,9 @@ request is lost; each submission looks up its Task name before creating
 deduplication refuses Gordon's), and each notice is found by its marker
 before it is posted, so no Task and no comment is made twice. New
 deliveries are decided by the new owner from then on. Drain first when
-possible: `SELECT family, state, count(*) FROM actions WHERE state <> 'done'
-GROUP BY 1, 2` empty for the scope's families.
+possible: `SELECT family, state, count(*) FROM actions WHERE state NOT IN
+('done', 'failed') GROUP BY 1, 2` empty for the scope's families; `failed`
+actions are dead-lettered (never retried), so review them separately.
 
 ## Probes and metrics
 

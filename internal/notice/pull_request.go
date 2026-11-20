@@ -17,7 +17,8 @@ const (
 func PRURL(ref string) (string, error) {
 	repo, num, ok := strings.Cut(ref, "#")
 	n, err := strconv.Atoi(num)
-	if !ok || err != nil || n <= 0 || strings.Count(repo, "/") != 1 {
+	owner, name, _ := strings.Cut(repo, "/")
+	if !ok || err != nil || n <= 0 || strings.Count(repo, "/") != 1 || owner == "" || name == "" {
 		return "", fmt.Errorf("pull request reference %q", ref)
 	}
 	return fmt.Sprintf("https://github.com/%s/pull/%d", repo, n), nil

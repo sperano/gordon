@@ -252,8 +252,8 @@ func TestMoveInEveryManualView(t *testing.T) {
 	f.put(Task{ID: 5, ProjectID: 3, Buckets: []Bucket{f.buckets[1][1], f.buckets[3][0]}})
 	ex := executor(f, nil)
 	a := action.New(action.MoveBucket, action.VikunjaTask(5), "Doing")
-	if applied, _ := ex.Recover(ctx, a); applied {
-		t.Fatal("a card in To-Do in one view counts as moved")
+	if applied, err := ex.Recover(ctx, a); err != nil || applied {
+		t.Fatalf("a card in To-Do in one view counts as moved: applied %v, err %v", applied, err)
 	}
 	before := len(f.writes)
 	if err := ex.Execute(ctx, a); err != nil || f.inBucket(5, 1) != "Doing" || f.inBucket(5, 3) != "Doing" {

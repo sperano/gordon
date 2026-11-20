@@ -31,6 +31,7 @@ func TestUncheckedSubmissionTakesNoAdmission(t *testing.T) {
 	runs := &countingRuns{Runs: e.store}
 	e.exec.Runs = runs
 	name := e.implement(t, implementID, "claude-opus")
+	// A follow-up is no agent run, so an unchecked one takes no admission.
 	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}', family = 'vikunja-followup'`)
 	e.perform(t)
 	if st, _, _ := e.action(t, name); st != store.ActionDone || runs.admissions != 0 || len(e.kelos.Creates()) != 1 {

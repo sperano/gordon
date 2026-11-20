@@ -119,8 +119,10 @@ func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 		t.Fatalf("worker DELETE = %v, want permission denied", err)
 	}
 	// The worker queues its own synthetic deliveries, never a body digest
-	// (the receiver's duplicate check of signed GitHub bodies).
-	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, body_digest) VALUES ('github', 'forged', '\x00')`); !denied(err) {
+	// (the receiver's duplicate check of signed GitHub bodies): a row the
+	// insert policy admits, so only the column grant refuses it.
+	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, request_key, kind, scope, headers, body, body_digest)
+		VALUES ('vikunja', 'forged', '', 'vikunja/task.updated', '', '{"`+store.SyntheticHeader+`": "requeue"}', '\x7b7d', '\x00')`); !denied(err) {
 		t.Fatalf("worker inbox INSERT of a body digest = %v, want permission denied", err)
 	}
 	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, request_key, kind, scope, headers, body)

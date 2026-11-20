@@ -84,7 +84,7 @@ func (r *Reconciler) expireLeases(ctx context.Context) error {
 func (r *Reconciler) cancelOrphans(ctx context.Context) error {
 	n, err := r.Store.CancelOrphans(ctx)
 	if n > 0 {
-		r.Log.Info("cancelled actions whose prerequisite failed", "actions", n)
+		r.Log.Info("cancelled actions whose prerequisite failed or was cancelled", "actions", n)
 	}
 	return err
 }

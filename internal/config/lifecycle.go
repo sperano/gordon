@@ -4,6 +4,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
 )
@@ -64,15 +65,40 @@ func (r *reader) optionalURL(name string) string {
 }
 
 // checkWriter refuses a worker that would execute a Gordon-owned family
-// writing to Vikunja without a token to write with: its writes would
-// queue for ever while legacy, switched off for that family, writes none.
+// writing to Vikunja without a token to write with (its writes would
+// queue for ever while legacy, switched off for that family, writes none)
+// or without the policy its notices key on.
 func (r *reader) checkWriter(c Worker) {
-	if c.Shadow || c.Lifecycle.WriteToken != "" {
+	if c.Shadow {
 		return
 	}
+	policyChecked := false
 	for _, rule := range c.Ownership.Rules {
-		if rule.Owner == rollout.Gordon && slices.Contains(vikunjaWriting, rule.Family) {
+		if rule.Owner != rollout.Gordon || !slices.Contains(vikunjaWriting, rule.Family) {
+			continue
+		}
+		if c.Lifecycle.WriteToken == "" {
 			r.fail("ownership rule %s/%s writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required", rule.Project, rule.Family)
+		}
+		if !policyChecked {
+			r.checkLifecyclePolicy(c.Routing.Policy, rule)
+			policyChecked = true
+		}
+	}
+}
+
+// checkLifecyclePolicy refuses an empty policy field a Gordon-owned
+// Vikunja family needs: Gordon's own user (without it no notice is
+// trusted, so each is posted again), the web base its links and chain
+// notices match on, and the reaction that withdraws a request.
+func (r *reader) checkLifecyclePolicy(p profile.Policy, rule rollout.Rule) {
+	for _, f := range []struct{ name, value string }{
+		{"vikunja_service_user", p.VikunjaServiceUser},
+		{"vikunja_web_url", p.VikunjaWebURL},
+		{"cancel_reaction", p.CancelReaction},
+	} {
+		if f.value == "" {
+			r.fail("ownership rule %s/%s writes to Vikunja: GORDON_ROUTING_CONFIG_FILE policy %s is empty", rule.Project, rule.Family, f.name)
 		}
 	}
 }

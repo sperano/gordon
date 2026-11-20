@@ -86,28 +86,59 @@ func TestLifecycleRefusals(t *testing.T) {
 		"bad lucarne url": {map[string]string{"GORDON_LUCARNE_URL": "lucarne"}, `GORDON_LUCARNE_URL="lucarne"`},
 		"owned without a writer": {map[string]string{"GORDON_SHADOW": "false", "GORDON_DISPATCH_CONFIG_FILE": "DISPATCH",
 			"GORDON_OWNERSHIP_FILE": "OWNED"}, "vikunja-implement writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required"},
+		"owned without a service user": {ownedWith(`{"policy":{"vikunja_service_user":""}}`),
+			"policy vikunja_service_user is empty"},
+		"owned without a web url":         {ownedWith(`{"policy":{"vikunja_web_url":""}}`), "policy vikunja_web_url is empty"},
+		"owned without a cancel reaction": {ownedWith(`{"policy":{"cancel_reaction":""}}`), "policy cancel_reaction is empty"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			env := workerEnv(t)
-			for k, v := range tc.set {
-				switch v {
-				case "DISPATCH":
-					v = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
-				case "OWNED":
-					v = file(t, "o.json", gordonOwnsImplement)
-				}
-				env[k] = v
-			}
+			setFiles(t, env, tc.set)
 			if _, err := LoadWorker(envOf(env)); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("LoadWorker = %v, want %q", err, tc.want)
 			}
 		})
 	}
-	// In shadow the same rule executes nothing, so needs no writer.
+	// A routing file overriding one policy field keeps the others.
 	env := workerEnv(t)
+	setFiles(t, env, ownedWith(`{"policy":{"cancel_reaction":"x"}}`))
+	if _, err := LoadWorker(envOf(env)); err != nil {
+		t.Fatalf("executing worker with a complete policy: %v", err)
+	}
+	// In shadow the same rule executes nothing, so needs no writer.
+	env = workerEnv(t)
 	env["GORDON_OWNERSHIP_FILE"] = file(t, "o.json", gordonOwnsImplement)
 	if _, err := LoadWorker(envOf(env)); err != nil {
 		t.Fatalf("shadow worker with a Gordon rule: %v", err)
+	}
+}
+
+// ownedWith is an executing worker owning vikunja-implement with a writer
+// and the routing config routing.
+func ownedWith(routing string) map[string]string {
+	return map[string]string{"GORDON_SHADOW": "false", "GORDON_DISPATCH_CONFIG_FILE": "DISPATCH",
+		"GORDON_OWNERSHIP_FILE": "OWNED", "GORDON_VIKUNJA_WRITE_TOKEN_FILE": "WRITER",
+		"GORDON_ROUTING_CONFIG_FILE": "ROUTING:" + routing}
+}
+
+// setFiles sets set into env, writing the file a placeholder value names:
+// DISPATCH, OWNED, WRITER, or ROUTING:<json>.
+func setFiles(t *testing.T, env, set map[string]string) {
+	t.Helper()
+	for k, v := range set {
+		switch v {
+		case "DISPATCH":
+			v = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
+		case "OWNED":
+			v = file(t, "o.json", gordonOwnsImplement)
+		case "WRITER":
+			v = file(t, "w", "wtoken\n")
+		default:
+			if routing, ok := strings.CutPrefix(v, "ROUTING:"); ok {
+				v = file(t, "r.json", routing)
+			}
+		}
+		env[k] = v
 	}
 }

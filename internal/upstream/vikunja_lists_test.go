@@ -137,3 +137,40 @@ func TestVikunjaTaskCommentsAndLabel(t *testing.T) {
 		t.Fatal("a partial title matched")
 	}
 }
+
+// pagedLabels serves pages full of "in progress (n)" labels up to pages,
+// then the exact "in progress" label alone on the next page.
+func pagedLabels(t *testing.T, pages int, read *int) Vikunja {
+	c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		*read++
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page > pages {
+			fmt.Fprint(w, `[{"id":9999,"title":"in progress"}]`)
+			return
+		}
+		items := make([]string, TaskPageSize)
+		for i := range items {
+			id := (page-1)*TaskPageSize + i + 1
+			items[i] = fmt.Sprintf(`{"id":%d,"title":"in progress (%d)"}`, id, id)
+		}
+		fmt.Fprint(w, "["+strings.Join(items, ",")+"]")
+	})
+	return Vikunja{c}
+}
+
+func TestVikunjaLabelIDPastTheFirstPage(t *testing.T) {
+	read := 0
+	id, ok, err := pagedLabels(t, 2, &read).LabelID(ctx, "in progress")
+	if err != nil || !ok || id != 9999 || read != 3 {
+		t.Fatalf("LabelID = %d %v %v in %d reads, want 9999 on the third page", id, ok, err, read)
+	}
+}
+
+func TestVikunjaLabelIDRefusesMoreThanTheCap(t *testing.T) {
+	read := 0
+	_, ok, err := pagedLabels(t, maxTaskPages, &read).LabelID(ctx, "in progress")
+	want := fmt.Sprintf(`vikunja: invalid: labels matching "in progress": more than %d pages`, maxTaskPages)
+	if ok || err == nil || err.Error() != want || read != maxTaskPages {
+		t.Fatalf("LabelID = %v, %v after %d reads; want %q after %d", ok, err, read, want, maxTaskPages)
+	}
+}

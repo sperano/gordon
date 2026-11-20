@@ -193,7 +193,7 @@ func (e *Executor) sync(ctx context.Context, a action.Action) error {
 }
 
 func emoji(value string) string {
-	if e, ok := Reactions[value]; ok {
+	if e, ok := reactionEmoji[value]; ok {
 		return e
 	}
 	return value

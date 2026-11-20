@@ -286,8 +286,9 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 }
 
 // TestVikunjaEntriesMatchTheirSwitches: an inventory entry that acts for a
-// Vikunja family has its script in that family's switch, so the switch
-// names every legacy component the cutover turns off.
+// Vikunja family has its primary component (its first legacy file) in
+// that family's switch. The other files can be partials shared with
+// families that stay (`_worker.tpl`), so they are not checked.
 func TestVikunjaEntriesMatchTheirSwitches(t *testing.T) {
 	legacy := map[run.Family][]string{}
 	for _, s := range Switches() {

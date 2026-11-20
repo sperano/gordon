@@ -60,12 +60,15 @@ type Action struct {
 	Key    string `json:"key"`
 	Kind   Kind   `json:"kind"`
 	Target Target `json:"target"`
-	// Value is the label, bucket, reaction or notice kind, or the Task
-	// name; "" when the kind needs none.
+	// Value is the label, bucket, reaction or notice kind, the Task name,
+	// or the username an assign gives the task; "" when the kind needs
+	// none.
 	Value string `json:"value,omitempty"`
-	// Detail qualifies a notice (the unanswered reason code, or the pull
-	// request a pr-open or merged notice names) or carries a GitHub
-	// reaction's subject node id; it is not part of a reaction's key.
+	// Detail qualifies a notice (the unanswered reason code, the pull
+	// request a pr-open or merged notice names, the run or subtask it is
+	// about), names the runs a cancel-run stops (comma-separated) or the
+	// task a sync-label copies from, or carries a GitHub reaction's
+	// subject node id; it is not part of a reaction's key.
 	Detail string `json:"detail,omitempty"`
 	// After is the key of an action of the same decision that must be
 	// done first ("" for none): a claim waits for its run's submission,

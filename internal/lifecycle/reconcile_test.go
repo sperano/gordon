@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"slices"
@@ -18,9 +19,10 @@ import (
 )
 
 type lister struct {
-	open, done []upstream.ListedTask
-	newest     map[int64][]event.TaskComment
-	filters    []string
+	open, done  []upstream.ListedTask
+	comments    map[int64][]event.TaskComment
+	commentErrs map[int64]error
+	filters     []string
 }
 
 func (l *lister) Tasks(_ context.Context, filter string, _ bool) ([]upstream.ListedTask, error) {
@@ -31,8 +33,8 @@ func (l *lister) Tasks(_ context.Context, filter string, _ bool) ([]upstream.Lis
 	return l.open, nil
 }
 
-func (l *lister) NewestComments(_ context.Context, id int64) ([]event.TaskComment, error) {
-	return l.newest[id], nil
+func (l *lister) TaskComments(_ context.Context, id int64) ([]event.TaskComment, error) {
+	return l.comments[id], l.commentErrs[id]
 }
 
 func (l *lister) LabelID(_ context.Context, title string) (int64, bool, error) {
@@ -155,7 +157,7 @@ func TestReconcileRecoversLostRequests(t *testing.T) {
 		}}
 	cut := upstream.ListedTask{Task: event.Task{ID: 2, ProjectID: 3}, CommentCount: 60}
 	l := &lister{open: []upstream.ListedTask{task, cut},
-		newest: map[int64][]event.TaskComment{2: {request(20, "eric", time.Hour)}}}
+		comments: map[int64][]event.TaskComment{2: {request(20, "eric", time.Hour)}}}
 	in := &inbox{keys: map[string]store.Delivery{}, known: []string{"vikunja/comment/15"}, handled: []string{"vikunja/comment/16"}}
 	if err := reconciler(l, in).Once(context.Background()); err != nil {
 		t.Fatal(err)
@@ -168,5 +170,41 @@ func TestReconcileRecoversLostRequests(t *testing.T) {
 		if err != nil || ev.Actor != "eric" || ev.RequestKey == "" || !strings.Contains(ev.DeliveryKey, "/redispatch/") {
 			t.Errorf("recovered delivery %+v (%v): want the owner's request under a redispatch key", ev, err)
 		}
+	}
+}
+
+// TestReconcileRequeuesAChainWhenASubtaskChanges: a subtask's blocker
+// getting done changes nothing on its chain parent, so the parent's state
+// key covers its open subtasks.
+func TestReconcileRequeuesAChainWhenASubtaskChanges(t *testing.T) {
+	parent := upstream.ListedTask{Task: event.Task{ID: 3, ProjectID: 3, Labels: []string{"chain"},
+		Relations: event.Relations{Subtasks: []event.Related{{ID: 5}}}}}
+	sub := upstream.ListedTask{Task: event.Task{ID: 5, ProjectID: 3,
+		Relations: event.Relations{BlockedBy: []event.Related{{ID: 9}}}}}
+	l := &lister{open: []upstream.ListedTask{parent, sub}}
+	r := reconciler(l, &inbox{keys: map[string]store.Delivery{}})
+	if n, err := r.pass(context.Background()); err != nil || n != 1 {
+		t.Fatalf("first pass queued %d (%v), want the chain parent", n, err)
+	}
+	l.open[1].Task.Relations.BlockedBy[0].Done = true
+	if n, err := r.pass(context.Background()); err != nil || n != 1 {
+		t.Fatalf("a subtask's blocker done since queued %d (%v), want the parent again", n, err)
+	}
+}
+
+// TestReconcileSkipsOnlyATaskWhoseCommentsFail: one task's comment read
+// failing still queues the rest of the pass.
+func TestReconcileSkipsOnlyATaskWhoseCommentsFail(t *testing.T) {
+	broken := upstream.ListedTask{Task: event.Task{ID: 1, ProjectID: 3, Assignees: []string{"claude-opus"}}, CommentCount: 60}
+	cut := upstream.ListedTask{Task: event.Task{ID: 2, ProjectID: 3}, CommentCount: 60}
+	l := &lister{open: []upstream.ListedTask{broken, cut},
+		comments:    map[int64][]event.TaskComment{2: {request(20, "eric", time.Hour)}},
+		commentErrs: map[int64]error{1: errors.New("vikunja: unavailable")}}
+	in := &inbox{keys: map[string]store.Delivery{}}
+	if err := reconciler(l, in).Once(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := queuedTasks(in); !slices.Equal(got, []string{"comment/20", "task/1"}) {
+		t.Fatalf("queued %v, want task 1's update and task 2's request", got)
 	}
 }

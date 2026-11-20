@@ -32,11 +32,14 @@ func (r *Reconciler) requests(ctx context.Context, open []upstream.ListedTask) (
 	for _, lt := range open {
 		comments := lt.Comments
 		if lt.CommentCount > len(comments) {
-			newest, err := r.Tasks.NewestComments(ctx, lt.Task.ID)
+			// Embedded comments were cut at a page: read them all. A
+			// failure skips this task only; the next pass sees it again.
+			all, err := r.Tasks.TaskComments(ctx, lt.Task.ID)
 			if err != nil {
-				return nil, fmt.Errorf("comments of task %d: %w", lt.Task.ID, err)
+				r.Log.Warn("vikunja reconciliation skipped a task's comments", "task", lt.Task.ID, "error", err)
+				continue
 			}
-			comments = newest
+			comments = all
 		}
 		for _, c := range comments {
 			if r.recoverable(c, now) {
