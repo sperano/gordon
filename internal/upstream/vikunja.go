@@ -67,19 +67,28 @@ func (v Vikunja) Task(ctx context.Context, id int64) (event.Task, error) {
 // (dispatch.DefaultCommentsMaxBytes).
 const maxCommentPages = 20
 
+// emptyPageBytes is the room a page read keeps past the comment budget,
+// so the empty page that ends the list ("[]", maybe with a newline) is
+// read even once the comments before it used the whole budget.
+const emptyPageBytes = 16
+
 // Comments reads all of a task's comments, oldest first (GET
 // /tasks/{id}/comments, page after page until an empty one), as one JSON
 // array: the raw JSON a prompt quotes, as the legacy spawners'
 // contextSources did, but with every page, not only the first. A task
 // whose comments fit one page gets that page's array as the API returned it.
-func (v Vikunja) Comments(ctx context.Context, id int64) (json.RawMessage, error) {
-	if id <= 0 {
-		return nil, &Error{Provider: ProviderVikunja, Class: Invalid, Err: fmt.Errorf("task id %d", id)}
+// maxBytes caps the pages' bytes: no page is read past what is left of it,
+// and comments over it are Invalid.
+func (v Vikunja) Comments(ctx context.Context, id int64, maxBytes int) (json.RawMessage, error) {
+	if id <= 0 || maxBytes <= 0 {
+		return nil, &Error{Provider: ProviderVikunja, Class: Invalid,
+			Err: fmt.Errorf("task id %d, comment budget %d", id, maxBytes)}
 	}
 	var first json.RawMessage
 	var all []json.RawMessage
+	used := 0
 	for page := 1; page <= maxCommentPages; page++ {
-		raw, items, err := v.commentsPage(ctx, id, page)
+		raw, items, err := v.commentsPage(ctx, id, page, maxBytes-used+emptyPageBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -92,6 +101,10 @@ func (v Vikunja) Comments(ctx context.Context, id int64) (json.RawMessage, error
 			}
 			return json.Marshal(all)
 		}
+		if used += len(raw); used > maxBytes {
+			return nil, &Error{Provider: ProviderVikunja, Class: Invalid,
+				Err: fmt.Errorf("comments of task %d: over %d bytes", id, maxBytes)}
+		}
 		all = append(all, items...)
 	}
 	return nil, &Error{Provider: ProviderVikunja, Class: Invalid,
@@ -99,16 +112,16 @@ func (v Vikunja) Comments(ctx context.Context, id int64) (json.RawMessage, error
 }
 
 // commentsPage reads one page of a task's comments: the raw array and
-// its items.
-func (v Vikunja) commentsPage(ctx context.Context, id int64, page int) (json.RawMessage, []json.RawMessage, error) {
+// its items, the body capped at limit bytes.
+func (v Vikunja) commentsPage(ctx context.Context, id int64, page, limit int) (json.RawMessage, []json.RawMessage, error) {
 	var raw json.RawMessage
 	var items []json.RawMessage
 	query := url.Values{"page": {strconv.Itoa(page)}}
-	err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d/comments", id), query, &raw, func() error {
+	err := v.Client.getCapped(ctx, fmt.Sprintf("/tasks/%d/comments", id), query, &raw, func() error {
 		if b := bytes.TrimSpace(raw); len(b) == 0 || b[0] != '[' {
 			return fmt.Errorf("comments of task %d: not a JSON array", id)
 		}
 		return json.Unmarshal(raw, &items)
-	})
+	}, limit)
 	return raw, items, err
 }

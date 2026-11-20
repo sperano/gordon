@@ -72,7 +72,7 @@ type ledger struct{}
 func (ledger) SeenDelivery(string) bool           { return false }
 func (ledger) HandledRequest(string) bool         { return false }
 func (ledger) Run(string) (route.RunRecord, bool) { return route.RunRecord{}, false }
-func (f fakeComments) Comments(context.Context, int64) (json.RawMessage, error) {
+func (f fakeComments) Comments(context.Context, int64, int) (json.RawMessage, error) {
 	return json.RawMessage(f), nil
 }
 

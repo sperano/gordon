@@ -10,9 +10,10 @@ import (
 	"github.com/sperano/gordon/internal/route"
 )
 
-// CommentReader reads a Vikunja task's comments as raw JSON.
+// CommentReader reads a Vikunja task's comments as raw JSON, reading no
+// more than maxBytes of them.
 type CommentReader interface {
-	Comments(ctx context.Context, taskID int64) (json.RawMessage, error)
+	Comments(ctx context.Context, taskID int64, maxBytes int) (json.RawMessage, error)
 }
 
 // Preparer builds the Task of every run a decision dispatches, executed
@@ -54,8 +55,9 @@ func (p Preparer) comments(ctx context.Context, taskID int64) string {
 	if p.Comments == nil {
 		return ""
 	}
-	raw, err := p.Comments.Comments(ctx, taskID)
-	if err != nil || len(raw) > p.Builder.Config.commentsMax() {
+	limit := p.Builder.Config.commentsMax()
+	raw, err := p.Comments.Comments(ctx, taskID, limit)
+	if err != nil || len(raw) > limit {
 		return ""
 	}
 	return string(bytes.TrimSpace(raw))

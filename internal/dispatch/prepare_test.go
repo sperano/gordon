@@ -19,13 +19,15 @@ import (
 
 // countingComments answers with body (or err) and counts its reads.
 type countingComments struct {
-	body  string
-	err   error
-	reads int
+	body     string
+	err      error
+	reads    int
+	maxBytes int // the budget of the last read
 }
 
-func (c *countingComments) Comments(context.Context, int64) (json.RawMessage, error) {
+func (c *countingComments) Comments(_ context.Context, _ int64, maxBytes int) (json.RawMessage, error) {
 	c.reads++
+	c.maxBytes = maxBytes
 	return json.RawMessage(c.body), c.err
 }
 
@@ -75,6 +77,16 @@ func TestCommentsQuotedOrLeftEmpty(t *testing.T) {
 			}
 			if tc.reader.reads != want {
 				t.Fatalf("%d comment reads, want %d", tc.reader.reads, want)
+			}
+			wantBudget := dispatch.DefaultCommentsMaxBytes
+			switch {
+			case tc.max < 0:
+				wantBudget = 0
+			case tc.max > 0:
+				wantBudget = tc.max
+			}
+			if tc.reader.maxBytes != wantBudget {
+				t.Fatalf("read with a budget of %d bytes, want %d", tc.reader.maxBytes, wantBudget)
 			}
 		})
 	}

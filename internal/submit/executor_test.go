@@ -56,7 +56,7 @@ func (f *tasks) Task(_ context.Context, id int64) (event.Task, error) {
 	return t, nil
 }
 
-func (f *tasks) Comments(context.Context, int64) (json.RawMessage, error) {
+func (f *tasks) Comments(context.Context, int64, int) (json.RawMessage, error) {
 	return json.RawMessage("[]"), nil
 }
 
