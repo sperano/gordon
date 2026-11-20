@@ -174,11 +174,15 @@ func (r *reader) baseURL(name, def string) string {
 	}
 	v = strings.TrimRight(v, "/")
 	u, err := url.Parse(v)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		r.fail("%s=%q: want an http or https URL with a host", name, v)
+	if err != nil {
+		// Neither the value nor the parse error, which quotes it: either
+		// can carry a password.
+		r.fail("%s: want an http or https URL with a host", name)
 	} else if u.User != nil {
 		// Credentials go in their files; the URL is logged at start.
 		r.fail("%s: want a URL without user information", name)
+	} else if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		r.fail("%s=%q: want an http or https URL with a host", name, v)
 	} else if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(v, "#") {
 		// Endpoint paths are appended to the base: a query or fragment
 		// would swallow them.

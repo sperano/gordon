@@ -151,6 +151,12 @@ func TestWorkerRefusals(t *testing.T) {
 			"GORDON_KELOS_API_URL": "https://admin:hunter2@k8s:6443"}, "GORDON_KELOS_API_URL: want a URL without user information"},
 		"vikunja url userinfo": {map[string]string{"GORDON_VIKUNJA_URL": "https://bot@v/api/v1"},
 			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, wrong scheme": {map[string]string{"GORDON_VIKUNJA_URL": "ftp://admin:hunter2@v"},
+			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, no host": {map[string]string{"GORDON_VIKUNJA_URL": "https://admin:hunter2@"},
+			"GORDON_VIKUNJA_URL: want a URL without user information"},
+		"userinfo, unparseable": {map[string]string{"GORDON_VIKUNJA_URL": "https://admin:hunter2@v:port"},
+			"GORDON_VIKUNJA_URL: want an http or https URL with a host"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

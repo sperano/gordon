@@ -122,7 +122,7 @@ func walk(path string, a, b any, out *[]string) {
 	al, aok := a.([]any)
 	bl, bok := b.([]any)
 	if am, bm, ok := byName(al), byName(bl), aok && bok && unorderedLists[field(path)]; ok && am != nil && bm != nil {
-		// Env, volumes, mounts and containers: by name, not position.
+		// Env, volumes and volume mounts: by name, not position.
 		keys := slices.Collect(maps.Keys(am))
 		for k := range bm {
 			if _, ok := am[k]; !ok {

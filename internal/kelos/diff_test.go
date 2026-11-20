@@ -85,6 +85,24 @@ func TestDiffKelosLabelsLeftOutOnBothSides(t *testing.T) {
 	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want a kelos.dev/ label of want left out", diff, err)
 	}
+	want = kelos.Task{Metadata: kelos.Metadata{Labels: map[string]string{"role": "x"}}}
+	got = raw(t, map[string]any{"metadata": map[string]any{"labels": map[string]any{"role": "x", "kelos.dev/taskspawner": "s"}},
+		"spec": map[string]any{"prompt": ""}})
+	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+		t.Fatalf("Diff = %v, %v; want a kelos.dev/ label of got left out", diff, err)
+	}
+}
+
+func TestDiffVolumesByName(t *testing.T) {
+	want := kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{Type: "claude-code", PodOverrides: &kelos.PodOverrides{
+		Volumes:      []json.RawMessage{json.RawMessage(`{"name":"a"}`), json.RawMessage(`{"name":"b"}`)},
+		VolumeMounts: []json.RawMessage{json.RawMessage(`{"name":"a"}`), json.RawMessage(`{"name":"b"}`)}}}}}
+	reversed := []any{map[string]any{"name": "b"}, map[string]any{"name": "a"}}
+	got := raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
+		"podOverrides": map[string]any{"volumes": reversed, "volumeMounts": reversed}}}})
+	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+		t.Fatalf("Diff = %v, %v; want volumes and mounts in another order to be the same", diff, err)
+	}
 }
 
 func TestDiffOrderedNamedLists(t *testing.T) {

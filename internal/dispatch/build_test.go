@@ -368,3 +368,27 @@ func TestPodPiecesComposeInOrder(t *testing.T) {
 		t.Fatalf("workspace %s, want the read-only copy", rn.Task.WorkspaceName())
 	}
 }
+
+// TestLastInitContainersFollowEveryPiece: a family's last init containers
+// start after every piece's extra ones, a later piece's included.
+func TestLastInitContainersFollowEveryPiece(t *testing.T) {
+	cfg := fixture(t)
+	f := cfg.Families[run.VikunjaDiscuss]
+	f.Pod.ExtraInitContainers = append(f.Pod.ExtraInitContainers, json.RawMessage(`{"name":"from-family"}`))
+	f.Pod.LastInitContainers = append(f.Pod.LastInitContainers, json.RawMessage(`{"name":"from-family-last"}`))
+	cfg.Families[run.VikunjaDiscuss] = f
+	p := cfg.Profiles["discuss-default"]
+	p.Pod.ExtraInitContainers = append(p.Pod.ExtraInitContainers, json.RawMessage(`{"name":"from-profile"}`))
+	cfg.Profiles["discuss-default"] = p
+	rn, _ := prepared(t, cfg, taskUpdated(vikunjaTask(gordonID, "discuss"), "claude-opus"), run.VikunjaDiscuss)
+	var order []string
+	for _, c := range rn.Task.Spec.Worker.PodOverrides.ExtraInitContainers {
+		var named struct{ Name string }
+		if err := json.Unmarshal(c, &named); err == nil && strings.HasPrefix(named.Name, "from-") {
+			order = append(order, named.Name)
+		}
+	}
+	if want := []string{"from-family", "from-profile", "from-family-last"}; !slices.Equal(order, want) {
+		t.Fatalf("init containers %v, want %v", order, want)
+	}
+}
