@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"time"
@@ -74,8 +73,11 @@ type Receiver struct {
 	Inbox Inbox
 	// Keys returns the current signing keys (re-read so a rotated key
 	// file takes effect without a restart).
-	Keys    func() auth.Keys
-	Slots   *Slots
+	Keys  func() auth.Keys
+	Slots *Slots
+	// Proxies are the trusted proxies whose X-Forwarded-For names the
+	// client a request's slot is charged to.
+	Proxies Proxies
 	Metrics *metrics.Metrics
 	Log     *slog.Logger
 	// Deadline bounds the whole request: waiting for a slot and reading
@@ -109,7 +111,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(a.status)
 	io.WriteString(w, a.text+"\n") //nolint:errcheck // the client may be gone
 	attrs := []any{"result", a.result, "status", a.status, logging.KeyDelivery, d.DeliveryKey,
-		logging.KeyRequest, d.RequestKey, logging.KeyKind, string(d.Kind), "bytes", len(d.Body), "peer", peer(r)}
+		logging.KeyRequest, d.RequestKey, logging.KeyKind, string(d.Kind), "bytes", len(d.Body), "peer", rc.Proxies.Peer(r)}
 	if a.reason != "" {
 		attrs = append(attrs, "reason", a.reason)
 	}
@@ -137,7 +139,7 @@ func (rc *Receiver) receive(r *http.Request, source event.Source) (answer, store
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rc.Deadline)
 	defer cancel()
-	p := peer(r)
+	p := rc.Proxies.Peer(r)
 	if !rc.Slots.Acquire(ctx, p) {
 		return answer{http.StatusServiceUnavailable, ResultUnavailable, ReasonBusy, "busy"}, store.Delivery{}, 0
 	}
@@ -225,16 +227,14 @@ func describe(d event.Delivery) (store.Delivery, answer, bool) {
 	case err != nil:
 		return sd, reject(http.StatusBadRequest, ReasonMalformed), false
 	}
-	sd.DeliveryKey, sd.RequestKey, sd.Kind, sd.Scope = ev.DeliveryKey, ev.RequestKey, ev.Kind, scope(ev)
-	return sd, answer{}, true
-}
-
-// scope is the project hint the worker's per-project limit keys on.
-func scope(ev event.Event) string {
-	if ev.Vikunja != nil {
-		return fmt.Sprintf("vikunja/project/%d", ev.Vikunja.Task.ProjectID)
+	sd.DeliveryKey, sd.RequestKey, sd.Kind, sd.Scope = ev.DeliveryKey, ev.RequestKey, ev.Kind, ev.Scope()
+	if d.Source == event.SourceGitHub {
+		// GitHub signs the body, not the delivery id: a captured body
+		// resent under a fresh id is still the same delivery.
+		sum := sha256.Sum256(d.Body)
+		sd.BodyDigest = sum[:]
 	}
-	return "github/" + ev.GitHub.Repository
+	return sd, answer{}, true
 }
 
 func authReason(err error) string {
@@ -248,12 +248,4 @@ func authReason(err error) string {
 	default:
 		return ReasonUnknown
 	}
-}
-
-func peer(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

@@ -6,6 +6,10 @@ CREATE TABLE inbox (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     source          text        NOT NULL,
     delivery_key    text        NOT NULL UNIQUE,
+    -- The signed body's digest, for sources whose delivery key is an
+    -- unsigned header (GitHub): a replayed body under a fresh delivery id
+    -- is still a duplicate.
+    body_digest     bytea       UNIQUE,
     request_key     text        NOT NULL DEFAULT '',
     kind            text        NOT NULL DEFAULT '',
     scope           text        NOT NULL DEFAULT '',
@@ -24,6 +28,10 @@ CREATE TABLE inbox (
 );
 
 CREATE INDEX inbox_ready ON inbox (next_attempt_at, id) WHERE state = 'pending';
+-- Queue gauges read unfinished rows; pruning reads finished rows that
+-- still hold a body. Neither grows with the history of done rows.
+CREATE INDEX inbox_unfinished ON inbox (state, received_at) WHERE state <> 'done';
+CREATE INDEX inbox_bodies ON inbox (finished_at) WHERE body IS NOT NULL AND state <> 'pending';
 
 CREATE TABLE decisions (
     inbox_id    bigint      PRIMARY KEY REFERENCES inbox (id),
@@ -87,3 +95,4 @@ CREATE TABLE actions (
 
 CREATE INDEX actions_ready ON actions (next_attempt_at, id)
     WHERE state IN ('pending', 'ambiguous', 'running');
+CREATE INDEX actions_unfinished ON actions (state, created_at) WHERE state <> 'done';

@@ -48,12 +48,15 @@ Every mode:
 | `GORDON_GITHUB_KEY_FILE` | — | `X-Hub-Signature-256` key (GitHub webhook secret) |
 | `GORDON_WIKI_COMMENT_KEY_FILE`, `GORDON_IMAGE_BUILD_KEY_FILE` | — | `X-Kelos-Signature-256` dispatch keys |
 | `GORDON_MAX_IN_FLIGHT` | `32` | requests read and stored at once; one client address gets a quarter |
+| `GORDON_TRUSTED_PROXIES` | empty | comma-separated addresses or CIDRs of the webhook ingress (e.g. the pod CIDR its proxy and `cloudflared` run in); a request from one is charged to the nearest untrusted `X-Forwarded-For` address. Required behind a proxy: otherwise every sender shares the proxy's quarter |
 | `GORDON_REQUEST_DEADLINE` | `30s` | whole request: slot wait and body |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight requests on SIGTERM (keep under `terminationGracePeriodSeconds`) |
 
-At least one key file is required; a source without one refuses every
-delivery (403). Key files are re-read per request, so a rotated Secret
-applies without a restart.
+At least one key file is required, and each one set must be readable and
+non-empty at start; a source without a key refuses every delivery (403
+signed, 401 unsigned). Key files are re-read per request, so a rotated
+Secret applies without a restart. The proxy in front must append the
+client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 
 `worker`:
 
@@ -68,8 +71,8 @@ applies without a restart.
 | `GORDON_ROUTING_CONFIG_FILE` | `profile.Defaults()` | JSON `profile.Config` (unknown fields refused) |
 | `GORDON_OWNERSHIP_FILE` | empty (all legacy) | JSON `rollout.Table`; refused when invalid or ungated |
 | `GORDON_WORKER_CONCURRENCY` | `4` | items decided (and actions performed) at once |
-| `GORDON_PROJECT_LIMIT` | `2` | per project or repository; `0` is unbounded |
-| `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | requests in flight per provider |
+| `GORDON_PROJECT_LIMIT` | `2` | per project or repository, inbox and outbox together; `0` is unbounded |
+| `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | per provider: reads in flight, and separately outbox actions in flight; each provider at most once |
 | `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT` |
 | `GORDON_UPSTREAM_TIMEOUT` | `10s` | one upstream request |
 | `GORDON_POLL_INTERVAL` | `1s` | idle wait between claims |
@@ -107,8 +110,8 @@ several intervals, `gordon_intake_requests_total{result="unavailable"}`.
 ## Logs
 
 One JSON object per line on stdout. Correlation keys: `inbox_id`,
-`delivery_key`, `request_key`, `source`, `kind`, `action_id`, `action_key`,
-`run`. Bodies, comments and prompts are never logged; credential-shaped
+`delivery_key`, `request_key`, `source`, `kind`, `action_id`, `action_key`;
+a decision's run names are in its family's `runs` field. Bodies, comments and prompts are never logged; credential-shaped
 values in any field are masked and long values truncated.
 
 ## Answers to senders

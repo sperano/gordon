@@ -36,18 +36,88 @@ func TestSlotsBoundTotalAndPeer(t *testing.T) {
 	}
 }
 
-func TestSlotsWaiterWakesOnRelease(t *testing.T) {
-	s := NewSlots(1)
-	s.Acquire(context.Background(), "a")
-	got := make(chan bool)
+// waitUntil polls cond; the slots expose no event for a queued waiter.
+func waitUntil(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func acquireAsync(s *Slots, peer string) chan bool {
+	got := make(chan bool, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		got <- s.Acquire(ctx, "b")
+		got <- s.Acquire(ctx, peer)
 	}()
+	return got
+}
+
+func TestSlotsWaiterWakesOnRelease(t *testing.T) {
+	s := NewSlots(1)
+	s.Acquire(context.Background(), "a")
+	got := acquireAsync(s, "b")
+	waitUntil(t, func() bool { return s.waiting() == 1 })
 	s.Release("a")
 	if !<-got {
 		t.Fatal("waiter not woken by the release")
+	}
+	if s.inUse != 1 || s.held["b"] != 1 {
+		t.Fatalf("slot not handed to the waiter: in use %d, held %v", s.inUse, s.held)
+	}
+}
+
+func TestSlotsReleaseWakesOnlyAWaiterWithRoom(t *testing.T) {
+	s := NewSlots(8) // two per peer
+	for _, p := range []string{"a", "a", "b", "b", "c", "c", "d", "d"} {
+		s.Acquire(context.Background(), p)
+	}
+	full := acquireAsync(s, "a") // a is at its share whatever is released
+	waitUntil(t, func() bool { return s.waiting() == 1 })
+	other := acquireAsync(s, "e")
+	waitUntil(t, func() bool { return s.waiting() == 2 })
+	s.Release("b")
+	if !<-other {
+		t.Fatal("the waiter with room was not granted the slot")
+	}
+	select {
+	case <-full:
+		t.Fatal("a waiter at its share was woken")
+	default:
+	}
+	if s.waiting() != 1 {
+		t.Fatalf("%d waiters, want only peer a's", s.waiting())
+	}
+}
+
+func TestSlotsCancelledWaiterLeavesTheQueue(t *testing.T) {
+	s := NewSlots(1)
+	s.Acquire(context.Background(), "a")
+	ctx, cancel := context.WithCancel(context.Background())
+	got := make(chan bool, 1)
+	go func() { got <- s.Acquire(ctx, "b") }()
+	waitUntil(t, func() bool { return s.waiting() == 1 })
+	cancel()
+	if <-got {
+		t.Fatal("cancelled waiter got a slot")
+	}
+	s.Release("a")
+	if s.waiting() != 0 || s.inUse != 0 {
+		t.Fatalf("cancelled waiter kept: %d waiting, %d in use", s.waiting(), s.inUse)
+	}
+}
+
+func TestSlotsEndedContextTakesNoFreeSlot(t *testing.T) {
+	s := NewSlots(4)
+	ended, cancel := context.WithCancel(context.Background())
+	cancel()
+	if s.Acquire(ended, "a") || s.inUse != 0 {
+		t.Fatalf("an ended context took a free slot (%d in use)", s.inUse)
 	}
 }
 

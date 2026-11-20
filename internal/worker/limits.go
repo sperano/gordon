@@ -42,14 +42,15 @@ func (l *Limiter) TryAcquire(key string) bool {
 	return true
 }
 
-// Release returns a slot TryAcquire took.
+// Release returns a slot TryAcquire took; a key holding none is left
+// alone.
 func (l *Limiter) Release(key string) {
 	if l == nil {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.limit(key) <= 0 {
+	if l.limit(key) <= 0 || l.inUse[key] <= 0 {
 		return
 	}
 	if l.inUse[key]--; l.inUse[key] <= 0 {

@@ -16,7 +16,8 @@ import (
 // Redacted replaces a redacted value.
 const Redacted = "[redacted]"
 
-// MaxValueBytes caps one logged string value.
+// MaxValueBytes is where a long logged string value is cut; the
+// truncation marker is appended after the cut.
 const MaxValueBytes = 1024
 
 // truncatedSuffix marks a value cut at MaxValueBytes.
@@ -31,8 +32,6 @@ const (
 	KeyKind     = "kind"
 	KeyAction   = "action_key"
 	KeyActionID = "action_id"
-	KeyRun      = "run"
-	KeyTask     = "task"
 )
 
 // sensitiveKeys are attribute keys whose value is never logged: secrets,
@@ -43,14 +42,65 @@ var sensitiveKeys = map[string]bool{
 	"signature": true, "cookie": true, "dsn": true, "database_url": true,
 }
 
+// sensitiveSuffixes redact a credential key by its ending (access_token,
+// client_secret, api_key, db_password).
+var sensitiveSuffixes = []string{"token", "secret", "password", "apikey", "api_key"}
+
+func sensitive(key string) bool {
+	k := strings.ToLower(key)
+	if sensitiveKeys[k] {
+		return true
+	}
+	for _, s := range sensitiveSuffixes {
+		if strings.HasSuffix(k, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // secretPatterns match credentials that may appear inside other values
 // (an error quoting a URL or a header).
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})`),
-	regexp.MustCompile(`(?i)\b(bearer|token|basic)\s+[A-Za-z0-9._~+/=-]{8,}`),
 	regexp.MustCompile(`sha256=[0-9a-fA-F]{16,}`),
 	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)`),
 	regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api_key|apikey)=[^\s&]+`),
+}
+
+// schemeCredential is an authorization scheme word and the value after
+// it; the value is masked only when it is credential-shaped (see
+// credentialShaped), so "basic authentication failed" stays readable.
+var schemeCredential = regexp.MustCompile(`(?i)\b(bearer|token|basic)(\s+)([A-Za-z0-9._~+/=-]{8,})`)
+
+// minPlainCredential is the length from which a value after a scheme word
+// is masked even when it is all lowercase letters.
+const minPlainCredential = 20
+
+// credentialShaped reports a value that looks generated rather than a
+// word: long, or with a digit, a symbol, or an uppercase letter after its
+// first.
+func credentialShaped(v string) bool {
+	if len(v) >= minPlainCredential {
+		return true
+	}
+	for i, c := range v {
+		switch {
+		case c >= '0' && c <= '9', strings.ContainsRune("._~+/=-", c):
+			return true
+		case i > 0 && c >= 'A' && c <= 'Z':
+			return true
+		}
+	}
+	return false
+}
+
+func maskSchemeCredential(m string) string {
+	parts := schemeCredential.FindStringSubmatch(m)
+	if !credentialShaped(parts[3]) {
+		return m
+	}
+	return Redacted
 }
 
 // userinfo matches the password of a URL's userinfo.
@@ -71,7 +121,7 @@ func ParseLevel(s string) (slog.Level, error) {
 }
 
 func redact(_ []string, a slog.Attr) slog.Attr {
-	if sensitiveKeys[strings.ToLower(a.Key)] {
+	if sensitive(a.Key) {
 		return slog.String(a.Key, Redacted)
 	}
 	switch a.Value.Kind() {
@@ -88,11 +138,13 @@ func redact(_ []string, a slog.Attr) slog.Attr {
 	return a
 }
 
-// Scrub masks credentials in s and truncates it to MaxValueBytes.
+// Scrub masks credentials in s and cuts it at MaxValueBytes (on a rune
+// boundary), appending the truncation marker.
 func Scrub(s string) string {
 	for _, p := range secretPatterns {
 		s = p.ReplaceAllString(s, Redacted)
 	}
+	s = schemeCredential.ReplaceAllStringFunc(s, maskSchemeCredential)
 	s = userinfo.ReplaceAllString(s, "$1:"+Redacted+"@")
 	if len(s) > MaxValueBytes {
 		cut := MaxValueBytes

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/sperano/gordon/internal/event"
 )
@@ -23,7 +24,8 @@ var GitHubHeaders = map[string]string{
 }
 
 // filesPerPage is the page size of the files list; maxFilePages stops at
-// GitHub's own limit of 3000 files.
+// GitHub's own limit of 3000 files, past which the list is incomplete and
+// the read fails rather than decide on part of it.
 const (
 	filesPerPage = 100
 	maxFilePages = 30
@@ -33,12 +35,28 @@ const (
 // query) is refused before it reaches a URL.
 var repository = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
+// safeRepository is an owner/name pair neither of whose segments is a dot
+// segment ("." or ".."), which the URL path would resolve away.
+func safeRepository(repo string) bool {
+	if !repository.MatchString(repo) {
+		return false
+	}
+	owner, name, _ := strings.Cut(repo, "/")
+	for _, seg := range []string{owner, name} {
+		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 type githubPR struct {
-	Number int    `json:"number"`
-	State  string `json:"state"`
-	Draft  bool   `json:"draft"`
-	Merged bool   `json:"merged"`
-	User   struct {
+	Number       int    `json:"number"`
+	ChangedFiles int    `json:"changed_files"`
+	State        string `json:"state"`
+	Draft        bool   `json:"draft"`
+	Merged       bool   `json:"merged"`
+	User         struct {
 		Login string `json:"login"`
 	} `json:"user"`
 	Head struct {
@@ -59,13 +77,19 @@ type githubPR struct {
 // PullRequest reads a pull request; withFiles also lists its changed
 // files (the reviewers' file patterns need them).
 func (g GitHub) PullRequest(ctx context.Context, repo string, number int, withFiles bool) (event.PullRequest, error) {
-	if !repository.MatchString(repo) || number <= 0 {
+	if !safeRepository(repo) || number <= 0 {
 		return event.PullRequest{}, &Error{Provider: ProviderGitHub, Class: Invalid,
 			Err: fmt.Errorf("pull request %q#%d", repo, number)}
 	}
 	base := fmt.Sprintf("/repos/%s/pulls/%d", repo, number)
 	var raw githubPR
-	if err := g.Client.get(ctx, base, nil, &raw); err != nil {
+	err := g.Client.get(ctx, base, nil, &raw, func() error {
+		if raw.Number != number {
+			return fmt.Errorf("asked for pull request %s#%d, got %d", repo, number, raw.Number)
+		}
+		return nil
+	})
+	if err != nil {
 		return event.PullRequest{}, err
 	}
 	pr := event.PullRequest{Repository: repo, Number: raw.Number, State: raw.State, Draft: raw.Draft,
@@ -81,8 +105,15 @@ func (g GitHub) PullRequest(ctx context.Context, repo string, number int, withFi
 		return pr, nil
 	}
 	files, err := g.files(ctx, base)
+	if err != nil {
+		return event.PullRequest{}, err
+	}
+	if len(files) < raw.ChangedFiles {
+		return event.PullRequest{}, &Error{Provider: ProviderGitHub, Class: Invalid,
+			Err: fmt.Errorf("pull request %s#%d lists %d of its %d files", repo, number, len(files), raw.ChangedFiles)}
+	}
 	pr.Files = files
-	return pr, err
+	return pr, nil
 }
 
 func (g GitHub) files(ctx context.Context, base string) ([]string, error) {
@@ -92,7 +123,7 @@ func (g GitHub) files(ctx context.Context, base string) ([]string, error) {
 			Filename string `json:"filename"`
 		}
 		q := url.Values{"per_page": {strconv.Itoa(filesPerPage)}, "page": {strconv.Itoa(page)}}
-		if err := g.Client.get(ctx, base+"/files", q, &batch); err != nil {
+		if err := g.Client.get(ctx, base+"/files", q, &batch, nil); err != nil {
 			return nil, err
 		}
 		for _, f := range batch {

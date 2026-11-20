@@ -92,8 +92,10 @@ func NewLimit(n int) chan struct{} {
 	return make(chan struct{}, n)
 }
 
-// get reads path (relative to BaseURL, already escaped) with query into out.
-func (c *Client) get(ctx context.Context, path string, query url.Values, out any) error {
+// get reads path (relative to BaseURL, already escaped) with query into
+// out. valid, when set, checks the decoded response (that it is the object
+// asked for); its error is an invalid read, observed as such.
+func (c *Client) get(ctx context.Context, path string, query url.Values, out any, valid func() error) error {
 	if c.Limit != nil {
 		select {
 		case c.Limit <- struct{}{}:
@@ -120,7 +122,8 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		// The URL holds no credential; the error names the host only.
+		// The error quotes the request URL, which holds no credential
+		// (the token travels in a header).
 		return c.fail(Unavailable, 0, err, time.Since(start))
 	}
 	defer resp.Body.Close()
@@ -137,6 +140,11 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return c.fail(Invalid, resp.StatusCode, err, time.Since(start))
+	}
+	if valid != nil {
+		if err := valid(); err != nil {
+			return c.fail(Invalid, resp.StatusCode, err, time.Since(start))
+		}
 	}
 	c.observe(ResultOK, time.Since(start))
 	return nil

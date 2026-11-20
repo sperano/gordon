@@ -18,8 +18,13 @@ type TickFunc func(ctx, work context.Context) (int, error)
 func Loop(ctx context.Context, name string, grace, idle time.Duration, log *slog.Logger, tick TickFunc) {
 	work, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	stop := context.AfterFunc(ctx, func() { time.AfterFunc(grace, cancel) })
-	defer stop()
+	graceTimer := make(chan *time.Timer, 1)
+	stop := context.AfterFunc(ctx, func() { graceTimer <- time.AfterFunc(grace, cancel) })
+	defer func() {
+		if !stop() { // the grace timer was armed: stop it with the loop
+			(<-graceTimer).Stop()
+		}
+	}()
 	for ctx.Err() == nil {
 		n, err := tick(ctx, work)
 		if err != nil && ctx.Err() == nil {
@@ -36,11 +41,12 @@ func Loop(ctx context.Context, name string, grace, idle time.Duration, log *slog
 	log.Info("stopped", "loop", name)
 }
 
-// Every runs fn now and then every interval until ctx ends.
+// Every runs fn now and then every interval until ctx ends; once ctx has
+// ended, fn is not started again.
 func Every(ctx context.Context, interval time.Duration, fn func(context.Context)) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	for {
+	for ctx.Err() == nil {
 		fn(ctx)
 		select {
 		case <-ctx.Done():

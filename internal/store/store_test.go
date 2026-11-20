@@ -39,6 +39,19 @@ func accept(t *testing.T, s *store.Store, key string) int64 {
 	return id
 }
 
+// acceptRequest stores a delivery of another owner request than
+// delivery()'s, so two deliveries of one run do not share a request.
+func acceptRequest(t *testing.T, s *store.Store, key, requestKey string) int64 {
+	t.Helper()
+	d := delivery(key)
+	d.RequestKey = requestKey
+	id, dup, err := s.Accept(ctx, d)
+	if err != nil || dup {
+		t.Fatalf("Accept(%s) = %d, %v, %v; want new row", key, id, dup, err)
+	}
+	return id
+}
+
 func claimOne(t *testing.T, s *store.Store, owner string) store.Item {
 	t.Helper()
 	items, err := s.Claim(ctx, owner, 1, testTTL)

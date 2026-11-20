@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/replay"
 	"github.com/sperano/gordon/internal/route"
 )
 
@@ -25,6 +27,10 @@ func TestBackoffDoublesToItsCap(t *testing.T) {
 	}
 	if got := b.Delay(1000); got != time.Minute {
 		t.Errorf("Delay(1000) = %v, want the cap", got)
+	}
+	huge := Backoff{Base: time.Duration(math.MaxInt64/4 + 1), Max: time.Duration(math.MaxInt64 - 1)}
+	if got := huge.Delay(4); got != huge.Max {
+		t.Errorf("Delay doubling past MaxInt64 = %v, want the cap %v", got, huge.Max)
 	}
 }
 
@@ -44,6 +50,11 @@ func TestLimiter(t *testing.T) {
 	l.Release("a")
 	if !l.TryAcquire("a") {
 		t.Fatal("released slot not reusable")
+	}
+	fresh := &Limiter{Default: 1}
+	fresh.Release("never-taken") // wrote to a nil map before any acquire
+	if !fresh.TryAcquire("never-taken") || fresh.TryAcquire("never-taken") {
+		t.Fatal("releasing a slot never taken changed the limit")
 	}
 	var none *Limiter
 	if !none.TryAcquire("x") {
@@ -102,6 +113,23 @@ func TestLoopCancelsWorkAfterGrace(t *testing.T) {
 	}
 }
 
+func TestEveryStopsCallingOnceCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	Every(ctx, time.Nanosecond, func(context.Context) {
+		calls++
+		cancel() // cancelled while running: no further call, though a tick is due
+	})
+	if calls != 1 {
+		t.Fatalf("fn called %d times, want once", calls)
+	}
+	calls = 0
+	Every(ctx, time.Hour, func(context.Context) { calls++ })
+	if calls != 0 {
+		t.Fatal("fn called on an already cancelled context")
+	}
+}
+
 type recordingTasks struct{ ids []int64 }
 
 func (r *recordingTasks) Task(_ context.Context, id int64) (event.Task, error) {
@@ -118,37 +146,66 @@ func (r *recordingPRs) PullRequest(_ context.Context, repo string, n int, files 
 
 func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 	cfg := profile.Defaults()
-	repo := cfg.Projects[0].Repository
+	repo, p := cfg.Projects[0].Repository, cfg.Policy
+	onPR := func(kind event.Kind, action, actor, body string) event.Event {
+		return event.Event{Kind: kind, Action: action, Actor: actor, RequestKey: "github/req/1",
+			GitHub: &event.GitHub{Repository: repo, OnPullRequest: true, Body: body, PullRequest: event.PullRequest{Number: 3}}}
+	}
+	prEvent := func(action, head, author string) event.Event {
+		return event.Event{Kind: event.GitHubPullRequest, Action: action, GitHub: &event.GitHub{Repository: repo,
+			OnPullRequest: true, PullRequest: event.PullRequest{Number: 3, HeadRef: head, Author: author}}}
+	}
+	ownerComment := func(body string) event.Event {
+		return event.Event{Kind: event.VikunjaTaskCommentCreated, Actor: p.VikunjaOwner, RequestKey: "vikunja/comment/1",
+			Vikunja: &event.Vikunja{Task: event.Task{ID: 6, ProjectID: -1}, Comment: &event.Comment{ID: 1, Body: body}}}
+	}
+	request, bot := p.Trigger+" fix it", p.ReviewBots[0].Login
+	handled := replay.Ledger{Requests: []string{"github/req/1", "vikunja/comment/1"}}
 	cases := []struct {
 		name  string
 		ev    event.Event
+		led   route.Ledger
 		tasks []int64
 		prs   []string
 	}{
 		{"task.updated configured", event.Event{Kind: event.VikunjaTaskUpdated,
-			Vikunja: &event.Vikunja{Task: event.Task{ID: 5, ProjectID: cfg.Projects[0].VikunjaID}}}, []int64{5}, nil},
+			Vikunja: &event.Vikunja{Task: event.Task{ID: 5, ProjectID: cfg.Projects[0].VikunjaID}}}, nil, []int64{5}, nil},
 		{"task.updated unconfigured", event.Event{Kind: event.VikunjaTaskUpdated,
-			Vikunja: &event.Vikunja{Task: event.Task{ID: 5, ProjectID: -1}}}, nil, nil},
-		{"owner comment, any project", event.Event{Kind: event.VikunjaTaskCommentCreated, Actor: cfg.Policy.VikunjaOwner,
-			Vikunja: &event.Vikunja{Task: event.Task{ID: 6, ProjectID: -1}}}, []int64{6}, nil},
-		{"other's comment", event.Event{Kind: event.VikunjaTaskCommentCreated, Actor: "mallory",
-			Vikunja: &event.Vikunja{Task: event.Task{ID: 6}}}, nil, nil},
-		{"PR comment", event.Event{Kind: event.GitHubIssueComment, GitHub: &event.GitHub{Repository: repo,
-			OnPullRequest: true, PullRequest: event.PullRequest{Number: 3}}}, nil, []string{repo}},
-		{"issue comment", event.Event{Kind: event.GitHubIssueComment, GitHub: &event.GitHub{Repository: repo,
-			PullRequest: event.PullRequest{Number: 3}}}, nil, nil},
-		{"unconfigured repository", event.Event{Kind: event.GitHubReview, GitHub: &event.GitHub{Repository: "x/y",
-			OnPullRequest: true, PullRequest: event.PullRequest{Number: 3}}}, nil, nil},
-		{"agent PR", event.Event{Kind: event.GitHubPullRequest, GitHub: &event.GitHub{Repository: repo, OnPullRequest: true,
-			PullRequest: event.PullRequest{Number: 3, HeadRef: "kelos/vikunja-42"}}}, []int64{42}, []string{repo + "+files"}},
-		{"other PR", event.Event{Kind: event.GitHubPullRequest, GitHub: &event.GitHub{Repository: repo, OnPullRequest: true,
-			PullRequest: event.PullRequest{Number: 3, HeadRef: "feature"}}}, nil, []string{repo + "+files"}},
-		{"push", event.Event{Kind: event.GitHubPush, GitHub: &event.GitHub{Repository: repo}}, nil, nil},
+			Vikunja: &event.Vikunja{Task: event.Task{ID: 5, ProjectID: -1}}}, nil, nil, nil},
+		{"owner request, any project", ownerComment("<p>" + request + "</p>"), nil, []int64{6}, nil},
+		{"owner request already handled", ownerComment(request), handled, nil, nil},
+		{"owner comment that is no request", ownerComment("<p>thanks</p>"), nil, nil, nil},
+		{"other's request", event.Event{Kind: event.VikunjaTaskCommentCreated, Actor: "mallory",
+			Vikunja: &event.Vikunja{Task: event.Task{ID: 6}, Comment: &event.Comment{Body: request}}}, nil, nil, nil},
+		{"owner PR request", onPR(event.GitHubIssueComment, "created", p.GitHubOwner, request), nil, nil, []string{repo}},
+		{"owner inline request", onPR(event.GitHubReviewComment, "created", p.GitHubOwner, request), nil, nil, []string{repo}},
+		{"owner PR request already handled", onPR(event.GitHubIssueComment, "created", p.GitHubOwner, request), handled, nil, nil},
+		{"edited PR request", onPR(event.GitHubIssueComment, "edited", p.GitHubOwner, request), nil, nil, nil},
+		{"owner PR comment that is no request", onPR(event.GitHubIssueComment, "created", p.GitHubOwner, "lgtm"), nil, nil, nil},
+		{"other's PR request", onPR(event.GitHubIssueComment, "created", "mallory", request), nil, nil, nil},
+		{"review bot review", onPR(event.GitHubReview, "submitted", bot, "findings"), nil, nil, []string{repo}},
+		{"review bot review, request handled", onPR(event.GitHubReview, "submitted", bot, "findings"), handled, nil, []string{repo}},
+		{"other's review", onPR(event.GitHubReview, "submitted", "mallory", "findings"), nil, nil, nil},
+		{"issue comment", event.Event{Kind: event.GitHubIssueComment, Action: "created", Actor: p.GitHubOwner,
+			GitHub: &event.GitHub{Repository: repo, Body: request, PullRequest: event.PullRequest{Number: 3}}}, nil, nil, nil},
+		{"unconfigured repository", event.Event{Kind: event.GitHubReview, Action: "submitted", Actor: bot,
+			GitHub: &event.GitHub{Repository: "x/y", OnPullRequest: true, PullRequest: event.PullRequest{Number: 3}}}, nil, nil, nil},
+		{"agent PR opened", prEvent("opened", "kelos/vikunja-42", p.PullRequestAuthors[0]), nil, []int64{42}, []string{repo + "+files"}},
+		{"agent PR closed", prEvent("closed", "kelos/vikunja-42", p.PullRequestAuthors[0]), nil, []int64{42}, []string{repo}},
+		{"agent PR reopened", prEvent("reopened", "kelos/vikunja-42", p.PullRequestAuthors[0]), nil, []int64{42}, []string{repo}},
+		{"stranger's task branch", prEvent("closed", "kelos/vikunja-42", "mallory"), nil, nil, nil},
+		{"other PR synchronized", prEvent("synchronize", "feature", "mallory"), nil, nil, []string{repo + "+files"}},
+		{"PR labeled", prEvent("labeled", "feature", p.PullRequestAuthors[0]), nil, nil, nil},
+		{"push", event.Event{Kind: event.GitHubPush, GitHub: &event.GitHub{Repository: repo}}, nil, nil, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tasks, prs := &recordingTasks{}, &recordingPRs{}
-			st, err := StateReader{Config: cfg, Tasks: tasks, PRs: prs}.Read(context.Background(), tc.ev)
+			led := tc.led
+			if led == nil {
+				led = replay.Ledger{}
+			}
+			st, err := StateReader{Config: cfg, Tasks: tasks, PRs: prs}.Read(context.Background(), tc.ev, led)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -32,7 +32,17 @@ func TestFileKeysRereadsAndReportsErrors(t *testing.T) {
 	if err := os.WriteFile(path, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	failed = nil
 	if k := keys(); len(k) != 0 {
 		t.Fatalf("empty key file gave a key: %q", k)
+	}
+	if len(failed) != 1 || failed[0] != event.SourceGitHub {
+		t.Fatalf("errors reported for %v, want only the unreadable github file (an empty one is no error)", failed)
+	}
+	if err := os.WriteFile(path, []byte("crlf\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if k := keys(); string(k[event.SourceVikunja]) != "crlf" {
+		t.Fatalf("CRLF key read as %q, want it trimmed", k[event.SourceVikunja])
 	}
 }

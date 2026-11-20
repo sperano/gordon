@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func logged(t *testing.T, args ...any) map[string]any {
@@ -22,8 +23,10 @@ func logged(t *testing.T, args ...any) map[string]any {
 
 func TestSensitiveKeysAreRedactedWhole(t *testing.T) {
 	out := logged(t, "body", `{"comment":"/gordon do x"}`, "Authorization", "Bearer abc", "prompt", "p",
+		"comment", "c", "token", "t", "signature", "s", "access_token", "a", "API_KEY", "k", "client_secret", "cs",
 		KeyDelivery, "github/delivery/1")
-	for _, k := range []string{"body", "Authorization", "prompt"} {
+	for _, k := range []string{"body", "Authorization", "prompt", "comment", "token", "signature", "access_token",
+		"API_KEY", "client_secret"} {
 		if out[k] != Redacted {
 			t.Errorf("%s = %v, want %s", k, out[k], Redacted)
 		}
@@ -42,6 +45,11 @@ func TestScrubMasksTokensInValuesAndErrors(t *testing.T) {
 		"dial postgres://gordon:hunter2@db:5432/gordon failed":                        "dial postgres://gordon:" + Redacted + "@db:5432/gordon failed",
 		"url ?password=x&a=1":                                                         "url ?" + Redacted + "&a=1",
 		"key -----BEGIN RSA PRIVATE KEY-----\nMII\n-----END RSA PRIVATE KEY----- end": "key " + Redacted + " end",
+		"auth Basic dXNlcjpwYXNz rejected":                                            "auth " + Redacted + " rejected",
+		"token abcdefghijklmnopqrstuvwxyz end":                                        Redacted + " end",
+		"basic authentication failed":                                                 "basic authentication failed",
+		"token refreshing for vikunja":                                                "token refreshing for vikunja",
+		"Bearer Authorization header missing":                                         "Bearer Authorization header missing",
 	}
 	for in, want := range cases {
 		if got := Scrub(in); got != want {
@@ -55,13 +63,17 @@ func TestScrubMasksTokensInValuesAndErrors(t *testing.T) {
 }
 
 func TestScrubTruncatesOnRuneBoundary(t *testing.T) {
-	in := strings.Repeat("é", MaxValueBytes) // two bytes each
+	// "x" then two-byte runes: byte MaxValueBytes is a continuation byte,
+	// so a plain s[:MaxValueBytes] would split a rune.
+	in := "x" + strings.Repeat("é", MaxValueBytes)
 	got := Scrub(in)
-	if !strings.HasSuffix(got, truncatedSuffix) || len(got) > MaxValueBytes+len(truncatedSuffix) {
-		t.Fatalf("Scrub kept %d bytes, want at most %d plus the marker", len(got), MaxValueBytes)
+	body, ok := strings.CutSuffix(got, truncatedSuffix)
+	if !ok {
+		t.Fatalf("Scrub(%d bytes) has no truncation marker", len(in))
 	}
-	if body := strings.TrimSuffix(got, truncatedSuffix); strings.ContainsRune(body, '�') || len(body)%2 != 0 {
-		t.Fatalf("truncation split a rune: %d bytes", len(body))
+	if !utf8.ValidString(body) || len(body) != MaxValueBytes-1 || body != in[:MaxValueBytes-1] {
+		t.Fatalf("kept %d bytes (valid UTF-8 %v), want the %d bytes before the split rune",
+			len(body), utf8.ValidString(body), MaxValueBytes-1)
 	}
 }
 

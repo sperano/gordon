@@ -161,8 +161,10 @@ func TestProjectLimitDefersWithoutConsumingAnAttempt(t *testing.T) {
 	e, id := implementDelivery(t)
 	e.tasks.tasks[implementTaskID] = eligible()
 	e.proc.Projects = &Limiter{Default: 1}
-	if !e.proc.Projects.TryAcquire("vikunja/scope") {
-		t.Fatal("could not hold the project's slot")
+	var scope string
+	storetest.QueryRow(t, e.dbURL, `SELECT scope FROM inbox WHERE id = $1`, []any{id}, &scope)
+	if !strings.HasPrefix(scope, "vikunja/project/") || !e.proc.Projects.TryAcquire(scope) {
+		t.Fatalf("could not hold the project's slot %q", scope)
 	}
 	e.tick(t)
 	st, attempts, _ := e.inboxRow(t, id)
@@ -172,7 +174,7 @@ func TestProjectLimitDefersWithoutConsumingAnAttempt(t *testing.T) {
 	if v := testutil.ToFloat64(e.metric.Deferred.WithLabelValues("inbox", LimitProject)); v != 1 {
 		t.Fatalf("deferred metric = %v", v)
 	}
-	e.proc.Projects.Release("vikunja/scope")
+	e.proc.Projects.Release(scope)
 	e.due(t)
 	e.tick(t)
 	if st, _, _ := e.inboxRow(t, id); st != "done" {

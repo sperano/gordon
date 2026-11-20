@@ -27,7 +27,8 @@ import (
 // Recover looks for the write's external marker (the reaction, the label,
 // the notice's marker comment, the Task of that name) after an attempt
 // that may have reached the provider: applied is true when the write is
-// already there, so it is not made twice. Its errors classify as Execute's.
+// already there, so it is not made twice. Any Recover error leaves the
+// outcome unknown: the action stays ambiguous and is never written blind.
 type Executor interface {
 	Execute(ctx context.Context, a action.Action) error
 	Recover(ctx context.Context, a action.Action) (applied bool, err error)
@@ -65,6 +66,10 @@ const (
 // ReasonNoExecutor defers an action whose kind has no executor in this
 // release: it stays queued for the release that brings one.
 const ReasonNoExecutor = "no executor for this action kind"
+
+// OutcomeUnknown prefixes the last error of an action dead-lettered while
+// ambiguous: an operator checks the provider before replaying it.
+const OutcomeUnknown = "outcome unknown, the write may have applied"
 
 // LimitProvider is the deferred_total limit label of a full provider.
 const LimitProvider = "provider"
@@ -129,11 +134,13 @@ func (o *Outbox) Perform(ctx context.Context, c store.ClaimedAction) {
 		return
 	}
 	defer o.Providers.Release(prov)
-	if c.Project != "" && !o.Projects.TryAcquire(c.Project) {
-		o.deferAction(ctx, log, c, kind, LimitProject, o.DeferDelay, "project limit full")
-		return
+	if c.Project != "" {
+		if !o.Projects.TryAcquire(c.Project) {
+			o.deferAction(ctx, log, c, kind, LimitProject, o.DeferDelay, "project limit full")
+			return
+		}
+		defer o.Projects.Release(c.Project)
 	}
-	defer o.Projects.Release(c.Project)
 	start := time.Now()
 	result, err := o.attempt(ctx, ex, c)
 	o.Metrics.ActionDuration.WithLabelValues(kind).Observe(time.Since(start).Seconds())
@@ -174,9 +181,14 @@ func (o *Outbox) finish(ctx context.Context, log *slog.Logger, c store.ClaimedAc
 		o.Metrics.ActionQueueLatency.WithLabelValues(kind).Observe(time.Since(c.CreatedAt).Seconds())
 		log.Info("action " + result)
 	case result == ResultFailed || c.Attempts >= o.MaxAttempts:
+		msg := err.Error()
+		if result == ResultAmbiguous {
+			// Not "never applied": the write may be at the provider.
+			msg = OutcomeUnknown + ": " + msg
+		}
 		result = ResultFailed
-		werr = o.Store.ActionFailed(ctx, c.Lease, logging.Scrub(err.Error()))
-		log.Error("action dead-lettered", "error", err)
+		werr = o.Store.ActionFailed(ctx, c.Lease, logging.Scrub(msg))
+		log.Error("action dead-lettered", "error", msg)
 	default:
 		delay := o.Backoff.Delay(c.Attempts)
 		werr = o.Store.ActionRetry(ctx, c.Lease, result == ResultAmbiguous, delay, logging.Scrub(err.Error()))

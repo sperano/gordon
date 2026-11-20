@@ -34,13 +34,14 @@ func (v Vikunja) Task(ctx context.Context, id int64) (event.Task, error) {
 		return event.Task{}, &Error{Provider: ProviderVikunja, Class: Invalid, Err: fmt.Errorf("task id %d", id)}
 	}
 	var raw vikunjaTask
-	err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d", id), url.Values{"expand": {"buckets"}}, &raw)
+	err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d", id), url.Values{"expand": {"buckets"}}, &raw, func() error {
+		if raw.ID != id {
+			return fmt.Errorf("asked for task %d, got %d", id, raw.ID)
+		}
+		return nil
+	})
 	if err != nil {
 		return event.Task{}, err
-	}
-	if raw.ID != id {
-		return event.Task{}, &Error{Provider: ProviderVikunja, Class: Invalid,
-			Err: fmt.Errorf("asked for task %d, got %d", id, raw.ID)}
 	}
 	t := event.Task{ID: raw.ID, ProjectID: raw.ProjectID, Done: raw.Done, Buckets: []string{}}
 	for _, l := range raw.Labels {

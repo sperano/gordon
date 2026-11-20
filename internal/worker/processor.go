@@ -82,10 +82,10 @@ func (p *Processor) Process(ctx context.Context, it store.Item) {
 	d := it.Delivery()
 	var st route.State
 	var readErr error
-	if ev, err := event.Parse(d); err == nil {
-		st, readErr = p.State.Read(ctx, ev)
-	}
 	led := p.Store.Ledger(ctx)
+	if ev, err := event.Parse(d); err == nil {
+		st, readErr = p.State.Read(ctx, ev, led)
+	}
 	dec := p.Router.DecideAuthenticated(d, st, led)
 	switch {
 	case led.Err != nil:

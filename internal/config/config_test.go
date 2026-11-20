@@ -2,6 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"maps"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -100,6 +102,14 @@ func TestWorkerRefusals(t *testing.T) {
 		"zero concurrency": {map[string]string{"GORDON_WORKER_CONCURRENCY": "0"}, `GORDON_WORKER_CONCURRENCY="0"`},
 		"bad bool":         {map[string]string{"GORDON_SHADOW": "maybe"}, `GORDON_SHADOW="maybe"`},
 		"unknown provider": {map[string]string{"GORDON_UPSTREAM_LIMITS": "gitlab=2"}, `"gitlab=2"`},
+		"zero limit":       {map[string]string{"GORDON_UPSTREAM_LIMITS": "vikunja=0"}, `"vikunja=0": want vikunja=<n>`},
+		"limit without n":  {map[string]string{"GORDON_UPSTREAM_LIMITS": "github"}, `"github": want vikunja=<n>`},
+		"provider twice":   {map[string]string{"GORDON_UPSTREAM_LIMITS": "github=2,github=9"}, "GORDON_UPSTREAM_LIMITS: github given twice"},
+		"zero lease":       {map[string]string{"GORDON_LEASE_TTL": "0s"}, `GORDON_LEASE_TTL="0s"`},
+		"trailing json":    {map[string]string{"GORDON_OWNERSHIP_FILE": "TRAILING"}, "content after the JSON value"},
+		"root vikunja url": {map[string]string{"GORDON_VIKUNJA_URL": "/"}, `GORDON_VIKUNJA_URL="": want an http or https URL`},
+		"no scheme":        {map[string]string{"GORDON_GITHUB_API_URL": "api.github.com"}, `GORDON_GITHUB_API_URL="api.github.com"`},
+		"ftp url":          {map[string]string{"GORDON_VIKUNJA_URL": "ftp://vikunja"}, `GORDON_VIKUNJA_URL="ftp://vikunja"`},
 		"backoff inverted": {map[string]string{"GORDON_RETRY_BASE": "1m", "GORDON_RETRY_MAX": "1s"}, "below GORDON_RETRY_BASE"},
 		"lease too short":  {map[string]string{"GORDON_LEASE_TTL": "5s"}, "must exceed GORDON_UPSTREAM_TIMEOUT"},
 		"bad log level":    {map[string]string{"GORDON_LOG_LEVEL": "loud"}, "GORDON_LOG_LEVEL"},
@@ -118,6 +128,8 @@ func TestWorkerRefusals(t *testing.T) {
 					v = file(t, "r.json", `{"versoin":"x"}`)
 				case "OWNERSHIP":
 					v = file(t, "o.json", `{"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
+				case "TRAILING":
+					v = file(t, "t.json", `{"rules":[]} {"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				}
 				env[k] = v
 			}
@@ -138,8 +150,39 @@ func TestReceiver(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(c.KeyFiles, map[event.Source]string{event.SourceVikunja: key}) || c.MaxInFlight != 8 ||
-		c.RequestDeadline != DefaultRequestDeadline || c.ListenAddr != DefaultListenAddr {
+		c.RequestDeadline != DefaultRequestDeadline || c.ShutdownGrace != DefaultShutdownGrace ||
+		c.ListenAddr != DefaultListenAddr || len(c.TrustedProxies) != 0 {
 		t.Fatalf("receiver config %+v", c)
+	}
+	over := maps.Clone(env)
+	over["GORDON_REQUEST_DEADLINE"], over["GORDON_SHUTDOWN_GRACE"] = "7s", "3s"
+	over["GORDON_TRUSTED_PROXIES"] = "10.42.0.0/16,192.0.2.7"
+	if c, err = LoadReceiver(envOf(over)); err != nil {
+		t.Fatal(err)
+	}
+	want := []netip.Prefix{netip.MustParsePrefix("10.42.0.0/16"), netip.MustParsePrefix("192.0.2.7/32")}
+	if c.RequestDeadline != 7*time.Second || c.ShutdownGrace != 3*time.Second ||
+		!reflect.DeepEqual([]netip.Prefix(c.TrustedProxies), want) {
+		t.Fatalf("receiver overrides %+v", c)
+	}
+	for name, tc := range map[string]struct{ k, v, want string }{
+		"zero in flight": {"GORDON_MAX_IN_FLIGHT", "0", `GORDON_MAX_IN_FLIGHT="0"`},
+		"bad proxy":      {"GORDON_TRUSTED_PROXIES", "10.0.0.0/33", "GORDON_TRUSTED_PROXIES"},
+		"empty key file": {"GORDON_VIKUNJA_KEY_FILE", "EMPTY", " is empty"},
+		"key directory":  {"GORDON_VIKUNJA_KEY_FILE", "DIR", "GORDON_VIKUNJA_KEY_FILE: read "},
+	} {
+		bad := maps.Clone(env)
+		switch tc.v {
+		case "EMPTY":
+			bad[tc.k] = file(t, "empty-key", "\r\n")
+		case "DIR":
+			bad[tc.k] = t.TempDir()
+		default:
+			bad[tc.k] = tc.v
+		}
+		if _, err := LoadReceiver(envOf(bad)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: LoadReceiver = %v, want an error containing %q", name, err, tc.want)
+		}
 	}
 	delete(env, "GORDON_VIKUNJA_KEY_FILE")
 	if _, err := LoadReceiver(envOf(env)); err == nil || !strings.Contains(err.Error(), "no source key file") {

@@ -232,6 +232,51 @@ func TestProviderLimitDefers(t *testing.T) {
 	}
 }
 
+func TestProjectLimitDefers(t *testing.T) {
+	p := newProvider()
+	e, o := outboxEnv(t, p)
+	var project string
+	storetest.QueryRow(t, e.dbURL, `SELECT project FROM actions WHERE kind = 'submit-task'`, nil, &project)
+	o.Projects = &Limiter{Default: 1}
+	o.Projects.TryAcquire(project)
+	perform(t, o)
+	if st, attempts, _ := e.actionRow(t); project == "" || st != store.ActionPending || attempts != 0 || p.executes != 0 {
+		t.Fatalf("project %q: state %s attempts %d executes %d, want deferred untouched", project, st, attempts, p.executes)
+	}
+	if v := testutil.ToFloat64(o.Metrics.Deferred.WithLabelValues("actions", LimitProject)); v != 1 {
+		t.Fatalf("deferred metric = %v", v)
+	}
+}
+
+func TestActionWithoutProjectTakesNoProjectSlot(t *testing.T) {
+	p := newProvider()
+	e, o := outboxEnv(t, p)
+	storetest.Exec(t, e.dbURL, `UPDATE actions SET project = ''`)
+	o.Projects = &Limiter{Default: 1}
+	perform(t, o) // released an untaken "" slot (a nil-map write) before the fix
+	if st, _, _ := e.actionRow(t); st != store.ActionDone || len(o.Projects.inUse) != 0 {
+		t.Fatalf("state %s, project slots %v; want done with no slot held", st, o.Projects.inUse)
+	}
+}
+
+func TestAmbiguousAtMaxAttemptsIsDeadLetteredAsUnknown(t *testing.T) {
+	p := newProvider()
+	p.execute = func(action.Action) error { return Ambiguous(errors.New("timeout")) }
+	p.recoverEr = errors.New("kelos api unavailable")
+	e, o := outboxEnv(t, p)
+	for range testMaxAttempts {
+		e.due(t)
+		perform(t, o)
+	}
+	want := OutcomeUnknown + ": ambiguous: kelos api unavailable"
+	if st, attempts, msg := e.actionRow(t); st != store.ActionFailed || attempts != testMaxAttempts || msg != want {
+		t.Fatalf("state %s after %d attempts %q, want failed after %d with %q", st, attempts, msg, testMaxAttempts, want)
+	}
+	if p.executes != 1 || e.results(o, ResultFailed) != 1 {
+		t.Fatalf("%d executes, %v failures; want one write and one dead letter", p.executes, e.results(o, ResultFailed))
+	}
+}
+
 func TestErrorClassification(t *testing.T) {
 	base := errors.New("x")
 	if !isAmbiguous(Ambiguous(base)) || isPermanent(Ambiguous(base)) || !errors.Is(Ambiguous(base), base) {

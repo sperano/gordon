@@ -114,7 +114,7 @@ func storedDelivery(t *testing.T, source event.Source, headers map[string]string
 		t.Fatalf("test delivery does not parse: %v", err)
 	}
 	return store.Delivery{Source: source, DeliveryKey: ev.DeliveryKey, RequestKey: ev.RequestKey,
-		Kind: ev.Kind, Scope: fmt.Sprintf("%s/scope", source), Headers: headers, Body: []byte(body)}
+		Kind: ev.Kind, Scope: ev.Scope(), Headers: headers, Body: []byte(body)}
 }
 
 func (e *env) accept(t *testing.T, d store.Delivery) int64 {

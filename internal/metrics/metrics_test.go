@@ -30,11 +30,23 @@ func TestSetQueuesZeroesEmptyStates(t *testing.T) {
 	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("actions", "ambiguous")); v != 0 {
 		t.Fatalf("drained state depth = %v, want 0", v)
 	}
-	m.SetQueues([]store.QueueStat{{Queue: "mystery", State: "x", Count: 9}, {Queue: store.QueueInbox, State: "weird", Count: 2}})
-	if testutil.CollectAndCount(m.QueueDepth) != len(QueueStates[store.QueueInbox])+len(QueueStates[store.QueueActions])+1 {
-		t.Fatal("unknown queue or state grew the series beyond the fixed set plus other")
+	if v := testutil.ToFloat64(m.QueueOldest.WithLabelValues("actions", "ambiguous")); v != 0 {
+		t.Fatalf("drained state age = %v, want 0", v)
 	}
-	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("inbox", Other)); v != 2 {
-		t.Fatalf("unknown inbox state recorded as %v under other, want 2", v)
+	m.SetQueues([]store.QueueStat{{Queue: "mystery", State: "x", Count: 9},
+		{Queue: store.QueueInbox, State: "weird", Count: 2, OldestAge: time.Second},
+		{Queue: store.QueueInbox, State: "odd", Count: 3, OldestAge: time.Minute}})
+	if testutil.CollectAndCount(m.QueueDepth) != len(QueueStates[store.QueueInbox])+len(QueueStates[store.QueueActions]) {
+		t.Fatal("unknown queue or state grew the series beyond the fixed set")
+	}
+	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("inbox", Other)); v != 5 {
+		t.Fatalf("unknown inbox states recorded as %v under other, want their sum 5", v)
+	}
+	if v := testutil.ToFloat64(m.QueueOldest.WithLabelValues("inbox", Other)); v != 60 {
+		t.Fatalf("unknown inbox states' age = %v, want the oldest, 60", v)
+	}
+	m.SetQueues(nil)
+	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("inbox", Other)); v != 0 {
+		t.Fatalf("other depth = %v once the unknown states are gone, want 0", v)
 	}
 }

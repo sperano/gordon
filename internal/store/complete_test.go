@@ -113,8 +113,8 @@ func TestCompleteShadowQueuesNothing(t *testing.T) {
 
 func TestCompleteDropsRunTakenConcurrently(t *testing.T) {
 	s, dbURL := storetest.Open(t)
-	accept(t, s, "k1")
-	accept(t, s, "k2")
+	acceptRequest(t, s, "k1", "vikunja/comment/1")
+	acceptRequest(t, s, "k2", "vikunja/comment/2")
 	items, err := s.Claim(ctx, "w", 2, testTTL)
 	if err != nil || len(items) != 2 {
 		t.Fatalf("Claim = %d, %v", len(items), err)
@@ -138,9 +138,9 @@ func TestCompleteDropsRunTakenConcurrently(t *testing.T) {
 }
 
 func TestCompleteDropsWholeFamilyAsDuplicate(t *testing.T) {
-	s, _ := storetest.Open(t)
-	accept(t, s, "k1")
-	accept(t, s, "k2")
+	s, dbURL := storetest.Open(t)
+	acceptRequest(t, s, "k1", "vikunja/comment/1")
+	second := acceptRequest(t, s, "k2", "vikunja/comment/2")
 	items, _ := s.Claim(ctx, "w", 2, testTTL)
 	if _, err := s.Complete(ctx, items[0].Lease, dispatch(true), false); err != nil {
 		t.Fatal(err)
@@ -152,6 +152,94 @@ func TestCompleteDropsWholeFamilyAsDuplicate(t *testing.T) {
 	if got.Outcome != route.Duplicate || got.Families[0].Reason != route.ReasonRunActive {
 		t.Fatalf("decision = %s/%s, want duplicate/%s", got.Outcome, got.Families[0].Reason, route.ReasonRunActive)
 	}
+	if n := count(t, dbURL, `SELECT count(*) FROM actions WHERE inbox_id = $1`, second); n != 0 {
+		t.Fatalf("%d actions queued for the duplicate, want none", n)
+	}
+	var executed bool
+	storetest.QueryRow(t, dbURL, `SELECT executed FROM decisions WHERE inbox_id = $1`, []any{second}, &executed)
+	if executed {
+		t.Fatal("duplicate decision recorded as executed")
+	}
+}
+
+func TestCompleteSecondDeliveryOfARequestQueuesNothing(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	accept(t, s, "k1")
+	second := accept(t, s, "k2") // the same owner request, another delivery
+	items, err := s.Claim(ctx, "w", 2, testTTL)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("Claim = %d, %v", len(items), err)
+	}
+	// Both were decided on a ledger without the request.
+	if _, err := s.Complete(ctx, items[0].Lease, dispatch(true), false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Complete(ctx, items[1].Lease, dispatch(true), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd := got.Families[0]
+	if got.Outcome != route.Duplicate || got.Reason != route.ReasonRequestHandled || fd.Outcome != route.Duplicate ||
+		len(fd.Runs) != 0 || len(fd.Actions) != 0 {
+		t.Fatalf("second decision = %+v, want a duplicate of the handled request with nothing queued", got)
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM actions WHERE inbox_id = $1`, second); n != 0 {
+		t.Fatalf("%d actions queued for the second delivery, want none (no second reaction)", n)
+	}
+	var holder int64
+	storetest.QueryRow(t, dbURL, `SELECT inbox_id FROM requests WHERE request_key = 'vikunja/comment/1'`, nil, &holder)
+	if holder != items[0].ID {
+		t.Fatalf("request held by row %d, want the first delivery %d", holder, items[0].ID)
+	}
+}
+
+// unanswered is an owner request no agent answers: ignored, with its
+// reaction and notice.
+func unanswered(actions ...action.Action) route.Decision {
+	return route.Decision{Outcome: route.Ignore, RequestKey: "vikunja/comment/1", Families: []route.FamilyDecision{{
+		Family: run.VikunjaFollowUpAnswer, Project: "gordon", Owner: rollout.Gordon, Execute: true,
+		Outcome: route.Ignore, Reason: "task-done", Actions: actions}}}
+}
+
+func TestCompleteQueuesAnUnansweredRequestsActions(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := accept(t, s, "k")
+	it := claimOne(t, s, "w")
+	react := action.New(action.React, action.VikunjaComment(1), "eyes")
+	notice := action.Notice(action.VikunjaComment(1), route.NoticeUnanswered, "task-done")
+	got, err := s.Complete(ctx, it.Lease, unanswered(react, notice), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != route.Ignore || got.Families[0].Outcome != route.Ignore || got.Families[0].Reason != "task-done" {
+		t.Fatalf("decision = %s/%s, want the router's ignore/task-done", got.Outcome, got.Families[0].Reason)
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM actions WHERE inbox_id = $1 AND kind IN ('react', 'post-notice')`, id); n != 2 {
+		t.Fatalf("%d actions queued, want the reaction and the notice", n)
+	}
+	var executed bool
+	var outcome string
+	storetest.QueryRow(t, dbURL, `SELECT executed, outcome FROM requests WHERE request_key = 'vikunja/comment/1'`, nil,
+		&executed, &outcome)
+	if !executed || outcome != string(route.Ignore) {
+		t.Fatalf("request recorded executed=%v outcome=%q, want handled by the executed ignore", executed, outcome)
+	}
+}
+
+func TestCompleteIgnoredFamilyWithoutActionsQueuesNothing(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	accept(t, s, "k")
+	it := claimOne(t, s, "w")
+	got, err := s.Complete(ctx, it.Lease, unanswered(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != route.Ignore || got.Families[0].Outcome != route.Ignore {
+		t.Fatalf("decision = %s/%s, want ignore kept", got.Outcome, got.Families[0].Outcome)
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM actions`) + count(t, dbURL, `SELECT count(*) FROM requests`); n != 0 {
+		t.Fatalf("%d actions and requests recorded, want none", n)
+	}
 }
 
 func TestCompleteRerunsFinishedRunWhoseTaskIsGone(t *testing.T) {
@@ -162,14 +250,14 @@ func TestCompleteRerunsFinishedRunWhoseTaskIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	storetest.Exec(t, dbURL, `UPDATE runs SET state = 'finished', task_exists = true`)
-	accept(t, s, "k2")
+	acceptRequest(t, s, "k2", "vikunja/comment/2") // the owner asks again
 	it = claimOne(t, s, "w")
 	got, err := s.Complete(ctx, it.Lease, submitOnly(), false)
 	if err != nil || got.Families[0].Reason != route.ReasonRunExists {
 		t.Fatalf("Complete while the Task exists = %+v, %v; want duplicate/run-exists", got.Families[0], err)
 	}
 	storetest.Exec(t, dbURL, `UPDATE runs SET task_exists = false`)
-	accept(t, s, "k3")
+	acceptRequest(t, s, "k3", "vikunja/comment/3")
 	it = claimOne(t, s, "w")
 	got, err = s.Complete(ctx, it.Lease, submitOnly(), false)
 	if err != nil || got.Outcome != route.Dispatch {
@@ -225,5 +313,20 @@ func TestLedgerKeepsFirstError(t *testing.T) {
 	first := led.Err
 	if _, ok := led.Run("x"); ok || led.Err != first {
 		t.Fatal("ledger answered after an error or replaced the first error")
+	}
+}
+
+func TestSeenDeliveryIgnoresTheRowBeingDecided(t *testing.T) {
+	s, _ := storetest.Open(t)
+	accept(t, s, "k")
+	it := claimOne(t, s, "w")
+	if led := s.Ledger(ctx); led.SeenDelivery("k") || led.Err != nil {
+		t.Fatalf("pending claimed delivery seen (err %v), want unseen until decided", led.Err)
+	}
+	if _, err := s.Complete(ctx, it.Lease, dispatch(true), false); err != nil {
+		t.Fatal(err)
+	}
+	if led := s.Ledger(ctx); !led.SeenDelivery("k") || led.Err != nil {
+		t.Fatalf("decided delivery not seen (err %v)", led.Err)
 	}
 }

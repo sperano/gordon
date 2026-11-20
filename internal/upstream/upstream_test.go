@@ -17,6 +17,9 @@ import (
 
 var ctx = context.Background()
 
+// blockedFor is how long a test lets a read that must wait show it waits.
+const blockedFor = 50 * time.Millisecond
+
 type observed struct {
 	mu      sync.Mutex
 	results []string
@@ -68,11 +71,14 @@ func TestVikunjaTaskInNoBucketHasEmptyBuckets(t *testing.T) {
 }
 
 func TestVikunjaTaskRefusesOtherTask(t *testing.T) {
-	c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"id":4}`)
 	})
 	if _, err := (Vikunja{c}).Task(ctx, 3); ClassOf(err) != Invalid {
 		t.Fatalf("Task answering another id = %v, want invalid", err)
+	}
+	if !reflect.DeepEqual(o.results, []string{"vikunja/invalid"}) {
+		t.Fatalf("observed %v, want the read counted invalid, not ok", o.results)
 	}
 	if _, err := (Vikunja{c}).Task(ctx, 0); ClassOf(err) != Invalid {
 		t.Fatalf("Task(0) = %v, want invalid", err)
@@ -132,18 +138,47 @@ func TestBadJSONAndOversizedAreInvalid(t *testing.T) {
 	}
 }
 
-func TestLimitBoundsInFlightAndHonoursCancel(t *testing.T) {
-	c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"id":1}`) })
+func TestLimitBoundsInFlight(t *testing.T) {
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		fmt.Fprint(w, `{"id":1}`)
+	})
+	c.Limit = NewLimit(1)
+	first, second := make(chan error, 1), make(chan error, 1)
+	go func() { _, err := (Vikunja{c}).Task(ctx, 1); first <- err }()
+	<-entered // the first read holds the only slot
+	go func() { _, err := (Vikunja{c}).Task(ctx, 1); second <- err }()
+	select {
+	case <-entered:
+		t.Fatal("a second read reached the provider while the limit was full")
+	case err := <-second:
+		t.Fatalf("second read returned %v before the slot was free", err)
+	case <-time.After(blockedFor):
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatalf("first read = %v", err)
+	}
+	if err := <-second; err != nil {
+		t.Fatalf("second read after the slot freed = %v", err)
+	}
+	if len(c.Limit) != 0 {
+		t.Fatalf("%d slots still held after both reads", len(c.Limit))
+	}
+}
+
+func TestLimitWaitEndsWithTheContext(t *testing.T) {
+	c, _ := client(t, ProviderVikunja, func(http.ResponseWriter, *http.Request) {
+		t.Error("read sent while the limit was full")
+	})
 	c.Limit = NewLimit(1)
 	c.Limit <- struct{}{} // the only slot is taken
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	if _, err := (Vikunja{c}).Task(cancelled, 1); ClassOf(err) != Unavailable || !errors.Is(err, context.Canceled) {
-		t.Fatalf("Task with a full limit and a cancelled context = %v, want unavailable/canceled", err)
-	}
-	<-c.Limit
-	if _, err := (Vikunja{c}).Task(ctx, 1); err != nil {
-		t.Fatalf("Task with a free slot = %v", err)
+	short, cancel := context.WithTimeout(ctx, blockedFor)
+	defer cancel()
+	if _, err := (Vikunja{c}).Task(short, 1); ClassOf(err) != Unavailable || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Task with a full limit = %v, want unavailable once its deadline passed", err)
 	}
 	if NewLimit(0) != nil {
 		t.Fatal("NewLimit(0) is not unbounded")
@@ -183,7 +218,7 @@ func TestGitHubPullRequestWithFiles(t *testing.T) {
 		t.Fatalf("pull request = %+v", pr)
 	}
 	if len(pr.Files) != filesPerPage+1 || pr.Files[0] != "f0.go" || pr.Files[filesPerPage] != "last.md" {
-		t.Fatalf("files = %d (%v...), want both pages", len(pr.Files), pr.Files[:1])
+		t.Fatalf("files = %d (%v), want both pages", len(pr.Files), pr.Files)
 	}
 	want := []string{"/repos/sperano/gordon/pulls/7?", "/repos/sperano/gordon/pulls/7/files?page=1&per_page=100",
 		"/repos/sperano/gordon/pulls/7/files?page=2&per_page=100"}
@@ -204,11 +239,59 @@ func TestGitHubPullRequestWithoutFilesReadsOnce(t *testing.T) {
 	}
 }
 
+func TestGitHubPullRequestRefusesOtherNumber(t *testing.T) {
+	c, o := client(t, ProviderGitHub, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"number":8,"state":"open"}`)
+	})
+	_, err := GitHub{c}.PullRequest(ctx, "sperano/gordon", 7, false)
+	if ClassOf(err) != Invalid || !strings.Contains(err.Error(), "got 8") {
+		t.Fatalf("PullRequest answering #8 = %v, want invalid", err)
+	}
+	if !reflect.DeepEqual(o.results, []string{"github/invalid"}) {
+		t.Fatalf("observed %v, want the read counted invalid", o.results)
+	}
+}
+
+func TestGitHubPullRequestRefusesIncompleteFiles(t *testing.T) {
+	c, _ := client(t, ProviderGitHub, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/files") {
+			fmt.Fprint(w, `[{"filename":"a.go"}]`)
+			return
+		}
+		fmt.Fprint(w, `{"number":7,"changed_files":3001}`)
+	})
+	_, err := GitHub{c}.PullRequest(ctx, "sperano/gordon", 7, true)
+	if ClassOf(err) != Invalid || !strings.Contains(err.Error(), "lists 1 of its 3001 files") {
+		t.Fatalf("PullRequest with a truncated file list = %v, want invalid", err)
+	}
+}
+
+func TestGitHubPullRequestFailsOnAFailedFilesPage(t *testing.T) {
+	c, _ := client(t, ProviderGitHub, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case !strings.HasSuffix(r.URL.Path, "/files"):
+			fmt.Fprint(w, `{"number":7}`)
+		case r.URL.Query().Get("page") == "1":
+			names := make([]string, filesPerPage)
+			for i := range names {
+				names[i] = fmt.Sprintf(`{"filename":"f%d.go"}`, i)
+			}
+			fmt.Fprint(w, "["+strings.Join(names, ",")+"]")
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	pr, err := GitHub{c}.PullRequest(ctx, "sperano/gordon", 7, true)
+	if ClassOf(err) != Unavailable || pr.Files != nil {
+		t.Fatalf("PullRequest with page 2 failing = %d files, %v; want no files and unavailable", len(pr.Files), err)
+	}
+}
+
 func TestGitHubRefusesUnsafeRepository(t *testing.T) {
 	c, _ := client(t, ProviderGitHub, func(http.ResponseWriter, *http.Request) {
 		t.Error("request sent for an unsafe repository")
 	})
-	for _, repo := range []string{"../../user", "a/b/c", "a/b?x=1", "", "a"} {
+	for _, repo := range []string{"../../user", "a/b/c", "a/b?x=1", "", "a", "sperano/..", "../gordon", "sperano/.", "./gordon"} {
 		if _, err := (GitHub{c}).PullRequest(ctx, repo, 1, false); ClassOf(err) != Invalid {
 			t.Errorf("PullRequest(%q) = %v, want invalid", repo, err)
 		}

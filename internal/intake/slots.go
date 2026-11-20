@@ -19,37 +19,56 @@ type Slots struct {
 	perPeer int
 	inUse   int
 	held    map[string]int
-	changed chan struct{}
+	// waiters queue in arrival order; a release hands its slot to the
+	// first one whose peer has room, and wakes only that one.
+	waiters []*waiter
+}
+
+type waiter struct {
+	peer    string
+	granted chan struct{}
 }
 
 // NewSlots returns total slots.
 func NewSlots(total int) *Slots {
-	return &Slots{total: total, perPeer: max(1, total/PeerShares), held: map[string]int{},
-		changed: make(chan struct{})}
+	return &Slots{total: total, perPeer: max(1, total/PeerShares), held: map[string]int{}}
 }
 
-// Acquire takes a slot for peer; false when ctx ended first.
+// Acquire takes a slot for peer; false when ctx ended first (a context
+// already ended takes none).
 func (s *Slots) Acquire(ctx context.Context, peer string) bool {
-	for {
-		s.mu.Lock()
-		if s.inUse < s.total && s.held[peer] < s.perPeer {
-			s.inUse++
-			s.held[peer]++
-			s.mu.Unlock()
-			return true
-		}
-		changed := s.changed
+	if ctx.Err() != nil {
+		return false
+	}
+	s.mu.Lock()
+	if s.room(peer) {
+		s.take(peer)
 		s.mu.Unlock()
-		select {
-		case <-changed:
-		case <-ctx.Done():
+		return true
+	}
+	w := &waiter{peer: peer, granted: make(chan struct{})}
+	s.waiters = append(s.waiters, w)
+	s.mu.Unlock()
+	select {
+	case <-w.granted:
+		return true
+	case <-ctx.Done():
+	}
+	s.mu.Lock()
+	for i, o := range s.waiters {
+		if o == w {
+			s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
+			s.mu.Unlock()
 			return false
 		}
 	}
+	s.mu.Unlock()
+	// Granted while ctx ended: hand the slot on.
+	s.Release(peer)
+	return false
 }
 
-// Release returns peer's slot and wakes every waiter: they wait for
-// different peers, so the one woken may not be the one with room.
+// Release returns peer's slot, handing it to the first waiter with room.
 func (s *Slots) Release(peer string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -57,6 +76,26 @@ func (s *Slots) Release(peer string) {
 	if s.held[peer]--; s.held[peer] <= 0 {
 		delete(s.held, peer)
 	}
-	close(s.changed)
-	s.changed = make(chan struct{})
+	for i, w := range s.waiters {
+		if s.room(w.peer) {
+			s.take(w.peer)
+			s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
+			close(w.granted)
+			return
+		}
+	}
+}
+
+func (s *Slots) room(peer string) bool { return s.inUse < s.total && s.held[peer] < s.perPeer }
+
+func (s *Slots) take(peer string) {
+	s.inUse++
+	s.held[peer]++
+}
+
+// waiting is how many Acquire calls are queued.
+func (s *Slots) waiting() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.waiters)
 }

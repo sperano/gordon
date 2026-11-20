@@ -18,6 +18,9 @@ type Backoff struct {
 func (b Backoff) Delay(attempt int) time.Duration {
 	d := b.Base
 	for i := 1; i < attempt && d < b.Max; i++ {
+		if d > b.Max/2 {
+			return b.Max // doubling would pass the cap (or overflow)
+		}
 		d *= 2
 	}
 	return min(d, b.Max)

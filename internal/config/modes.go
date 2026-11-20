@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/intake"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/upstream"
@@ -19,11 +20,14 @@ type Receiver struct {
 	Common
 	ListenAddr string
 	// KeyFiles maps each source to its signing key file; a source
-	// without one refuses every delivery (403).
+	// without one refuses every delivery (403 signed, 401 unsigned).
 	KeyFiles        map[event.Source]string
 	MaxInFlight     int
 	RequestDeadline time.Duration
 	ShutdownGrace   time.Duration
+	// TrustedProxies are the webhook ingress's addresses: a request from
+	// one is charged to the client its X-Forwarded-For names.
+	TrustedProxies intake.Proxies
 }
 
 // keyVars names each source's key file variable.
@@ -48,13 +52,22 @@ func LoadReceiver(env Getenv) (Receiver, error) {
 		MaxInFlight:     r.integer("GORDON_MAX_IN_FLIGHT", DefaultMaxInFlight, 1),
 		RequestDeadline: r.duration("GORDON_REQUEST_DEADLINE", DefaultRequestDeadline),
 		ShutdownGrace:   r.duration("GORDON_SHUTDOWN_GRACE", DefaultShutdownGrace)}
+	proxies, err := intake.ParseProxies(r.str("GORDON_TRUSTED_PROXIES", ""))
+	if err != nil {
+		r.fail("GORDON_TRUSTED_PROXIES: %v", err)
+	}
+	c.TrustedProxies = proxies
 	for src, name := range keyVars {
 		path := r.str(name, "")
 		if path == "" {
 			continue
 		}
-		if _, err := os.Stat(path); err != nil {
+		// Re-read on every request (rotation); a key missing at start
+		// is a misconfiguration, not a rotation.
+		if b, err := os.ReadFile(path); err != nil {
 			r.fail("%s: %v", name, err)
+		} else if strings.TrimRight(string(b), "\r\n") == "" {
+			r.fail("%s: %s is empty", name, path)
 		}
 		c.KeyFiles[src] = path
 	}
@@ -115,9 +128,9 @@ func LoadWorker(env Getenv) (Worker, error) {
 	host, _ := os.Hostname()
 	c := Worker{Common: r.common(), Shadow: r.boolean("GORDON_SHADOW", true), ID: r.str("GORDON_WORKER_ID", host),
 		Routing:       profile.Defaults(),
-		VikunjaURL:    strings.TrimRight(r.required("GORDON_VIKUNJA_URL"), "/"),
+		VikunjaURL:    r.baseURL("GORDON_VIKUNJA_URL", ""),
 		VikunjaToken:  r.requiredSecret("GORDON_VIKUNJA_TOKEN_FILE"),
-		GitHubAPIURL:  strings.TrimRight(r.str("GORDON_GITHUB_API_URL", DefaultGitHubAPIURL), "/"),
+		GitHubAPIURL:  r.baseURL("GORDON_GITHUB_API_URL", DefaultGitHubAPIURL),
 		GitHubToken:   r.requiredSecret("GORDON_GITHUB_TOKEN_FILE"),
 		UpstreamLimit: r.limits("GORDON_UPSTREAM_LIMITS"),
 		Concurrency:   r.integer("GORDON_WORKER_CONCURRENCY", DefaultConcurrency, 1),
@@ -158,6 +171,7 @@ func (r *reader) limits(name string) map[string]int {
 	if v == "" {
 		return out
 	}
+	seen := map[string]bool{}
 	for _, part := range strings.Split(v, ",") {
 		k, n, ok := strings.Cut(strings.TrimSpace(part), "=")
 		limit, err := strconv.Atoi(n)
@@ -165,6 +179,11 @@ func (r *reader) limits(name string) map[string]int {
 			r.fail("%s: %q: want vikunja=<n>,github=<n> with n >= 1", name, part)
 			continue
 		}
+		if seen[k] {
+			r.fail("%s: %s given twice", name, k)
+			continue
+		}
+		seen[k] = true
 		out[k] = limit
 	}
 	return out

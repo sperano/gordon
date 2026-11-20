@@ -11,7 +11,8 @@ import (
 // FileKeys returns a key source that reads each source's key file at
 // every call, as the legacy receivers do, so a rotated Secret takes
 // effect without a restart. An unreadable or empty file gives that source
-// no key (its deliveries are refused 403) and is reported to onError.
+// no key (a signed delivery is refused 403, an unsigned one 401); an
+// unreadable one is reported to onError.
 func FileKeys(files map[event.Source]string, onError func(event.Source, error)) func() auth.Keys {
 	return func() auth.Keys {
 		keys := auth.Keys{}

@@ -31,30 +31,35 @@ var requestKinds = map[event.Kind]bool{
 
 // Complete finishes a claimed row with its decision, in one transaction
 // fenced by the lease: the decision; for each family Gordon executes
-// (owner gordon, valid table, shadow false), its runs and its actions in
-// the outbox; and the handled request. With shadow, nothing is queued for
-// execution and no run is recorded.
+// (owner gordon, valid table, shadow false) that has runs or actions, its
+// runs and its actions in the outbox (an unanswered owner request's
+// reaction and notice included); and the handled request. With shadow,
+// nothing is queued for execution and no run is recorded.
 //
-// A run another worker recorded since the router read the ledger is
-// dropped with its submit action, so two deliveries of one request never
-// queue two submissions; Complete returns the decision as recorded.
+// The owner request is claimed first: when another delivery of it was
+// recorded since the router read the ledger, this one queues nothing and
+// is a duplicate. A run another worker recorded meanwhile is dropped with
+// its submit action, so two deliveries never queue two submissions.
+// Complete returns the decision as recorded.
 func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shadow bool) (route.Decision, error) {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var kind, requestKey string
-		err := tx.QueryRow(ctx, `UPDATE inbox SET state = 'done', finished_at = now(), last_error = '',
-				lease_token = NULL, lease_owner = NULL, lease_until = NULL
-			WHERE id = $1 AND lease_token = $2::uuid AND state = 'pending'
-			RETURNING kind, request_key`, l.ID, l.Token).Scan(&kind, &requestKey)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrLeaseLost
-		}
+		kind, requestKey, err := finishItem(ctx, tx, l)
 		if err != nil {
 			return err
+		}
+		claims := requestKinds[event.Kind(kind)] && requestKey != "" && recordsRequest(dec, shadow)
+		if claims {
+			if claims, err = claimRequest(ctx, tx, requestKey, l.ID, dec.Outcome); err != nil {
+				return err
+			}
+			if !claims {
+				dec = handledElsewhere(dec)
+			}
 		}
 		executed := false
 		for i := range dec.Families {
 			fd := &dec.Families[i]
-			if shadow || !fd.Execute || (fd.Outcome != route.Dispatch && fd.Outcome != route.Act) {
+			if shadow || !fd.Execute || (len(fd.Runs) == 0 && len(fd.Actions) == 0) {
 				continue
 			}
 			if err := recordFamily(ctx, tx, l.ID, requestKey, fd); err != nil {
@@ -65,11 +70,9 @@ func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shado
 		if len(dec.Families) > 0 {
 			dec.Outcome = route.Overall(dec.Families)
 		}
-		if requestKinds[event.Kind(kind)] && requestKey != "" &&
-			(dec.Outcome == route.Dispatch || dec.Outcome == route.Act) {
-			if _, err := tx.Exec(ctx, `INSERT INTO requests (request_key, inbox_id, outcome, executed)
-				VALUES ($1, $2, $3, $4) ON CONFLICT (request_key) DO NOTHING`,
-				requestKey, l.ID, string(dec.Outcome), executed); err != nil {
+		if claims { // this row holds the request: record its final outcome
+			if _, err := tx.Exec(ctx, `UPDATE requests SET outcome = $2, executed = $3 WHERE request_key = $1`,
+				requestKey, string(dec.Outcome), executed); err != nil {
 				return err
 			}
 		}
@@ -78,6 +81,64 @@ func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shado
 		return err
 	})
 	return dec, err
+}
+
+// finishItem marks the leased row done; ErrLeaseLost when the lease is
+// no longer this worker's.
+func finishItem(ctx context.Context, tx pgx.Tx, l Lease) (kind, requestKey string, err error) {
+	err = tx.QueryRow(ctx, `UPDATE inbox SET state = 'done', finished_at = now(), last_error = '',
+			lease_token = NULL, lease_owner = NULL, lease_until = NULL
+		WHERE id = $1 AND lease_token = $2::uuid AND state = 'pending'
+		RETURNING kind, request_key`, l.ID, l.Token).Scan(&kind, &requestKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", ErrLeaseLost
+	}
+	return kind, requestKey, err
+}
+
+// recordsRequest reports a decision that handles its owner request: one
+// that dispatches or acts, or queues writes (an unanswered request's
+// reaction and notice).
+func recordsRequest(dec route.Decision, shadow bool) bool {
+	o := dec.Outcome
+	if len(dec.Families) > 0 {
+		o = route.Overall(dec.Families)
+	}
+	if o == route.Dispatch || o == route.Act {
+		return true
+	}
+	for _, fd := range dec.Families {
+		if !shadow && fd.Execute && (len(fd.Runs) > 0 || len(fd.Actions) > 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// claimRequest records the owner request as handled by this row; fresh is
+// false when another delivery's decision already did. A concurrent claim
+// waits on the key until that transaction ends.
+func claimRequest(ctx context.Context, tx pgx.Tx, key string, inboxID int64, o route.Outcome) (fresh bool, err error) {
+	var got string
+	err = tx.QueryRow(ctx, `INSERT INTO requests (request_key, inbox_id, outcome, executed)
+		VALUES ($1, $2, $3, false) ON CONFLICT (request_key) DO NOTHING RETURNING request_key`,
+		key, inboxID, string(o)).Scan(&got)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// handledElsewhere is dec once another delivery handled its request:
+// every family a duplicate, nothing to run or write.
+func handledElsewhere(dec route.Decision) route.Decision {
+	families := make([]route.FamilyDecision, len(dec.Families))
+	for i, fd := range dec.Families {
+		fd.Outcome, fd.Reason, fd.Runs, fd.Actions = route.Duplicate, route.ReasonRequestHandled, nil, nil
+		families[i] = fd
+	}
+	dec.Families, dec.Outcome, dec.Reason = families, route.Duplicate, route.ReasonRequestHandled
+	return dec
 }
 
 // recordFamily records an executed family's runs and queues its actions.
@@ -99,6 +160,9 @@ func recordFamily(ctx context.Context, tx pgx.Tx, inboxID int64, requestKey stri
 	}
 	fd.Runs = runs
 	switch {
+	case dupReason == "":
+		// No run dropped: the router's outcome stands (an unanswered
+		// request keeps its ignore, stale or conflict).
 	case len(fd.Runs) == 0 && len(fd.Actions) == 0:
 		fd.Outcome, fd.Reason = route.Duplicate, dupReason
 		return nil

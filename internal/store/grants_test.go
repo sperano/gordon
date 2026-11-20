@@ -47,8 +47,25 @@ func TestGrantReceiverInsertsOnly(t *testing.T) {
 	if _, dup, err := rs.Accept(ctx, delivery("k")); err != nil || !dup {
 		t.Fatalf("receiver duplicate Accept = %v, %v; want dup", dup, err)
 	}
+	signed := delivery("k2")
+	signed.BodyDigest = []byte("digest")
+	if _, dup, err := rs.Accept(ctx, signed); err != nil || dup {
+		t.Fatalf("receiver Accept with a digest = %v, %v; want a new row", dup, err)
+	}
+	signed.DeliveryKey = "k3"
+	if _, dup, err := rs.Accept(ctx, signed); err != nil || !dup {
+		t.Fatalf("receiver Accept of the same body under a new key = %v, %v; want dup", dup, err)
+	}
 	if v, err := rs.SchemaVersion(ctx); err != nil || v != store.LatestVersion() {
 		t.Fatalf("receiver SchemaVersion = %d, %v", v, err)
+	}
+	conn, err := pgx.Connect(ctx, storetest.WithUser(t, dbURL, receiver, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, state) VALUES ('vikunja', 'k4', 'done')`); !denied(err) {
+		t.Fatalf("receiver INSERT of a bookkeeping column = %v, want permission denied", err)
 	}
 	if _, err := rs.Claim(ctx, "receiver", 1, testTTL); !denied(err) {
 		t.Fatalf("receiver Claim = %v, want permission denied", err)

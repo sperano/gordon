@@ -77,7 +77,7 @@ func New() *Metrics {
 		ActionDuration: histogram("action_duration_seconds", "Duration of one action attempt.",
 			callBuckets, "kind"),
 		ActionQueueLatency: histogram("action_latency_seconds",
-			"Time from an action's queueing to its completion.", queueBuckets, "kind"),
+			"Time from an action's queueing to its successful completion (done or recovered).", queueBuckets, "kind"),
 		Upstream: counter("upstream_requests_total", "Read requests to GitHub and Vikunja by result.",
 			"provider", "result"),
 		UpstreamDuration: histogram("upstream_request_duration_seconds", "Duration of one upstream request.",

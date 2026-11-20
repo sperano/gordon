@@ -19,12 +19,17 @@ type Roles struct {
 // deletes, and it never changes the schema.
 var workerTables = []string{"inbox", "decisions", "requests", "runs", "actions"}
 
+// receiverColumns are the inbox columns the receiver writes: the verified
+// delivery, never its queue bookkeeping (state, attempts, lease).
+const receiverColumns = "source, delivery_key, request_key, kind, scope, headers, body, body_digest"
+
 // Grant gives each role exactly what its mode needs. The receiver may
-// insert deliveries, read the new row's id (RETURNING) and the delivery
-// keys (the ON CONFLICT arbiter), and read the
-// schema version (readiness), nothing else: it cannot read a stored body,
-// a decision or the outbox. GRANT is idempotent, so every migrate run
-// re-applies it, new tables included.
+// insert a delivery's own columns, read the new row's id (RETURNING) and
+// the delivery keys, and read the schema version (readiness), nothing
+// else: it cannot read a stored body, a decision or the outbox. GRANT is
+// idempotent, so every migrate run re-applies it; a new table or a new
+// receiver column is granted only once it is added to workerTables or
+// receiverColumns.
 func (s *Store) Grant(ctx context.Context, r Roles) error {
 	var schema string
 	if err := s.pool.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
@@ -37,7 +42,7 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 		stmts = append(stmts,
 			usage+role,
 			"GRANT SELECT ON schema_migrations TO "+role,
-			"GRANT INSERT ON inbox TO "+role,
+			"GRANT INSERT ("+receiverColumns+") ON inbox TO "+role,
 			"GRANT SELECT (id, delivery_key) ON inbox TO "+role,
 		)
 	}

@@ -16,6 +16,8 @@ const (
 	maxHeaderBytes    = 64 << 10
 	idleTimeout       = 60 * time.Second
 	writeSlack        = 10 * time.Second
+	// adminWriteTimeout bounds a probe or a scrape that stops reading.
+	adminWriteTimeout = 30 * time.Second
 )
 
 // serve runs srv on ln until ctx ends, then shuts it down, letting
@@ -41,7 +43,7 @@ func serve(ctx context.Context, log *slog.Logger, name string, srv *http.Server,
 
 func adminServer(h http.Handler) *http.Server {
 	return &http.Server{Handler: h, ReadHeaderTimeout: readHeaderTimeout, MaxHeaderBytes: maxHeaderBytes,
-		IdleTimeout: idleTimeout}
+		WriteTimeout: adminWriteTimeout, IdleTimeout: idleTimeout}
 }
 
 func listen(addr string) (net.Listener, error) {

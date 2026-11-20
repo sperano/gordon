@@ -52,7 +52,8 @@ func Receiver(ctx context.Context, cfg config.Receiver, log *slog.Logger, onList
 	defer s.Close()
 	m := metrics.New()
 	admin := &Admin{Store: s, Metrics: m}
-	rc := &intake.Receiver{Inbox: s, Slots: intake.NewSlots(cfg.MaxInFlight), Metrics: m, Log: log,
+	rc := &intake.Receiver{Inbox: s, Slots: intake.NewSlots(cfg.MaxInFlight), Proxies: cfg.TrustedProxies,
+		Metrics: m, Log: log,
 		Deadline: cfg.RequestDeadline, Keys: intake.FileKeys(cfg.KeyFiles, func(src event.Source, err error) {
 			log.Error("key file unreadable; refusing the source", "source", string(src), "error", err)
 		})}
@@ -94,19 +95,26 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	defer s.Close()
 	m := metrics.New()
 	admin := &Admin{Store: s, Metrics: m}
-	proc := processor(cfg, s, m, log)
+	// One project limiter for the inbox and the outbox: the per-project
+	// cap bounds all of a project's work in this process.
+	projects := &worker.Limiter{Default: cfg.ProjectLimit}
+	proc := processor(cfg, s, m, log, projects)
 	g := newGroup(ctx)
 	if err := start(g, log, ServerAdmin, cfg.AdminAddr, adminServer(admin.Handler()), cfg.ShutdownGrace, onListen); err != nil {
 		g.cancel()
 		return err
 	}
 	g.Go(func(ctx context.Context) error {
-		worker.Loop(ctx, store.QueueInbox, cfg.ShutdownGrace, cfg.PollInterval, log, proc.Tick)
+		<-ctx.Done()
 		admin.Drain()
 		return nil
 	})
+	g.Go(func(ctx context.Context) error {
+		worker.Loop(ctx, store.QueueInbox, cfg.ShutdownGrace, cfg.PollInterval, log, proc.Tick)
+		return nil
+	})
 	if !cfg.Shadow {
-		out := outbox(cfg, s, m, log)
+		out := outbox(cfg, s, m, log, projects)
 		g.Go(func(ctx context.Context) error {
 			worker.Loop(ctx, store.QueueActions, cfg.ShutdownGrace, cfg.PollInterval, log, out.Tick)
 			return nil
@@ -121,7 +129,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	return g.Wait()
 }
 
-func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger) *worker.Processor {
+func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter) *worker.Processor {
 	hc := &http.Client{Timeout: cfg.UpstreamTimeout}
 	observe := func(provider, result string, d time.Duration) {
 		m.Upstream.WithLabelValues(provider, result).Inc()
@@ -137,15 +145,17 @@ func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.
 		Store: s, Router: route.Router{Config: cfg.Routing, Ownership: cfg.Ownership},
 		State:  worker.StateReader{Config: cfg.Routing, Tasks: upstream.Vikunja{Client: vikunja}, PRs: upstream.GitHub{Client: github}},
 		Shadow: cfg.Shadow, Owner: cfg.ID, Concurrency: cfg.Concurrency, LeaseTTL: cfg.LeaseTTL,
-		MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff, Projects: &worker.Limiter{Default: cfg.ProjectLimit},
+		MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff, Projects: projects,
 		DeferDelay: cfg.DeferDelay, Metrics: m, Log: log,
 	}
 }
 
-func outbox(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger) *worker.Outbox {
+// outbox builds the action loop. Its provider limiter bounds writes; the
+// upstream clients' limits bound reads, separately.
+func outbox(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter) *worker.Outbox {
 	return &worker.Outbox{Store: s, Executors: executors(), Owner: cfg.ID, Concurrency: cfg.Concurrency,
 		LeaseTTL: cfg.LeaseTTL, MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff,
-		Providers: &worker.Limiter{Limits: cfg.UpstreamLimit}, Projects: &worker.Limiter{Default: cfg.ProjectLimit},
+		Providers: &worker.Limiter{Limits: cfg.UpstreamLimit}, Projects: projects,
 		DeferDelay: cfg.DeferDelay, NoExecutorDelay: cfg.Backoff.Max, Metrics: m, Log: log}
 }
 
@@ -164,6 +174,9 @@ func Migrate(ctx context.Context, cfg config.Migrate, log *slog.Logger) error {
 		return err
 	}
 	v, err := s.SchemaVersion(ctx)
+	if err != nil {
+		return err
+	}
 	log.Info("migrated", "applied", n, "version", v, "receiver_role", cfg.ReceiverRole, "worker_role", cfg.WorkerRole)
-	return err
+	return nil
 }

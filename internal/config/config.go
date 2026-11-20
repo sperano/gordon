@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -147,7 +149,31 @@ func (r *reader) jsonFile(name string, out any) bool {
 		r.fail("%s: %s: %v", name, path, err)
 		return false
 	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		r.fail("%s: %s: content after the JSON value", name, path)
+		return false
+	}
 	return true
+}
+
+// baseURL reads an http(s) base URL without its trailing slash; required
+// when def is "".
+func (r *reader) baseURL(name, def string) string {
+	var v string
+	if def == "" {
+		v = r.required(name)
+	} else {
+		v = r.str(name, def)
+	}
+	if v == "" {
+		return ""
+	}
+	v = strings.TrimRight(v, "/")
+	u, err := url.Parse(v)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		r.fail("%s=%q: want an http or https URL with a host", name, v)
+	}
+	return v
 }
 
 func (r *reader) common() Common {

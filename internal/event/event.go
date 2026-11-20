@@ -80,6 +80,18 @@ type Event struct {
 	GitHub  *GitHub
 }
 
+// Scope is the project hint the worker's per-project limit keys on: the
+// Vikunja project or the GitHub repository; "" for neither.
+func (e Event) Scope() string {
+	switch {
+	case e.Vikunja != nil:
+		return fmt.Sprintf("vikunja/project/%d", e.Vikunja.Task.ProjectID)
+	case e.GitHub != nil:
+		return "github/" + e.GitHub.Repository
+	}
+	return ""
+}
+
 // Vikunja is the part of a Vikunja delivery Gordon routes on.
 type Vikunja struct {
 	Task    Task

@@ -21,10 +21,13 @@ type Delivery struct {
 	Scope   string
 	Headers map[string]string
 	Body    []byte
+	// BodyDigest, when set, also identifies the delivery: a second
+	// delivery of the same signed body is a duplicate whatever its key.
+	BodyDigest []byte
 }
 
-// Accept persists d, unless a delivery with its key is already stored:
-// then dup is true and nothing is written. The insert commits before the
+// Accept persists d, unless a delivery with its key (or its body digest)
+// is already stored: then dup is true and nothing is written. The insert commits before the
 // receiver answers, so an acknowledged delivery survives a crash.
 func (s *Store) Accept(ctx context.Context, d Delivery) (id int64, dup bool, err error) {
 	headers := d.Headers
@@ -32,10 +35,10 @@ func (s *Store) Accept(ctx context.Context, d Delivery) (id int64, dup bool, err
 		headers = map[string]string{}
 	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO inbox
-		(source, delivery_key, request_key, kind, scope, headers, body)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (delivery_key) DO NOTHING RETURNING id`,
-		string(d.Source), d.DeliveryKey, d.RequestKey, string(d.Kind), d.Scope, headers, d.Body).Scan(&id)
+		(source, delivery_key, request_key, kind, scope, headers, body, body_digest)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT DO NOTHING RETURNING id`,
+		string(d.Source), d.DeliveryKey, d.RequestKey, string(d.Kind), d.Scope, headers, d.Body, d.BodyDigest).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, true, nil
 	}
