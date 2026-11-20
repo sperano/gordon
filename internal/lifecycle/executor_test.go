@@ -107,8 +107,11 @@ func TestNoticeReadsRunsOutsideTheLock(t *testing.T) {
 		t.Fatalf("%d comments, want one notice", len(f.comments[5]))
 	}
 	// The deadline is set between before and after (monotonic readings).
-	if !lock.bounded || lock.deadline.Before(before.Add(noticeLockTimeout)) || lock.deadline.After(after.Add(noticeLockTimeout)) {
-		t.Fatalf("lock deadline %v (set %v), want %v after the post started", lock.deadline, lock.bounded, noticeLockTimeout)
+	if !lock.bounded {
+		t.Fatal("lock context has no deadline, want one")
+	}
+	if lo, hi := before.Add(noticeLockTimeout), after.Add(noticeLockTimeout); lock.deadline.Before(lo) || lock.deadline.After(hi) {
+		t.Fatalf("lock deadline %v, want between %v and %v", lock.deadline, lo, hi)
 	}
 }
 

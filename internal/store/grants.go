@@ -145,6 +145,12 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 	revoke := "REVOKE ALL ON " + strings.Join(gordonTables, ", ") + " FROM "
 	stmts := append(receiverGrants(r.Receiver, revoke, usage), workerGrants(r.Worker, revoke, usage)...)
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		// Serialize with other Grants (and migrators): the policy is
+		// rebuilt from the roles read here, so a concurrent Grant reading
+		// the same old set would drop the other's worker from it.
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", migrationLockKey); err != nil {
+			return fmt.Errorf("grant lock: %w", err)
+		}
 		current, err := policyRoles(ctx, tx)
 		if err != nil {
 			return err

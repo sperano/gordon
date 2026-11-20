@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -438,4 +439,69 @@ func TestGrantWorkerRoleReusedAsReceiverAcceptsWebhooks(t *testing.T) {
 		t.Fatalf("former worker's receiver Accept of a GitHub webhook = %v, %v; want a new row", dup, err)
 	}
 	assertWorkerRestricted(t, dbURL, worker)
+}
+
+const (
+	// lockPollInterval and lockPollLimit bound the wait for the Grants
+	// to queue on the lock the test holds.
+	lockPollInterval = 10 * time.Millisecond
+	lockPollLimit    = 500
+	// concurrentGrants is the number of Grants racing on the policy.
+	concurrentGrants = 2
+)
+
+// TestConcurrentGrantsKeepEveryWorkerRestricted: two Grants of different
+// workers serialize on the migration lock, so the later one rebuilds the
+// insert policy from the set the earlier one wrote and both stay covered.
+func TestConcurrentGrantsKeepEveryWorkerRestricted(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	workers := []string{role(t, dbURL), role(t, dbURL)}
+	holder, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close(ctx)
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock($1)", store.MigrationLockKey); err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, len(workers))
+	for _, w := range workers {
+		go func() { errs <- owner.Grant(ctx, store.Roles{Worker: w}) }()
+	}
+	waitForLockWaiters(t, holder, errs)
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_unlock($1)", store.MigrationLockKey); err != nil {
+		t.Fatal(err)
+	}
+	for range workers {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent Grant: %v", err)
+		}
+	}
+	for _, w := range workers {
+		assertWorkerRestricted(t, dbURL, w)
+	}
+}
+
+// waitForLockWaiters returns once concurrentGrants sessions wait on the
+// migration lock, failing if a Grant returns first or none queue in time.
+func waitForLockWaiters(t *testing.T, conn *pgx.Conn, errs <-chan error) {
+	t.Helper()
+	const waiting = `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+		AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`
+	for range lockPollLimit {
+		select {
+		case err := <-errs:
+			t.Fatalf("Grant returned (%v) while the migration lock was held", err)
+		default:
+		}
+		var n int
+		if err := conn.QueryRow(ctx, waiting).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n == concurrentGrants {
+			return
+		}
+		time.Sleep(lockPollInterval)
+	}
+	t.Fatalf("Grants never queued on the migration lock")
 }

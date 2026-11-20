@@ -192,6 +192,25 @@ func TestReconcileRequeuesAChainWhenASubtaskChanges(t *testing.T) {
 	}
 }
 
+// TestReconcileIgnoresTheSubtasksOfANonChainParent: only a chain parent's
+// state covers its subtasks; another candidate with an open subtask is
+// not queued again when that subtask's blocker gets done.
+func TestReconcileIgnoresTheSubtasksOfANonChainParent(t *testing.T) {
+	parent := upstream.ListedTask{Task: event.Task{ID: 3, ProjectID: 3, Labels: []string{"in progress"},
+		Relations: event.Relations{Subtasks: []event.Related{{ID: 5}}}}}
+	sub := upstream.ListedTask{Task: event.Task{ID: 5, ProjectID: 3,
+		Relations: event.Relations{BlockedBy: []event.Related{{ID: 9}}}}}
+	l := &lister{open: []upstream.ListedTask{parent, sub}}
+	r := reconciler(l, &inbox{keys: map[string]store.Delivery{}})
+	if n, err := r.pass(context.Background()); err != nil || n != 1 {
+		t.Fatalf("first pass queued %d (%v), want the in-progress parent", n, err)
+	}
+	l.open[1].Task.Relations.BlockedBy[0].Done = true
+	if n, err := r.pass(context.Background()); err != nil || n != 0 {
+		t.Fatalf("a non-chain parent's subtask changing queued %d (%v), want none", n, err)
+	}
+}
+
 // TestReconcileSkipsOnlyATaskWhoseCommentsFail: one task's comment read
 // failing still queues the rest of the pass.
 func TestReconcileSkipsOnlyATaskWhoseCommentsFail(t *testing.T) {

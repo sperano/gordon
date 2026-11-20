@@ -174,3 +174,23 @@ func TestVikunjaLabelIDRefusesMoreThanTheCap(t *testing.T) {
 		t.Fatalf("LabelID = %v, %v after %d reads; want %q after %d", ok, err, read, want, maxTaskPages)
 	}
 }
+
+// TestVikunjaLabelIDStopsOnARepeatedPage: a server ignoring the page
+// parameter serves the same full page again; the second read adds no new
+// label, so LabelID reports none instead of reading up to the cap.
+func TestVikunjaLabelIDStopsOnARepeatedPage(t *testing.T) {
+	read := 0
+	c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) {
+		read++
+		items := make([]string, TaskPageSize)
+		for i := range items {
+			items[i] = fmt.Sprintf(`{"id":%d,"title":"in progress (%d)"}`, i+1, i+1)
+		}
+		fmt.Fprint(w, "["+strings.Join(items, ",")+"]")
+	})
+	const wantReads = 2
+	id, ok, err := Vikunja{c}.LabelID(ctx, "in progress")
+	if err != nil || ok || id != 0 || read != wantReads {
+		t.Fatalf("LabelID = %d %v %v in %d reads, want none after %d", id, ok, err, read, wantReads)
+	}
+}
