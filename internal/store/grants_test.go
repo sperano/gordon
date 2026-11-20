@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -107,5 +108,46 @@ func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 	defer conn.Close(ctx)
 	if _, err := conn.Exec(ctx, "DELETE FROM requests"); !denied(err) {
 		t.Fatalf("worker DELETE = %v, want permission denied", err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key) VALUES ('vikunja', 'forged')`); !denied(err) {
+		t.Fatalf("worker inbox INSERT = %v, want permission denied", err)
+	}
+	if _, err := conn.Exec(ctx, `UPDATE inbox SET source = 'github'`); !denied(err) {
+		t.Fatalf("worker update of a delivery column = %v, want permission denied", err)
+	}
+}
+
+func TestGrantWorkerMaintainsTheInbox(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	worker := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Worker: worker}); err != nil {
+		t.Fatal(err)
+	}
+	accept(t, owner, "retry")
+	accept(t, owner, "fail")
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if err := ws.Retry(ctx, claimOne(t, ws, "w").Lease, 0, "state"); err != nil {
+		t.Fatalf("worker Retry: %v", err)
+	}
+	if err := ws.Fail(ctx, claimOne(t, ws, "w").Lease, "last"); err != nil {
+		t.Fatalf("worker Fail: %v", err)
+	}
+	if _, _, err := ws.ExpireLeases(ctx); err != nil {
+		t.Fatalf("worker ExpireLeases: %v", err)
+	}
+	if _, err := ws.PruneBodies(ctx, 0); err != nil {
+		t.Fatalf("worker PruneBodies: %v", err)
+	}
+}
+
+func TestGrantRefusesOneRoleForBoth(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	shared := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Receiver: shared, Worker: shared}); !errors.Is(err, store.ErrSameRole) {
+		t.Fatalf("Grant with one role for both = %v, want ErrSameRole", err)
 	}
 }

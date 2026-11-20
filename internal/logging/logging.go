@@ -6,6 +6,7 @@
 package logging
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -65,7 +66,8 @@ var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})`),
 	regexp.MustCompile(`sha256=[0-9a-fA-F]{16,}`),
 	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)`),
-	regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api_key|apikey)=[^\s&]+`),
+	// A credential parameter, prefixed or not (access_token, client_secret).
+	regexp.MustCompile(`(?i)\b\w*(password|passwd|pwd|secret|token|api_key|apikey)=[^\s&]+`),
 }
 
 // schemeCredential is an authorization scheme word and the value after
@@ -104,7 +106,7 @@ func maskSchemeCredential(m string) string {
 }
 
 // userinfo matches the password of a URL's userinfo.
-var userinfo = regexp.MustCompile(`(://[^/\s:@]+):[^@\s/]+@`)
+var userinfo = regexp.MustCompile(`(://[^/\s:@]*):[^@\s/]+@`)
 
 // New returns a JSON logger writing to w at level.
 func New(w io.Writer, level slog.Level) *slog.Logger {
@@ -134,6 +136,22 @@ func redact(_ []string, a slog.Attr) slog.Attr {
 		if s, ok := a.Value.Any().(fmt.Stringer); ok {
 			return slog.String(a.Key, Scrub(s.String()))
 		}
+		return scrubStructured(a)
+	}
+	return a
+}
+
+// scrubStructured checks a structured value (a slice, a map, a struct)
+// through its JSON form: unchanged when Scrub leaves that form alone,
+// otherwise logged as the scrubbed string, so no credential or oversized
+// value passes inside one.
+func scrubStructured(a slog.Attr) slog.Attr {
+	b, err := json.Marshal(a.Value.Any())
+	if err != nil {
+		return slog.String(a.Key, Scrub(fmt.Sprint(a.Value.Any())))
+	}
+	if clean := Scrub(string(b)); clean != string(b) {
+		return slog.String(a.Key, clean)
 	}
 	return a
 }

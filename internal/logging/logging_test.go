@@ -44,6 +44,8 @@ func TestScrubMasksTokensInValuesAndErrors(t *testing.T) {
 		"sig sha256=" + strings.Repeat("ab", 32):                                      "sig " + Redacted,
 		"dial postgres://gordon:hunter2@db:5432/gordon failed":                        "dial postgres://gordon:" + Redacted + "@db:5432/gordon failed",
 		"url ?password=x&a=1":                                                         "url ?" + Redacted + "&a=1",
+		"url ?access_token=x&client_secret=y&a=1":                                     "url ?" + Redacted + "&" + Redacted + "&a=1",
+		"dial postgres://:hunter2@db/gordon":                                          "dial postgres://:" + Redacted + "@db/gordon",
 		"key -----BEGIN RSA PRIVATE KEY-----\nMII\n-----END RSA PRIVATE KEY----- end": "key " + Redacted + " end",
 		"auth Basic dXNlcjpwYXNz rejected":                                            "auth " + Redacted + " rejected",
 		"token abcdefghijklmnopqrstuvwxyz end":                                        Redacted + " end",
@@ -83,5 +85,20 @@ func TestParseLevel(t *testing.T) {
 	}
 	if _, err := ParseLevel("loud"); err == nil || !strings.Contains(err.Error(), `"loud"`) {
 		t.Fatalf("ParseLevel(loud) = %v, want a refusal naming it", err)
+	}
+}
+
+func TestStructuredValuesAreScrubbed(t *testing.T) {
+	out := logged(t, "runs", []string{"run-a", "run-b"},
+		"urls", []string{"https://x/?access_token=s3cr3t"}, "big", []string{strings.Repeat("x", MaxValueBytes)})
+	runs, ok := out["runs"].([]any)
+	if !ok || len(runs) != 2 || runs[0] != "run-a" || runs[1] != "run-b" {
+		t.Errorf("clean structured value = %#v, want it kept as is", out["runs"])
+	}
+	if out["urls"] != `["https://x/?`+Redacted { // the mask runs to the next space or &
+		t.Errorf("structured value with a credential = %#v, want its scrubbed JSON", out["urls"])
+	}
+	if big, _ := out["big"].(string); !strings.HasSuffix(big, truncatedSuffix) {
+		t.Errorf("oversized structured value not truncated: %d bytes", len(big))
 	}
 }

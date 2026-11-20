@@ -107,6 +107,7 @@ func TestWorkerRefusals(t *testing.T) {
 		"provider twice":   {map[string]string{"GORDON_UPSTREAM_LIMITS": "github=2,github=9"}, "GORDON_UPSTREAM_LIMITS: github given twice"},
 		"zero lease":       {map[string]string{"GORDON_LEASE_TTL": "0s"}, `GORDON_LEASE_TTL="0s"`},
 		"trailing json":    {map[string]string{"GORDON_OWNERSHIP_FILE": "TRAILING"}, "content after the JSON value"},
+		"null json":        {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "NULL"}, "null is not a configuration"},
 		"root vikunja url": {map[string]string{"GORDON_VIKUNJA_URL": "/"}, `GORDON_VIKUNJA_URL="": want an http or https URL`},
 		"no scheme":        {map[string]string{"GORDON_GITHUB_API_URL": "api.github.com"}, `GORDON_GITHUB_API_URL="api.github.com"`},
 		"ftp url":          {map[string]string{"GORDON_VIKUNJA_URL": "ftp://vikunja"}, `GORDON_VIKUNJA_URL="ftp://vikunja"`},
@@ -128,6 +129,8 @@ func TestWorkerRefusals(t *testing.T) {
 					v = file(t, "r.json", `{"versoin":"x"}`)
 				case "OWNERSHIP":
 					v = file(t, "o.json", `{"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
+				case "NULL":
+					v = file(t, "n.json", " null\n")
 				case "TRAILING":
 					v = file(t, "t.json", `{"rules":[]} {"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				}

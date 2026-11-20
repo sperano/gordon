@@ -13,6 +13,7 @@ import (
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/store"
+	"github.com/sperano/gordon/internal/upstream"
 )
 
 // Inbox retry reasons, the inbox_retries_total reason label.
@@ -24,6 +25,12 @@ const (
 
 // LimitProject is the deferred_total limit label of a full project.
 const LimitProject = "project"
+
+// readShareOfLease is the part of the lease (1/readShareOfLease) the
+// fresh-state reads may take, so a decision with many reads (a large
+// pull request's file pages) is cut and retried before its lease expires,
+// with the rest of the lease left for recording it.
+const readShareOfLease = 2
 
 // Processor decides inbox items: it reads the fresh upstream state,
 // routes the delivery against the ledger and records the decision with
@@ -84,17 +91,47 @@ func (p *Processor) Process(ctx context.Context, it store.Item) {
 	var readErr error
 	led := p.Store.Ledger(ctx)
 	if ev, err := event.Parse(d); err == nil {
-		st, readErr = p.State.Read(ctx, ev, led)
+		st, readErr = p.read(ctx, ev, led)
 	}
 	dec := p.Router.DecideAuthenticated(d, st, led)
 	switch {
 	case led.Err != nil:
 		p.retry(ctx, log, it, source, RetryStore, led.Err)
-	case needsRetry(dec):
+	case transientRead(readErr) || needsRetry(dec):
 		p.retry(ctx, log, it, source, RetryState, readErr)
 	default:
 		p.complete(ctx, log, it, source, dec)
 	}
+}
+
+// read reads the fresh state within its share of the lease.
+func (p *Processor) read(ctx context.Context, ev event.Event, led route.Ledger) (route.State, error) {
+	if p.LeaseTTL > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.LeaseTTL/readShareOfLease)
+		defer cancel()
+	}
+	return p.State.Read(ctx, ev, led)
+}
+
+// transientRead reports a read that failed for a reason that may pass (an
+// outage, a rate limit, a timeout): the router asked for that state, so
+// the item is retried rather than decided without it. A read that cannot
+// succeed later (not found, invalid) is left to the router.
+func transientRead(err error) bool {
+	if err == nil {
+		return false
+	}
+	errs := []error{err}
+	if j, ok := err.(interface{ Unwrap() []error }); ok {
+		errs = j.Unwrap()
+	}
+	for _, e := range errs {
+		if c := upstream.ClassOf(e); c == upstream.Unavailable || c == upstream.RateLimited {
+			return true
+		}
+	}
+	return false
 }
 
 // needsRetry reports a decision that waits for unavailable state: the
@@ -119,19 +156,21 @@ func (p *Processor) retry(ctx context.Context, log *slog.Logger, it store.Item, 
 		msg += ": " + logging.Scrub(cause.Error())
 	}
 	if it.Attempts >= p.MaxAttempts {
+		if err := p.Store.Fail(ctx, it.Lease, msg); err != nil {
+			log.Warn("dead-letter failed; the lease will expire", "reason", reason, "error", err)
+			return
+		}
 		p.Metrics.InboxFailures.WithLabelValues(source).Inc()
 		log.Error("dead-lettered after its last attempt", "reason", reason, "error", cause)
-		if err := p.Store.Fail(ctx, it.Lease, msg); err != nil {
-			log.Warn("dead-letter failed; the lease will expire", "error", err)
-		}
 		return
 	}
 	delay := p.Backoff.Delay(it.Attempts)
+	if err := p.Store.Retry(ctx, it.Lease, delay, msg); err != nil {
+		log.Warn("retry not recorded; the lease will expire", "reason", reason, "error", err)
+		return
+	}
 	p.Metrics.InboxRetries.WithLabelValues(source, reason).Inc()
 	log.Warn("retry", "reason", reason, "error", cause, "delay", delay.String())
-	if err := p.Store.Retry(ctx, it.Lease, delay, msg); err != nil {
-		log.Warn("retry not recorded; the lease will expire", "error", err)
-	}
 }
 
 func (p *Processor) complete(ctx context.Context, log *slog.Logger, it store.Item, source string, dec route.Decision) {
@@ -155,7 +194,8 @@ func (p *Processor) complete(ctx context.Context, log *slog.Logger, it store.Ite
 		attrs = append(attrs, "reason", rec.Reason)
 	}
 	for _, f := range rec.Families {
-		executed := f.Execute && !p.Shadow
+		// Executed as Complete records it: only a family with work queued.
+		executed := f.Execute && !p.Shadow && (len(f.Runs) > 0 || len(f.Actions) > 0)
 		p.Metrics.Decisions.WithLabelValues(source, metrics.Bound(string(f.Family), families),
 			metrics.Bound(string(f.Outcome), metrics.Outcomes), strconv.FormatBool(executed)).Inc()
 		attrs = append(attrs, slog.Group(string(f.Family), "outcome", string(f.Outcome), "reason", f.Reason,

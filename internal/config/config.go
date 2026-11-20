@@ -143,6 +143,10 @@ func (r *reader) jsonFile(name string, out any) bool {
 		r.fail("%s: %v", name, err)
 		return false
 	}
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		r.fail("%s: %s: null is not a configuration", name, path)
+		return false
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {

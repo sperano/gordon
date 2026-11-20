@@ -67,6 +67,10 @@ func forwarded(r *http.Request) []string {
 	return hops
 }
 
+// mappedPrefixBits is the length of the ::ffff:0:0/96 prefix an
+// IPv4-mapped IPv6 address carries before its IPv4 bits.
+const mappedPrefixBits = 96
+
 // ParseProxies parses a comma-separated list of addresses and CIDR
 // prefixes.
 func ParseProxies(s string) (Proxies, error) {
@@ -87,6 +91,10 @@ func ParseProxies(s string) (Proxies, error) {
 		pfx, err := netip.ParsePrefix(part)
 		if err != nil {
 			return nil, err
+		}
+		if pfx.Addr().Is4In6() && pfx.Bits() >= mappedPrefixBits {
+			// Peer unmaps connection addresses, so match the IPv4 range.
+			pfx = netip.PrefixFrom(pfx.Addr().Unmap(), pfx.Bits()-mappedPrefixBits)
 		}
 		out = append(out, pfx.Masked())
 	}

@@ -48,11 +48,18 @@ func waitUntil(t *testing.T, cond func() bool) {
 	}
 }
 
-func acquireAsync(s *Slots, peer string) chan bool {
+// acquireAsync waits for a slot in a goroutine; the test's cleanup
+// cancels a waiter still queued and joins it.
+func acquireAsync(t *testing.T, s *Slots, peer string) chan bool {
 	got := make(chan bool, 1)
+	done := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
+		defer close(done)
 		got <- s.Acquire(ctx, peer)
 	}()
 	return got
@@ -61,7 +68,7 @@ func acquireAsync(s *Slots, peer string) chan bool {
 func TestSlotsWaiterWakesOnRelease(t *testing.T) {
 	s := NewSlots(1)
 	s.Acquire(context.Background(), "a")
-	got := acquireAsync(s, "b")
+	got := acquireAsync(t, s, "b")
 	waitUntil(t, func() bool { return s.waiting() == 1 })
 	s.Release("a")
 	if !<-got {
@@ -77,9 +84,9 @@ func TestSlotsReleaseWakesOnlyAWaiterWithRoom(t *testing.T) {
 	for _, p := range []string{"a", "a", "b", "b", "c", "c", "d", "d"} {
 		s.Acquire(context.Background(), p)
 	}
-	full := acquireAsync(s, "a") // a is at its share whatever is released
+	full := acquireAsync(t, s, "a") // a is at its share whatever is released
 	waitUntil(t, func() bool { return s.waiting() == 1 })
-	other := acquireAsync(s, "e")
+	other := acquireAsync(t, s, "e")
 	waitUntil(t, func() bool { return s.waiting() == 2 })
 	s.Release("b")
 	if !<-other {

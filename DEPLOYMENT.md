@@ -10,11 +10,12 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT, UPDATE` on the five tables, no `DELETE`, no DDL | worker URL, Vikunja token, read-only GitHub token | none in this stage; Gordon 04 adds `create/get/list/delete` on `kelos.dev` Tasks in `kelos-agents` |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT, UPDATE` on `decisions`, `requests`, `runs` and `actions`; on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | none in this stage; Gordon 04 adds `create/get/list/delete` on `kelos.dev` Tasks in `kelos-agents` |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
-`GORDON_WORKER_ROLE`) at every run, so a new table is granted with the
-migration that creates it. The roles themselves (logins and passwords) are
+`GORDON_WORKER_ROLE`) at every run. A new table or receiver column is
+granted only once `internal/store/grants.go` lists it: change that list in
+the release that adds the migration. The roles themselves (logins and passwords) are
 provisioned outside Gordon (shared Postgres, `tofu/kelos`). Migrations run
 under an advisory lock, each in its own transaction with its version row:
 concurrent or interrupted runs are safe, and an already migrated database
@@ -47,7 +48,7 @@ Every mode:
 | `GORDON_VIKUNJA_KEY_FILE` | — | `X-Vikunja-Signature` key (Vikunja webhook secret) |
 | `GORDON_GITHUB_KEY_FILE` | — | `X-Hub-Signature-256` key (GitHub webhook secret) |
 | `GORDON_WIKI_COMMENT_KEY_FILE`, `GORDON_IMAGE_BUILD_KEY_FILE` | — | `X-Kelos-Signature-256` dispatch keys |
-| `GORDON_MAX_IN_FLIGHT` | `32` | requests read and stored at once; one client address gets a quarter |
+| `GORDON_MAX_IN_FLIGHT` | `32` | requests read and stored at once; one client address gets a quarter. Each holds its whole declared body, so the receiver's memory limit must cover this times the largest body cap |
 | `GORDON_TRUSTED_PROXIES` | empty | comma-separated addresses or CIDRs of the webhook ingress proxy only (its pod or Service address, never the whole pod CIDR: any pod in a trusted range can choose its `X-Forwarded-For` and so the client its slots are charged to); a request from one is charged to the nearest untrusted `X-Forwarded-For` address. Required behind a proxy: otherwise every sender shares the proxy's quarter. Keep the receiver reachable from the ingress only (a NetworkPolicy) |
 | `GORDON_REQUEST_DEADLINE` | `30s` | whole request: slot wait and body |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight requests on SIGTERM (keep under `terminationGracePeriodSeconds`) |
@@ -72,7 +73,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_OWNERSHIP_FILE` | empty (all legacy) | JSON `rollout.Table`; refused when invalid or ungated |
 | `GORDON_WORKER_CONCURRENCY` | `4` | items decided (and actions performed) at once |
 | `GORDON_PROJECT_LIMIT` | `2` | per project or repository (the delivery's Vikunja project or GitHub repository), inbox and outbox together; `0` is unbounded |
-| `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | per provider: reads in flight, and separately outbox actions in flight; each provider at most once |
+| `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | per provider: reads in flight, and separately outbox actions in flight; each provider at most once. Kelos submissions take the default, 4 |
 | `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT` |
 | `GORDON_UPSTREAM_TIMEOUT` | `10s` | one upstream request |
 | `GORDON_POLL_INTERVAL` | `1s` | idle wait between claims |

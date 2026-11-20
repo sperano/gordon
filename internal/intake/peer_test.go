@@ -6,7 +6,7 @@ import (
 )
 
 func TestPeerBehindTrustedProxies(t *testing.T) {
-	proxies, err := ParseProxies("10.42.0.0/16, 192.0.2.7")
+	proxies, err := ParseProxies("10.42.0.0/16, 192.0.2.7, ::ffff:10.43.0.0/112")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +24,7 @@ func TestPeerBehindTrustedProxies(t *testing.T) {
 		{"only trusted hops", "10.42.1.5:5000", []string{"10.42.3.3"}, "10.42.3.3"},
 		{"unparsable hop", "10.42.1.5:5000", []string{"203.0.113.9, junk"}, "10.42.1.5"},
 		{"IPv4-mapped proxy", "[::ffff:10.42.1.5]:5000", []string{"203.0.113.9"}, "203.0.113.9"},
+		{"IPv4 proxy in a mapped CIDR", "10.43.1.5:5000", []string{"203.0.113.9"}, "203.0.113.9"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

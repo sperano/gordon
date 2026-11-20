@@ -18,6 +18,9 @@ const (
 	writeSlack        = 10 * time.Second
 	// adminWriteTimeout bounds a probe or a scrape that stops reading.
 	adminWriteTimeout = 30 * time.Second
+	// adminReadTimeout bounds a request body nobody reads (the admin
+	// endpoints are GET only).
+	adminReadTimeout = 10 * time.Second
 )
 
 // serve runs srv on ln until ctx ends, then shuts it down, letting
@@ -43,7 +46,7 @@ func serve(ctx context.Context, log *slog.Logger, name string, srv *http.Server,
 
 func adminServer(h http.Handler) *http.Server {
 	return &http.Server{Handler: h, ReadHeaderTimeout: readHeaderTimeout, MaxHeaderBytes: maxHeaderBytes,
-		WriteTimeout: adminWriteTimeout, IdleTimeout: idleTimeout}
+		ReadTimeout: adminReadTimeout, WriteTimeout: adminWriteTimeout, IdleTimeout: idleTimeout}
 }
 
 func listen(addr string) (net.Listener, error) {

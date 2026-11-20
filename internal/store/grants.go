@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -16,8 +17,18 @@ type Roles struct {
 }
 
 // workerTables are the tables the worker reads and writes; it never
-// deletes, and it never changes the schema.
-var workerTables = []string{"inbox", "decisions", "requests", "runs", "actions"}
+// deletes, and it never changes the schema. The inbox is the receiver's:
+// the worker cannot insert a delivery, and it updates only the queue
+// bookkeeping and the body (pruning).
+var workerTables = []string{"decisions", "requests", "runs", "actions"}
+
+// workerInboxColumns are the inbox columns the worker may update.
+const workerInboxColumns = "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, " +
+	"last_error, finished_at, body"
+
+// ErrSameRole refuses one login for both roles: it would hold the union
+// of their rights, so the receiver could read bodies and the outbox.
+var ErrSameRole = errors.New("receiver and worker roles must differ")
 
 // receiverColumns are the inbox columns the receiver writes: the verified
 // delivery, never its queue bookkeeping (state, attempts, lease).
@@ -31,6 +42,9 @@ const receiverColumns = "source, delivery_key, request_key, kind, scope, headers
 // receiver column is granted only once it is added to workerTables or
 // receiverColumns.
 func (s *Store) Grant(ctx context.Context, r Roles) error {
+	if r.Receiver != "" && r.Receiver == r.Worker {
+		return ErrSameRole
+	}
 	var schema string
 	if err := s.pool.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
 		return err
@@ -49,7 +63,8 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 	if r.Worker != "" {
 		role := pgx.Identifier{r.Worker}.Sanitize()
 		stmts = append(stmts, usage+role,
-			"GRANT SELECT ON schema_migrations TO "+role)
+			"GRANT SELECT ON schema_migrations TO "+role,
+			"GRANT SELECT, UPDATE ("+workerInboxColumns+") ON inbox TO "+role)
 		for _, t := range workerTables {
 			stmts = append(stmts, fmt.Sprintf("GRANT SELECT, INSERT, UPDATE ON %s TO %s", t, role))
 		}

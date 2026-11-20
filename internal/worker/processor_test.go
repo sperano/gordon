@@ -1,9 +1,13 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sperano/gordon/internal/event"
@@ -11,6 +15,7 @@ import (
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store/storetest"
+	"github.com/sperano/gordon/internal/upstream"
 )
 
 // An implementation request on Vikunja project 3, Hollingsworth in the
@@ -20,6 +25,8 @@ const (
 	implementBody   = `{"event_name":"task.updated","data":{"task":{"id":4101,"project_id":3,"done":false,` +
 		`"labels":[{"title":"feature"}],"assignees":[{"username":"claude-opus"}]},"doer":{"username":"eric"}}}`
 	implementRun = "vikunja-hollingsworth-claude-opus-4101"
+	// unconfiguredProject is a Vikunja project no profile configures.
+	unconfiguredProject = 999999
 )
 
 func eligible() event.Task {
@@ -245,5 +252,128 @@ func TestResendOfHandledRequestIsDuplicate(t *testing.T) {
 	}
 	if n := e.count(t, `SELECT count(*) FROM actions WHERE kind = 'submit-task'`); n != 1 {
 		t.Fatalf("%d submissions queued, want 1", n)
+	}
+}
+
+// ownerCommentOn is the owner's /gordon comment on a task of project.
+func ownerCommentOn(project int) string {
+	return fmt.Sprintf(`{"event_name":"task.comment.created","data":{"task":{"id":4101,"project_id":%d},`+
+		`"comment":{"id":91,"comment":"/gordon go"},"doer":{"username":"eric"}}}`, project)
+}
+
+func TestTransientReadRetriesEvenWhenTheRouterWouldDecide(t *testing.T) {
+	// An unconfigured project's request is answered without the task, but
+	// the read looks for a move into a configured project: an outage must
+	// not turn it into an unanswered decision.
+	e := newEnv(t, rollout.Table{})
+	id := e.accept(t, storedDelivery(t, event.SourceVikunja, nil, ownerCommentOn(unconfiguredProject)))
+	e.tasks.down = true
+	e.tick(t)
+	st, attempts, lastErr := e.inboxRow(t, id)
+	if st != "pending" || attempts != 1 || !strings.HasPrefix(lastErr, RetryState+": vikunja: unavailable") ||
+		e.count(t, `SELECT count(*) FROM decisions`) != 0 {
+		t.Fatalf("after a task outage: %s, %d attempts, %q; want pending for a retry, undecided", st, attempts, lastErr)
+	}
+	e.tasks.down = false // the task is gone: a 404 is no reason to wait
+	e.due(t)
+	e.tick(t)
+	if d := recorded(t, e, id); d.Outcome != route.Ignore {
+		t.Fatalf("after a not-found read: %s/%s, want the router's ignore", d.Outcome, d.Reason)
+	}
+}
+
+func TestTransientRead(t *testing.T) {
+	unavailable := &upstream.Error{Provider: upstream.ProviderVikunja, Class: upstream.Unavailable}
+	limited := &upstream.Error{Provider: upstream.ProviderGitHub, Class: upstream.RateLimited}
+	notFound := &upstream.Error{Provider: upstream.ProviderGitHub, Class: upstream.NotFound}
+	invalid := &upstream.Error{Provider: upstream.ProviderVikunja, Class: upstream.Invalid}
+	cases := map[string]struct {
+		err  error
+		want bool
+	}{
+		"none":                  {nil, false},
+		"unavailable":           {unavailable, true},
+		"rate limited":          {limited, true},
+		"not found":             {notFound, false},
+		"invalid":               {invalid, false},
+		"joined with an outage": {errors.Join(notFound, unavailable), true},
+		"joined permanent":      {errors.Join(notFound, invalid), false},
+	}
+	for name, tc := range cases {
+		if got := transientRead(tc.err); got != tc.want {
+			t.Errorf("%s: transientRead = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+// deadlineTasks records the deadline its read was given.
+type deadlineTasks struct {
+	left time.Duration
+	has  bool
+}
+
+func (d *deadlineTasks) Task(ctx context.Context, _ int64) (event.Task, error) {
+	var at time.Time
+	at, d.has = ctx.Deadline()
+	d.left = time.Until(at)
+	return eligible(), nil
+}
+
+func TestStateReadsGetPartOfTheLease(t *testing.T) {
+	e, id := implementDelivery(t)
+	reads := &deadlineTasks{}
+	e.proc.State.Tasks = reads
+	e.tick(t)
+	if !reads.has || reads.left > testTTL/readShareOfLease {
+		t.Fatalf("read deadline set %v, %v left; want at most %v of the %v lease", reads.has, reads.left,
+			testTTL/readShareOfLease, testTTL)
+	}
+	if d := recorded(t, e, id); d.Outcome != route.Dispatch {
+		t.Fatalf("decision %s, want dispatch", d.Outcome)
+	}
+}
+
+// leaseStealer is a task outage during which another worker takes the row.
+type leaseStealer struct {
+	t     *testing.T
+	dbURL string
+}
+
+func (l leaseStealer) Task(context.Context, int64) (event.Task, error) {
+	storetest.Exec(l.t, l.dbURL, `UPDATE inbox SET lease_token = gen_random_uuid()`)
+	return event.Task{}, &upstream.Error{Provider: upstream.ProviderVikunja, Class: upstream.Unavailable}
+}
+
+func TestRetryNotRecordedIsNotCounted(t *testing.T) {
+	for _, last := range []bool{false, true} {
+		e, _ := implementDelivery(t)
+		e.proc.State.Tasks = leaseStealer{t, e.dbURL}
+		if last {
+			e.proc.MaxAttempts = 1
+		}
+		e.tick(t)
+		retries := testutil.ToFloat64(e.metric.InboxRetries.WithLabelValues("vikunja", RetryState))
+		failures := testutil.ToFloat64(e.metric.InboxFailures.WithLabelValues("vikunja"))
+		if retries != 0 || failures != 0 {
+			t.Fatalf("last attempt %v: %v retries, %v dead letters counted for a lost lease; want none", last, retries, failures)
+		}
+	}
+}
+
+func TestGordonFamilyWithNothingQueuedIsNotExecuted(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	idle := eligible()
+	idle.Buckets = []string{"To-Do"}
+	e.tasks.tasks[implementTaskID] = idle
+	e.tick(t)
+	if n := e.count(t, `SELECT count(*) FROM actions`) + e.count(t, `SELECT count(*) FROM runs`); n != 0 {
+		t.Fatalf("%d actions or runs queued for a task not in Doing", n)
+	}
+	if strings.Contains(e.logs.String(), `"executed":true`) {
+		t.Fatalf("log says executed for a family with nothing queued: %s", e.logs.String())
+	}
+	if !strings.Contains(e.logs.String(), `"executed":false`) {
+		t.Fatalf("decision log lacks the family's executed flag: %s", e.logs.String())
 	}
 }

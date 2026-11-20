@@ -155,8 +155,15 @@ func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.
 func outbox(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter) *worker.Outbox {
 	return &worker.Outbox{Store: s, Executors: executors(), Owner: cfg.ID, Concurrency: cfg.Concurrency,
 		LeaseTTL: cfg.LeaseTTL, MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff,
-		Providers: &worker.Limiter{Limits: cfg.UpstreamLimit}, Projects: projects,
+		Providers: actionProviders(cfg), Projects: projects,
 		DeferDelay: cfg.DeferDelay, NoExecutorDelay: cfg.Backoff.Max, Metrics: m, Log: log}
+}
+
+// actionProviders limits outbox actions in flight per provider: the
+// configured limit, and DefaultUpstreamLimit for a provider that has none
+// (kelos), so no provider's writes are unbounded.
+func actionProviders(cfg config.Worker) *worker.Limiter {
+	return &worker.Limiter{Default: config.DefaultUpstreamLimit, Limits: cfg.UpstreamLimit}
 }
 
 // Migrate applies the schema migrations and grants the mode roles.
