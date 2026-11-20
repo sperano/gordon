@@ -18,11 +18,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/auth"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 )
 
 // FixtureKey signs every fixture delivery, for every source.
@@ -60,10 +62,14 @@ type Delivery struct {
 
 // Legacy is what the legacy spawners did with the delivery: the Kelos
 // Task names they created. Divergence, when set, explains why Gordon's
-// runs deliberately differ.
+// runs deliberately differ. Writes, when set, are the writes the legacy
+// hooks, init containers and reconcilers made for it, named as Gordon's
+// action keys; WritesDivergence explains a deliberate difference.
 type Legacy struct {
-	Tasks      []string `json:"tasks"`
-	Divergence string   `json:"divergence,omitempty"`
+	Tasks            []string `json:"tasks"`
+	Divergence       string   `json:"divergence,omitempty"`
+	Writes           []string `json:"writes,omitempty"`
+	WritesDivergence string   `json:"writes_divergence,omitempty"`
 }
 
 // Ledger is an in-memory route.Ledger.
@@ -83,6 +89,16 @@ func (l Ledger) Run(name string) (route.RunRecord, bool) {
 		}
 	}
 	return route.RunRecord{}, false
+}
+
+func (l Ledger) TaskRuns(taskID int64, families []run.Family) []route.RunRecord {
+	var out []route.RunRecord
+	for _, r := range l.Runs {
+		if r.TaskID == taskID && slices.Contains(families, r.Family) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // Load reads every *.json fixture of dir, sorted by name.
@@ -175,6 +191,21 @@ func (f Fixture) Run() (route.Decision, error) {
 		return route.Decision{}, err
 	}
 	return f.Router().Decide(d, f.State, f.Ledger), nil
+}
+
+// WriteKeys lists the keys of a decision's writes, Task submissions
+// aside, sorted and without repeats (two families may queue one write).
+func WriteKeys(d route.Decision) []string {
+	keys := []string{}
+	for _, fd := range d.Families {
+		for _, a := range fd.Actions {
+			if a.Kind != action.SubmitTask && !slices.Contains(keys, a.Key) {
+				keys = append(keys, a.Key)
+			}
+		}
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // RunNames lists the Task names a decision submits, in order.

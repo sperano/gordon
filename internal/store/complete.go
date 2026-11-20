@@ -20,6 +20,9 @@ const (
 	runFinished   = "finished"
 )
 
+// RunFinished is a finished run's state.
+const RunFinished = runFinished
+
 // requestKinds are the event kinds whose request key names an owner
 // request the router deduplicates (a `/gordon` comment or review). A
 // task.updated's request key names the task, which changes many times.
@@ -78,6 +81,10 @@ func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shado
 		}
 		if len(dec.Families) > 0 {
 			dec.Outcome = route.Overall(dec.Families)
+		}
+		// Requeues write nothing outside Gordon: queued in shadow too.
+		if _, err := enqueue(ctx, tx, requeues(dec)); err != nil {
+			return err
 		}
 		if claims { // this row holds the request: record its final outcome
 			if _, err := tx.Exec(ctx, `UPDATE requests SET outcome = $2, executed = $3 WHERE request_key = $1`,
@@ -165,7 +172,7 @@ func recordFamily(ctx context.Context, tx pgx.Tx, inboxID int64, requestKey stri
 		}
 		dupReason = reason
 		submit := action.New(action.SubmitTask, action.KelosTask(route.KelosNamespace, rn.Name), "").Key
-		fd.Actions = slices.DeleteFunc(fd.Actions, func(a action.Action) bool { return a.Key == submit })
+		fd.Actions = dropWithDependents(fd.Actions, submit)
 	}
 	fd.Runs = runs
 	switch {
@@ -178,16 +185,37 @@ func recordFamily(ctx context.Context, tx pgx.Tx, inboxID int64, requestKey stri
 	case len(fd.Runs) == 0:
 		fd.Outcome = route.Act
 	}
+	return insertActions(ctx, tx, inboxID, fd)
+}
+
+// insertActions queues a family's actions on an inbox row, each key once.
+func insertActions(ctx context.Context, tx pgx.Tx, inboxID int64, fd *route.FamilyDecision) error {
 	for _, a := range fd.Actions {
 		if _, err := tx.Exec(ctx, `INSERT INTO actions
-			(inbox_id, key, kind, target, value, detail, family, project)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (inbox_id, key) DO NOTHING`,
+			(inbox_id, key, kind, target, value, detail, family, project, after_key)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (inbox_id, key) DO NOTHING`,
 			inboxID, a.Key, string(a.Kind), string(a.Target), a.Value, a.Detail,
-			string(fd.Family), fd.Project); err != nil {
+			string(fd.Family), fd.Project, a.After); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// dropWithDependents removes the action keyed key and every action that
+// waits for it, transitively: a run another worker took is claimed by
+// that worker's decision, not this one's.
+func dropWithDependents(actions []action.Action, key string) []action.Action {
+	gone := map[string]bool{key: true}
+	for changed := true; changed; {
+		changed = false
+		for _, a := range actions {
+			if !gone[a.Key] && a.After != "" && gone[a.After] {
+				gone[a.Key], changed = true, true
+			}
+		}
+	}
+	return slices.DeleteFunc(slices.Clone(actions), func(a action.Action) bool { return gone[a.Key] })
 }
 
 // recordRun records a new run, or a new generation of a finished run

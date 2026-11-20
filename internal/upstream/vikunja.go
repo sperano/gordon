@@ -29,6 +29,36 @@ type vikunjaTask struct {
 	Buckets []struct {
 		Title string `json:"title"`
 	} `json:"buckets"`
+	Index        int64                      `json:"index"`
+	RelatedTasks map[string][]event.Related `json:"related_tasks"`
+}
+
+// Vikunja's related_tasks keys of the relations the lifecycle reads.
+const (
+	relationBlocked    = "blocked"
+	relationBlocking   = "blocking"
+	relationSubtask    = "subtask"
+	relationParentTask = "parenttask"
+)
+
+// toTask converts an API task; Buckets is never nil.
+func (raw vikunjaTask) toTask() event.Task {
+	t := event.Task{ID: raw.ID, ProjectID: raw.ProjectID, Title: raw.Title, Description: raw.Description,
+		Done: raw.Done, Buckets: []string{}, Index: raw.Index}
+	for _, l := range raw.Labels {
+		t.Labels = append(t.Labels, l.Title)
+	}
+	for _, a := range raw.Assignees {
+		t.Assignees = append(t.Assignees, a.Username)
+	}
+	for _, b := range raw.Buckets {
+		t.Buckets = append(t.Buckets, b.Title)
+	}
+	t.Relations = event.Relations{
+		BlockedBy: raw.RelatedTasks[relationBlocked], Blocking: raw.RelatedTasks[relationBlocking],
+		Subtasks: raw.RelatedTasks[relationSubtask], Parents: raw.RelatedTasks[relationParentTask],
+	}
+	return t
 }
 
 // Task reads a task with its Kanban buckets (GET /tasks/{id}?expand=buckets,
@@ -48,18 +78,7 @@ func (v Vikunja) Task(ctx context.Context, id int64) (event.Task, error) {
 	if err != nil {
 		return event.Task{}, err
 	}
-	t := event.Task{ID: raw.ID, ProjectID: raw.ProjectID, Title: raw.Title, Description: raw.Description,
-		Done: raw.Done, Buckets: []string{}}
-	for _, l := range raw.Labels {
-		t.Labels = append(t.Labels, l.Title)
-	}
-	for _, a := range raw.Assignees {
-		t.Assignees = append(t.Assignees, a.Username)
-	}
-	for _, b := range raw.Buckets {
-		t.Buckets = append(t.Buckets, b.Title)
-	}
-	return t, nil
+	return raw.toTask(), nil
 }
 
 // maxCommentPages bounds the comment pages one read follows: 1000

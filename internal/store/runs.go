@@ -9,6 +9,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 )
 
 // ErrNoRun is a run the store does not have.
@@ -73,6 +74,11 @@ type ObservedRun struct {
 	// SubmitState is the state of this generation's submit action ("" if
 	// none): while it is not done, a missing Task is not yet created.
 	SubmitState string
+	// Family, Project and TaskID locate the run on its Vikunja task (0
+	// for a run of none), for the lifecycle's failure notices.
+	Family  run.Family
+	Project string
+	TaskID  int64
 }
 
 // ObservedRuns takes the runs the observer follows, at most limit, the
@@ -83,16 +89,20 @@ func (s *Store) ObservedRuns(ctx context.Context, limit int) ([]ObservedRun, err
 			UPDATE runs SET observed_at = now()
 			WHERE name IN (SELECT name FROM runs WHERE state <> 'finished' OR task_exists
 				ORDER BY observed_at, name LIMIT $1 FOR UPDATE SKIP LOCKED)
-			RETURNING name, inbox_id, state, task_exists, phase)
+			RETURNING name, inbox_id, state, task_exists, phase, family, project,
+				coalesce((identity->>'task_id')::bigint, 0) AS task_id)
 		SELECT r.name, r.inbox_id, r.state, r.task_exists, r.phase,
-			coalesce((SELECT a.state FROM actions a WHERE a.inbox_id = r.inbox_id AND a.key = $2 || r.name), '')
+			coalesce((SELECT a.state FROM actions a WHERE a.inbox_id = r.inbox_id AND a.key = $2 || r.name), ''),
+			r.family, r.project, r.task_id
 		FROM taken r ORDER BY r.name`, limit, submitKeyPrefix())
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ObservedRun, error) {
 		var o ObservedRun
-		err := r.Scan(&o.Name, &o.InboxID, &o.State, &o.Exists, &o.Phase, &o.SubmitState)
+		var family string
+		err := r.Scan(&o.Name, &o.InboxID, &o.State, &o.Exists, &o.Phase, &o.SubmitState, &family, &o.Project, &o.TaskID)
+		o.Family = run.Family(family)
 		return o, err
 	})
 }

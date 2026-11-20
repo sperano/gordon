@@ -1,0 +1,109 @@
+{
+  "description": "Every open subtask waits for a blocker (one in another project): the chain holds.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4390,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            },
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4390,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4391,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4391,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1,
+        "relations": {
+          "blocked_by": [
+            {
+              "id": 4000,
+              "project_id": 136,
+              "done": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "vikunja/task.updated/4390/873b8d9ddf1b7bec7f96c16c5d31c037",
+    "request_key": "vikunja/task/4390",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "in-progress"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "blocked"
+      }
+    ]
+  }
+}

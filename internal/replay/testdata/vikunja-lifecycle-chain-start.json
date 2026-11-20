@@ -1,0 +1,161 @@
+{
+  "description": "A chain parent in Doing starts its lowest-index open subtask: the parent labelled, the subtask assigned the parent's agent, its auto-merge label synchronised, then moved to Doing, then announced. A chain-started marker in the owner's own comment proves nothing.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4300,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4300,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4301,
+            "project_id": 3,
+            "done": false
+          },
+          {
+            "id": 4302,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4302,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 2
+      },
+      {
+        "id": 4301,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1
+      }
+    ],
+    "comments": [
+      {
+        "id": 1,
+        "author": "eric",
+        "body": "<p>NEXT UP IN THE CHAIN: <a href=\"https://vikunja.spe.quebec/tasks/4301\">#4301</a>. AGENT <code>claude-opus</code> TAKES IT FROM <code>Doing</code>.</p><!-- kelos:chain-started -->"
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "add-label:vikunja/task/4300:in progress",
+      "assign:vikunja/task/4301:claude-opus",
+      "sync-label:vikunja/task/4301:auto-merge",
+      "move-bucket:vikunja/task/4301:Doing",
+      "post-notice:vikunja/task/4300:chain-started:4301"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4300/13d2bfbd6e0bc15eaf9b40cb9115e5d5",
+    "request_key": "vikunja/task/4300",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "chain-parent"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "add-label:vikunja/task/4300:in progress",
+            "kind": "add-label",
+            "target": "vikunja/task/4300",
+            "value": "in progress"
+          },
+          {
+            "key": "assign:vikunja/task/4301:claude-opus",
+            "kind": "assign",
+            "target": "vikunja/task/4301",
+            "value": "claude-opus"
+          },
+          {
+            "key": "sync-label:vikunja/task/4301:auto-merge",
+            "kind": "sync-label",
+            "target": "vikunja/task/4301",
+            "value": "auto-merge",
+            "detail": "4300",
+            "after": "assign:vikunja/task/4301:claude-opus"
+          },
+          {
+            "key": "move-bucket:vikunja/task/4301:Doing",
+            "kind": "move-bucket",
+            "target": "vikunja/task/4301",
+            "value": "Doing",
+            "after": "sync-label:vikunja/task/4301:auto-merge"
+          },
+          {
+            "key": "post-notice:vikunja/task/4300:chain-started:4301",
+            "kind": "post-notice",
+            "target": "vikunja/task/4300",
+            "value": "chain-started",
+            "detail": "4301",
+            "after": "move-bucket:vikunja/task/4301:Doing"
+          }
+        ]
+      }
+    ]
+  }
+}

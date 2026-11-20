@@ -17,6 +17,16 @@ type Reads struct {
 	// OwnerRequest marks an owner `/gordon` request, whose state the
 	// router reads only once it knows the request is not handled yet.
 	OwnerRequest bool
+	// Chain reads, once the task is read and carries the chain label, its
+	// subtasks and its comments.
+	Chain bool
+}
+
+// ChainTask reports a fresh task whose chain the router decides, so its
+// subtasks and comments are read too.
+func (r Router) ChainTask(t event.Task) bool {
+	l := r.Config.Policy.ChainLabel
+	return l != "" && t.HasLabel(l)
 }
 
 // Reads is what the router would read to decide ev: nothing for an event
@@ -28,7 +38,7 @@ func (r Router) Reads(ev event.Event) Reads {
 	switch ev.Kind {
 	case event.VikunjaTaskUpdated:
 		if _, ok := r.Config.Project(ev.Vikunja.Task.ProjectID); ok {
-			return Reads{Task: ev.Vikunja.Task.ID}
+			return Reads{Task: ev.Vikunja.Task.ID, Chain: true}
 		}
 	case event.VikunjaTaskCommentCreated:
 		c := ev.Vikunja.Comment

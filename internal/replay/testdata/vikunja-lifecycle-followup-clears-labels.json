@@ -1,0 +1,153 @@
+{
+  "description": "An owner follow-up on a task flagged for the owner clears action-needed and agent-error once its run is submitted, and announces it.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.comment.created",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4140,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            },
+            {
+              "title": "action-needed"
+            },
+            {
+              "title": "agent-error"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "comment": {
+          "id": 91000,
+          "comment": "<p>/gordon retry</p>"
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4140,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "in progress",
+        "action-needed",
+        "agent-error"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-fu-hollingsworth-4140-c91000"
+    ],
+    "writes": [
+      "react:vikunja/comment/91000:eyes",
+      "remove-label:vikunja/task/4140:action-needed",
+      "remove-label:vikunja/task/4140:agent-error",
+      "post-notice:vikunja/task/4140:start:vikunja-fu-hollingsworth-4140-c91000"
+    ]
+  },
+  "expect": {
+    "outcome": "dispatch",
+    "delivery_key": "vikunja/comment/91000",
+    "request_key": "vikunja/comment/91000",
+    "families": [
+      {
+        "family": "vikunja-followup",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "dispatch",
+        "runs": [
+          {
+            "name": "vikunja-fu-hollingsworth-4140-c91000",
+            "branch": "kelos/vikunja-4140",
+            "identity": {
+              "family": "vikunja-followup",
+              "project": "hollingsworth",
+              "variant": "claude-opus",
+              "task_id": 4140,
+              "comment_id": 91000
+            },
+            "profile": {
+              "config_version": "hollingsworth-bf18aa5",
+              "variant": "claude-opus",
+              "agent": "claude-code",
+              "model": "claude-opus-5-5[1m]",
+              "effort": "medium",
+              "image": "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61",
+              "credential_type": "oauth",
+              "credential_secret": "claude-oauth",
+              "mode": "followup",
+              "profile": "image-build-submitter",
+              "service_account": "image-build-submitter",
+              "workspace": "hollingsworth",
+              "read_only": false,
+              "capabilities": [
+                "github-write",
+                "github-readonly",
+                "image-build-submit",
+                "cluster-read"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/vikunja-fu-hollingsworth-4140-c91000",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/vikunja-fu-hollingsworth-4140-c91000"
+          },
+          {
+            "key": "react:vikunja/comment/91000:eyes",
+            "kind": "react",
+            "target": "vikunja/comment/91000",
+            "value": "eyes"
+          },
+          {
+            "key": "remove-label:vikunja/task/4140:agent-error",
+            "kind": "remove-label",
+            "target": "vikunja/task/4140",
+            "value": "agent-error",
+            "after": "submit-task:kelos/kelos-agents/vikunja-fu-hollingsworth-4140-c91000"
+          },
+          {
+            "key": "remove-label:vikunja/task/4140:action-needed",
+            "kind": "remove-label",
+            "target": "vikunja/task/4140",
+            "value": "action-needed",
+            "after": "submit-task:kelos/kelos-agents/vikunja-fu-hollingsworth-4140-c91000"
+          },
+          {
+            "key": "post-notice:vikunja/task/4140:start:vikunja-fu-hollingsworth-4140-c91000",
+            "kind": "post-notice",
+            "target": "vikunja/task/4140",
+            "value": "start",
+            "detail": "vikunja-fu-hollingsworth-4140-c91000",
+            "after": "submit-task:kelos/kelos-agents/vikunja-fu-hollingsworth-4140-c91000"
+          }
+        ]
+      }
+    ]
+  }
+}

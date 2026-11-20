@@ -1,0 +1,142 @@
+{
+  "description": "A task requeued after its cross-project blocker got done is submitted, then claimed: in progress, Doing, the agent-error label off, the start notice.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4111,
+          "project_id": 3
+        },
+        "gordon": {
+          "requeue": "vikunja/task.updated/5000/x",
+          "depth": 1
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4111,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "agent-error"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "blocked_by": [
+          {
+            "id": 5000,
+            "project_id": 136,
+            "done": true
+          }
+        ]
+      }
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-hollingsworth-claude-opus-4111"
+    ],
+    "divergence": "legacy's Task already existed (its pod was waiting); Gordon submits it now, under the same name",
+    "writes": [
+      "add-label:vikunja/task/4111:in progress",
+      "remove-label:vikunja/task/4111:agent-error",
+      "move-bucket:vikunja/task/4111:Doing",
+      "post-notice:vikunja/task/4111:start:vikunja-hollingsworth-claude-opus-4111"
+    ]
+  },
+  "expect": {
+    "outcome": "dispatch",
+    "delivery_key": "vikunja/task.updated/4111/73e05675b7b8b7d4f903a0bd197e5cdc",
+    "request_key": "vikunja/task/4111",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "dispatch",
+        "runs": [
+          {
+            "name": "vikunja-hollingsworth-claude-opus-4111",
+            "branch": "kelos/vikunja-4111",
+            "identity": {
+              "family": "vikunja-implement",
+              "project": "hollingsworth",
+              "variant": "claude-opus",
+              "task_id": 4111
+            },
+            "profile": {
+              "config_version": "hollingsworth-bf18aa5",
+              "variant": "claude-opus",
+              "agent": "claude-code",
+              "model": "claude-opus-5-5[1m]",
+              "effort": "medium",
+              "image": "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61",
+              "credential_type": "oauth",
+              "credential_secret": "claude-oauth",
+              "mode": "implement",
+              "profile": "image-build-submitter",
+              "service_account": "image-build-submitter",
+              "workspace": "hollingsworth",
+              "read_only": false,
+              "capabilities": [
+                "github-write",
+                "github-readonly",
+                "image-build-submit",
+                "cluster-read"
+              ]
+            }
+          }
+        ],
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4111",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4111"
+          },
+          {
+            "key": "add-label:vikunja/task/4111:in progress",
+            "kind": "add-label",
+            "target": "vikunja/task/4111",
+            "value": "in progress",
+            "detail": "claim",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4111"
+          },
+          {
+            "key": "remove-label:vikunja/task/4111:agent-error",
+            "kind": "remove-label",
+            "target": "vikunja/task/4111",
+            "value": "agent-error",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4111"
+          },
+          {
+            "key": "move-bucket:vikunja/task/4111:Doing",
+            "kind": "move-bucket",
+            "target": "vikunja/task/4111",
+            "value": "Doing",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4111"
+          },
+          {
+            "key": "post-notice:vikunja/task/4111:start:vikunja-hollingsworth-claude-opus-4111",
+            "kind": "post-notice",
+            "target": "vikunja/task/4111",
+            "value": "start",
+            "detail": "vikunja-hollingsworth-claude-opus-4111",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4111"
+          }
+        ]
+      }
+    ]
+  }
+}

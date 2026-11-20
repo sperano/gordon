@@ -42,19 +42,22 @@ func vikunjaDispatch() []Entry {
 
 func vikunjaLifecycle() []Entry {
 	return []Entry{
-		hook("drag-cancel", "task.updated: card back in To-Do without pr open", "scripts/drag_cancel.py",
-			"deletes the task's live Tasks, removes in progress, posts the stop notice"),
+		withFamilies(hook("drag-cancel", "task.updated: card back in To-Do without pr open", "scripts/drag_cancel.py",
+			"cancels the task's queued runs, deletes its live Tasks, removes in progress, posts the stop notice"),
+			run.VikunjaDragCancel),
 		hook("discuss-fallback", "owner /gordon on a discuss task some spawner takes", "scripts/discuss_fallback.py",
 			"one-line start comment reserved by a Lease per comment"),
 		hook("unanswered-notice", "owner /gordon no spawner takes", "scripts/unanswered_notice.py",
 			"router emits post-notice unanswered:<reason>"),
 		hook("followup-reaction", "accepted owner /gordon comment", "scripts/webhook_enricher.py", "👀 reaction; router emits react"),
-		hook("done-unlabel", "task.updated: done task with in progress", "scripts/done_unlabel.py", ""),
-		hook("action-needed-unlabel", "task.updated: done task with action-needed", "scripts/action_needed.py", ""),
+		withFamilies(hook("done-unlabel", "task.updated: done task with in progress", "scripts/done_unlabel.py", ""),
+			run.VikunjaDoneCleanup),
+		withFamilies(hook("action-needed-unlabel", "task.updated: done task with action-needed", "scripts/action_needed.py", ""),
+			run.VikunjaDoneCleanup),
 		{ID: "subtask-chain", Kind: EnricherHook, Owner: Gordon, Decision: Migrate,
 			Legacy:    chartPath("scripts/subtask_chain.py", "templates/subtask-chain-reconcile.yaml", "templates/_subtask-chain.tpl"),
 			Trigger:   "task.updated of a chain task, its parent or a done blocker; cron */15",
-			Implement: StageVikunja, Cutover: StageVikunjaCut,
+			Implement: StageVikunja, Cutover: StageVikunjaCut, Families: []run.Family{run.VikunjaChain},
 			Note: "runs subtasks one at a time; this migration's own chain must not dispatch twice"},
 		initContainer("wait-for-blockers", "every implementation and discuss pod", "scripts/wait_for_blockers.py",
 			"Gordon waits on blockers before submitting, then claims: in progress, Doing, assignee, start notice"),
@@ -69,7 +72,8 @@ func vikunjaLifecycle() []Entry {
 		{ID: "failure-reporter", Kind: Cron, Owner: Gordon, Decision: Migrate,
 			Legacy:  chartPath("scripts/report_failures.py", "templates/failure-reporter.yaml"),
 			Trigger: "5-59/10: Failed Tasks with a Vikunja task", Implement: StageVikunja, Cutover: StageVikunjaCut,
-			Note: "failed notice, agent-error and action-needed; done-task sweep backstop"},
+			Families: []run.Family{run.VikunjaFailure},
+			Note:     "failed notice, agent-error and action-needed; done-task sweep backstop"},
 		{ID: "fetch-attachments", Kind: InitContainer, Owner: Kelos, Decision: Retain,
 			Legacy: chartPath("scripts/fetch_attachments.py", "templates/_attachments.tpl"), Trigger: "every Vikunja agent pod",
 			Note: "stays in the pod as the variant's identity; Gordon only passes the task reference"},
@@ -82,6 +86,11 @@ func vikunjaLifecycle() []Entry {
 func hook(id, trigger, script, note string) Entry {
 	return Entry{ID: id, Kind: EnricherHook, Trigger: trigger, Owner: Gordon, Decision: Migrate,
 		Legacy: chartPath(script), Implement: StageVikunja, Cutover: StageVikunjaCut, Note: note}
+}
+
+func withFamilies(e Entry, families ...run.Family) Entry {
+	e.Families = families
+	return e
 }
 
 func initContainer(id, trigger, script, note string) Entry {

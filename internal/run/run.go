@@ -29,13 +29,24 @@ const (
 	PRReview               Family = "pr-review"
 	PROpen                 Family = "pr-open"
 	MergeClose             Family = "merge-close"
+	// The Vikunja lifecycle families (Gordon 06): model-free writes, each
+	// the successor of one legacy hook or reconciler with its own switch.
+	VikunjaDragCancel  Family = "vikunja-drag-cancel"
+	VikunjaDoneCleanup Family = "vikunja-done-cleanup"
+	VikunjaChain       Family = "vikunja-chain"
+	VikunjaFailure     Family = "vikunja-failure"
 )
 
 // Families lists every family the router decides, in a stable order.
 var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
+	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure,
 }
+
+// AgentFamilies are the families whose runs work on a Vikunja task as its
+// agent (the implementation and discuss runs a drag to the backlog stops).
+var AgentFamilies = []Family{VikunjaImplement, VikunjaDiscuss}
 
 // BranchPrefix is the legacy agent branch prefix (vikunjaSpawners.branchPrefix).
 const BranchPrefix = "kelos/vikunja-"

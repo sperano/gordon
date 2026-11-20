@@ -19,6 +19,15 @@ const (
 	PostNotice    Kind = "post-notice"
 	ConvertDraft  Kind = "convert-to-draft"
 	SkippedChecks Kind = "post-skipped-checks"
+	// Assign assigns a Vikunja task to the user Value unless an agent
+	// user already has it.
+	Assign Kind = "assign"
+	// SyncLabel makes the target carry the Value label of the task
+	// Detail names, exactly as created by the configured creator.
+	SyncLabel Kind = "sync-label"
+	// CancelRun stops a Vikunja task's implementation and discuss runs:
+	// queued submissions are cancelled, live Kelos Tasks deleted.
+	CancelRun Kind = "cancel-run"
 )
 
 // Target is the object an action writes to.
@@ -58,6 +67,17 @@ type Action struct {
 	// request a pr-open or merged notice names) or carries a GitHub
 	// reaction's subject node id; it is not part of a reaction's key.
 	Detail string `json:"detail,omitempty"`
+	// After is the key of an action of the same decision that must be
+	// done first ("" for none): a claim waits for its run's submission,
+	// a chain's move for the subtask's assignment. When that action is
+	// dead-lettered or cancelled, this one is cancelled.
+	After string `json:"after,omitempty"`
+}
+
+// Then returns a with After set to the key of first.
+func (a Action) Then(first Action) Action {
+	a.After = first.Key
+	return a
 }
 
 // New builds an action and its durable key, kind:target[:value].

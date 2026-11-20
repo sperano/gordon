@@ -193,6 +193,17 @@ func (c *Client) Get(ctx context.Context, name string) (Task, json.RawMessage, e
 	return t, raw, nil
 }
 
+// Delete deletes the Task of that name with its Job and pods
+// (propagationPolicy Background); a Task already gone is not an error.
+func (c *Client) Delete(ctx context.Context, name string) error {
+	body := []byte(`{"apiVersion":"v1","kind":"DeleteOptions","propagationPolicy":"Background"}`)
+	err := c.do(ctx, "delete", http.MethodDelete, c.collection()+"/"+url.PathEscape(name), nil, body, maxObjectBytes, &json.RawMessage{})
+	if IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 type taskList struct {
 	Metadata struct {
 		Continue string `json:"continue"`
@@ -348,7 +359,7 @@ const (
 var Results = []string{ResultOK, ResultNotFound, ResultRefused, ResultError, ResultTooLarge}
 
 // Ops lists every observed operation.
-var Ops = []string{"create", "get", "list"}
+var Ops = []string{"create", "get", "list", "delete"}
 
 func (c *Client) observe(op string, err error, d time.Duration) {
 	if c.Observe == nil {

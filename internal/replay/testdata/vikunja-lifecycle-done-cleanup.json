@@ -1,0 +1,96 @@
+{
+  "description": "A task closed by hand loses in progress and action-needed, each removed only while it is still done.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4130,
+          "project_id": 3,
+          "done": true,
+          "labels": [
+            {
+              "title": "in progress"
+            },
+            {
+              "title": "action-needed"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4130,
+      "project_id": 3,
+      "done": true,
+      "labels": [
+        "in progress",
+        "action-needed"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Done"
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "remove-label:vikunja/task/4130:in progress",
+      "remove-label:vikunja/task/4130:action-needed"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4130/ddffee389bc121afd85448412086872e",
+    "request_key": "vikunja/task/4130",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "task-done"
+      },
+      {
+        "family": "vikunja-done-cleanup",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "remove-label:vikunja/task/4130:in progress",
+            "kind": "remove-label",
+            "target": "vikunja/task/4130",
+            "value": "in progress",
+            "detail": "if-done"
+          },
+          {
+            "key": "remove-label:vikunja/task/4130:action-needed",
+            "kind": "remove-label",
+            "target": "vikunja/task/4130",
+            "value": "action-needed",
+            "detail": "if-done"
+          }
+        ]
+      }
+    ]
+  }
+}

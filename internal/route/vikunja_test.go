@@ -52,7 +52,8 @@ func TestTaskUpdatedEligibility(t *testing.T) {
 	}
 	for _, c := range cases {
 		d := r.Decide(updated(t, task(5, 136, c.sent, "claude-opus")), route.State{Task: fresh(5, 136, c.now, "claude-opus")}, replay.Ledger{})
-		t.Run(c.name, func(t *testing.T) { expectFamily(t, family(t, d), c.family, c.outcome, c.reason) })
+		// The agent family comes first; a chain parent adds its chain's.
+		t.Run(c.name, func(t *testing.T) { expectFamily(t, d.Families[0], c.family, c.outcome, c.reason) })
 	}
 	none := r.Decide(updated(t, task(5, 136, nil)), route.State{Task: fresh(5, 136, nil)}, replay.Ledger{})
 	expectFamily(t, family(t, none), run.VikunjaImplement, route.Ignore, route.ReasonNoAgentAssignee)
@@ -133,7 +134,7 @@ func TestTaskCommentUnanswered(t *testing.T) {
 			if fd.Outcome != c.outcome || fd.Reason != c.reason {
 				t.Errorf("%s/%q, want %s/%q", fd.Outcome, fd.Reason, c.outcome, c.reason)
 			}
-			want := []string{"react:vikunja/comment/9:eyes", "post-notice:vikunja/comment/9:unanswered:" + c.reason}
+			want := []string{"react:vikunja/comment/9:eyes", "post-notice:vikunja/task/5:unanswered:9:" + c.reason}
 			if got := keys(fd.Actions); !slices.Equal(got, want) {
 				t.Errorf("actions %v, want %v", got, want)
 			}

@@ -48,6 +48,14 @@ var required = map[Owner][]Gate{
 	Gordon: {ReplayParity, ShadowParity, RollbackTested, LegacyDisabled},
 }
 
+// coupled lists, per family, the families Gordon must own wherever it
+// owns that one: a drag to the backlog stops the task's runs from the
+// run ledger, which has only the runs Gordon submitted, so Gordon must
+// be the one submitting them.
+var coupled = map[run.Family][]run.Family{
+	run.VikunjaDragCancel: {run.VikunjaImplement, run.VikunjaDiscuss},
+}
+
 // AllProjects is the project of a rule that covers every project.
 const AllProjects = "*"
 
@@ -113,6 +121,22 @@ func (t Table) Validate() error {
 		for _, g := range gates {
 			if !slices.Contains(r.Evidence, g) {
 				return fmt.Errorf("rule %s/%s: owner %s lacks gate %s", r.Project, r.Family, r.Owner, g)
+			}
+		}
+	}
+	return t.checkCoupled()
+}
+
+// checkCoupled refuses a Gordon-owned family whose coupled families
+// Gordon does not own in the same scope.
+func (t Table) checkCoupled() error {
+	for _, r := range t.Rules {
+		if r.Owner != Gordon {
+			continue
+		}
+		for _, f := range coupled[r.Family] {
+			if t.Owner(r.Project, f) != Gordon {
+				return fmt.Errorf("rule %s/%s: needs %s owned by gordon too", r.Project, r.Family, f)
 			}
 		}
 	}

@@ -114,9 +114,16 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 	// any replica, both pass a check one of them fills.
 	var created kelos.Task
 	var createErr error
-	locked := false
+	locked, cancelled := false, false
 	if err := e.Runs.WithAdmission(ctx, func(ctx context.Context) error {
 		locked = true
+		// A drag to the backlog cancels runs under this lock: read the
+		// run again, so a run cancelled since the first read is never
+		// created.
+		if now, err := e.Runs.RunToSubmit(ctx, r.Name); err != nil || now.Submitted() {
+			cancelled = err == nil
+			return err
+		}
 		if err := e.admit(ctx, r); err != nil {
 			return err
 		}
@@ -130,6 +137,10 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 			return worker.Deferred(fmt.Errorf("waiting: %w", err), LimitAdmission, e.BusyDelay)
 		}
 		return err
+	}
+	if cancelled {
+		e.Log.Info("run stopped before its Task was created", "task", r.Name)
+		return nil
 	}
 	return e.created(ctx, r, created, createErr)
 }

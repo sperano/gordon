@@ -63,6 +63,12 @@ func (r *Reconciler) upkeep(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Actions waiting for one that will never be done go too.
+	if n, err := r.Store.CancelOrphans(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		r.Log.Info("cancelled actions whose prerequisite failed", "actions", n)
+	}
 	r.Metrics.LeasesExpired.WithLabelValues(store.QueueInbox).Add(float64(inbox))
 	r.Metrics.LeasesExpired.WithLabelValues(store.QueueActions).Add(float64(actions))
 	if inbox+actions > 0 {

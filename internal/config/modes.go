@@ -107,6 +107,8 @@ type Worker struct {
 	// Kelos is nil without a dispatch configuration: runs then carry no
 	// Task and the worker can only shadow.
 	Kelos *Kelos
+	// Lifecycle is the Vikunja lifecycle's writer, reconciliation and links.
+	Lifecycle Lifecycle
 }
 
 // Worker defaults.
@@ -168,6 +170,8 @@ func LoadWorker(env Getenv) (Worker, error) {
 			r.fail("GORDON_OWNERSHIP_FILE: %v", err)
 		}
 	}
+	c.Lifecycle = r.lifecycle()
+	r.checkWriter(c)
 	return c, r.err()
 }
 
@@ -220,7 +224,9 @@ func (c Worker) String() string {
 		dispatchVersion, kelosURL = c.Kelos.Dispatch.Version, c.Kelos.APIURL
 	}
 	return fmt.Sprintf("shadow=%v id=%s concurrency=%d lease=%s poll=%s attempts=%d backoff=%s..%s project_limit=%d "+
-		"upstream=%v reconcile=%s retention=%s config=%s rules=%d dispatch=%s kelos=%s", c.Shadow, c.ID, c.Concurrency,
+		"upstream=%v reconcile=%s retention=%s config=%s rules=%d dispatch=%s kelos=%s vikunja_writer=%v "+
+		"vikunja_reconcile=%s", c.Shadow, c.ID, c.Concurrency,
 		c.LeaseTTL, c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
-		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL)
+		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL,
+		c.Lifecycle.WriteToken != "", c.Lifecycle.ReconcileInterval)
 }

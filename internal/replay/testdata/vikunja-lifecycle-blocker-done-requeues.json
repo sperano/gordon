@@ -1,0 +1,117 @@
+{
+  "description": "A done blocker loses in progress and requeues the task it blocked and its own chain parent; a related task of an unconfigured project is not requeued.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 5000,
+          "project_id": 3,
+          "done": true,
+          "labels": [
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 5000,
+      "project_id": 3,
+      "done": true,
+      "labels": [
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Done"
+      ],
+      "relations": {
+        "blocking": [
+          {
+            "id": 4111,
+            "project_id": 3,
+            "done": false
+          },
+          {
+            "id": 9,
+            "project_id": 99,
+            "done": false
+          }
+        ],
+        "parents": [
+          {
+            "id": 4200,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "remove-label:vikunja/task/5000:in progress"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/5000/f9c4697253e3782b4bf20bfa3b86eff2",
+    "request_key": "vikunja/task/5000",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "task-done"
+      },
+      {
+        "family": "vikunja-done-cleanup",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "remove-label:vikunja/task/5000:in progress",
+            "kind": "remove-label",
+            "target": "vikunja/task/5000",
+            "value": "in progress",
+            "detail": "if-done"
+          }
+        ]
+      }
+    ],
+    "requeue": [
+      {
+        "task_id": 4200,
+        "project_id": 3,
+        "depth": 1
+      },
+      {
+        "task_id": 4111,
+        "project_id": 3,
+        "depth": 1
+      }
+    ]
+  }
+}

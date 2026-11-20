@@ -175,8 +175,9 @@ func TestRunSubmittedAfterTheObserver(t *testing.T) {
 	if err := s.RunSubmitted(ctx, runName, id, "uid-2", kelos.PhaseRunning); err != nil {
 		t.Fatal(err)
 	}
-	if st, uid, phase, exists := row(); st != "finished" || uid != "uid-2" || phase != "" || exists {
-		t.Fatalf("finished run: %s %q %q %v, want finished uid-2, no phase, gone", st, uid, phase, exists)
+	// A run seen gone keeps its last observed phase (ObserveRun).
+	if st, uid, phase, exists := row(); st != "finished" || uid != "uid-2" || phase != kelos.PhaseRunning || exists {
+		t.Fatalf("finished run: %s %q %q %v, want finished uid-2, the last phase, gone", st, uid, phase, exists)
 	}
 	if err := s.RunSubmitted(ctx, runName, id+1, "uid-3", ""); err != nil {
 		t.Fatal(err)

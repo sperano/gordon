@@ -69,6 +69,14 @@
         "execute": false,
         "outcome": "stale",
         "reason": "not-in-doing"
+      },
+      {
+        "family": "vikunja-drag-cancel",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "no-live-agent"
       }
     ]
   }

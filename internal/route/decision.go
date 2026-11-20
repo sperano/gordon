@@ -48,6 +48,20 @@ type Decision struct {
 	DeliveryKey string           `json:"delivery_key,omitempty"`
 	RequestKey  string           `json:"request_key,omitempty"`
 	Families    []FamilyDecision `json:"families,omitempty"`
+	// Requeue lists the related tasks whose own decision this one asks
+	// for (a chain parent, a task a done blocker held): the store queues
+	// a synthetic delivery for each, in shadow too, since it writes
+	// nothing outside Gordon.
+	Requeue []Requeue `json:"requeue,omitempty"`
+}
+
+// Requeue asks for a fresh decision of a related task.
+type Requeue struct {
+	TaskID    int64 `json:"task_id"`
+	ProjectID int64 `json:"project_id"`
+	// Depth is the queued delivery's depth: one more than the requeuing
+	// delivery's, so fan-out ends at MaxRequeueDepth.
+	Depth int `json:"depth"`
 }
 
 // FamilyDecision is the decision of one dispatch family.
@@ -80,6 +94,11 @@ type Run struct {
 type State struct {
 	Task        *event.Task        `json:"task,omitempty"`
 	PullRequest *event.PullRequest `json:"pull_request,omitempty"`
+	// Subtasks and Comments are a chain task's fresh subtasks (in its
+	// relation order) and comments, read only for a task carrying the
+	// chain label (Reads.Chain).
+	Subtasks []event.Task        `json:"subtasks,omitempty"`
+	Comments []event.TaskComment `json:"comments,omitempty"`
 }
 
 // RunRecord is the ledger's record of a run: Active while its Kelos Task
@@ -89,6 +108,9 @@ type RunRecord struct {
 	Name   string `json:"name"`
 	Active bool   `json:"active"`
 	Exists bool   `json:"exists"`
+	// Family and TaskID locate the run on its Vikunja task.
+	Family run.Family `json:"family,omitempty"`
+	TaskID int64      `json:"task_id,omitempty"`
 }
 
 // Ledger is the durable record of handled deliveries, requests and runs.
@@ -96,6 +118,8 @@ type Ledger interface {
 	SeenDelivery(key string) bool
 	HandledRequest(key string) bool
 	Run(name string) (RunRecord, bool)
+	// TaskRuns are the runs of a Vikunja task in the given families.
+	TaskRuns(taskID int64, families []run.Family) []RunRecord
 }
 
 // overall is the strongest family outcome, by precedence.

@@ -37,20 +37,21 @@ func (r Router) taskComment(ev event.Event, st State, led Ledger) Decision {
 		if moved {
 			o = Stale
 		}
-		unanswered(&fd, o, ReasonProjectNotConfigured, c.ID, react)
+		unanswered(&fd, o, ReasonProjectNotConfigured, ev.Vikunja.Task.ID, c.ID, react)
 		return Decision{Families: []FamilyDecision{fd}}
 	}
 	if b := r.followUpBlocker(ev.Vikunja.Task, *st.Task); b != nil {
-		unanswered(&fd, b.outcome, b.reason, c.ID, react)
+		unanswered(&fd, b.outcome, b.reason, st.Task.ID, c.ID, react)
 		return Decision{Families: []FamilyDecision{fd}}
 	}
 	variant, _ := r.assignment(*st.Task)
 	id := run.Identity{Family: family, Project: proj.Name, Variant: variant, TaskID: st.Task.ID, CommentID: c.ID}
-	if r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: mode}) {
+	if rn, submit, ok := r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: mode}); ok {
 		fd.Actions = append(fd.Actions, react)
 		if family == run.VikunjaFollowUpDiscuss {
-			fd.Actions = append(fd.Actions, action.Notice(action.VikunjaComment(c.ID), NoticeDiscussStart, ""))
+			fd.Actions = append(fd.Actions, action.Notice(action.VikunjaTask(st.Task.ID), NoticeDiscussStart, itoa(c.ID)))
 		}
+		r.announce(&fd, *st.Task, rn, submit)
 	}
 	return Decision{Families: []FamilyDecision{fd}}
 }
@@ -93,8 +94,11 @@ func (r Router) followUpBlocker(sent, fresh event.Task) *followUpBlock {
 }
 
 // unanswered records why no agent answers: the owner's request still gets
-// its 👀 and an unanswered notice, as legacy does.
-func unanswered(fd *FamilyDecision, o Outcome, reason string, comment int64, react action.Action) {
+// its 👀 and an unanswered notice on its task, as legacy does. The
+// notice's detail is "<comment id>:<reason>": the comment it links and
+// the reason it gives.
+func unanswered(fd *FamilyDecision, o Outcome, reason string, task, comment int64, react action.Action) {
 	fd.Outcome, fd.Reason = o, reason
-	fd.Actions = append(fd.Actions, react, action.Notice(action.VikunjaComment(comment), NoticeUnanswered, reason))
+	fd.Actions = append(fd.Actions, react,
+		action.Notice(action.VikunjaTask(task), NoticeUnanswered, itoa(comment)+":"+reason))
 }

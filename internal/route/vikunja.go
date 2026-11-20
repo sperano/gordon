@@ -3,6 +3,7 @@ package route
 import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/notice"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/run"
 )
@@ -22,10 +23,10 @@ const (
 
 // Notice kinds, the legacy `<!-- kelos:<kind> -->` markers.
 const (
-	NoticeUnanswered   = "unanswered"
-	NoticeDiscussStart = "discuss-start"
-	NoticePROpen       = "pr-open"
-	NoticeMerged       = "merged"
+	NoticeUnanswered   = notice.Unanswered
+	NoticeDiscussStart = notice.DiscussStart
+	NoticePROpen       = notice.PROpen
+	NoticeMerged       = notice.Merged
 )
 
 // reactionEyes is the 👀 a follow-up request gets.
@@ -99,7 +100,26 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 	if proj, ok, _ = r.projectOf(ev.Vikunja.Task.ProjectID, st.Task); !ok {
 		return Decision{Outcome: Stale, Reason: ReasonProjectNotConfigured}
 	}
-	sent, fresh := ev.Vikunja.Task, *st.Task
+	fresh := *st.Task
+	dec := Decision{Families: []FamilyDecision{r.agentStart(proj, ev.Vikunja.Task, fresh, led)}}
+	for _, f := range []func() (FamilyDecision, bool){
+		func() (FamilyDecision, bool) { return r.dragCancel(proj, fresh, led) },
+		func() (FamilyDecision, bool) { return r.doneCleanup(proj, fresh) },
+		func() (FamilyDecision, bool) { return r.chain(proj, st) },
+	} {
+		if fd, ok := f(); ok {
+			dec.Families = append(dec.Families, fd)
+		}
+	}
+	dec.Requeue = r.requeues(ev, fresh)
+	return dec
+}
+
+// agentStart decides a task's implementation or discuss run
+// (taskspawners.yaml): eligible in the fresh state, and waiting while a
+// task blocking it is open; a dispatched run claims the task once
+// submitted.
+func (r Router) agentStart(proj profile.Project, sent, fresh event.Task, led Ledger) FamilyDecision {
 	if sent.Buckets == nil {
 		sent.Buckets = fresh.Buckets
 	}
@@ -108,12 +128,19 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 		family, mode = run.VikunjaDiscuss, profile.ModeDiscuss
 	}
 	fd := r.family(family, proj.Name)
-	if judge(&fd, r.startBlocker(sent), r.startBlocker(fresh)) {
-		variant, _ := r.assignment(fresh)
-		id := run.Identity{Family: family, Project: proj.Name, Variant: variant, TaskID: fresh.ID}
-		r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: mode})
+	if !judge(&fd, r.startBlocker(sent), r.startBlocker(fresh)) {
+		return fd
 	}
-	return Decision{Families: []FamilyDecision{fd}}
+	if len(fresh.OpenBlockers()) > 0 {
+		fd.Outcome, fd.Reason = Ignore, ReasonBlocked
+		return fd
+	}
+	variant, _ := r.assignment(fresh)
+	id := run.Identity{Family: family, Project: proj.Name, Variant: variant, TaskID: fresh.ID}
+	if rn, submit, ok := r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: mode}); ok {
+		r.claim(&fd, fresh, rn, submit)
+	}
+	return fd
 }
 
 // projectOf is the task's configured project: the fresh task's when it
@@ -130,18 +157,20 @@ func (r Router) projectOf(sent int64, fresh *event.Task) (p profile.Project, ok,
 	return p, ok, wasConfigured && !ok
 }
 
-// submit resolves and deduplicates one run; on success fd dispatches it.
-func (r Router) submit(fd *FamilyDecision, led Ledger, id run.Identity, req profile.Request) bool {
+// submit resolves and deduplicates one run; on success fd dispatches it
+// and submit is its submission, which the run's claim waits for.
+func (r Router) submit(fd *FamilyDecision, led Ledger, id run.Identity, req profile.Request) (Run, action.Action, bool) {
 	if reason, dup := existing(led, id.Name()); dup {
 		fd.Outcome, fd.Reason = Duplicate, reason
-		return false
+		return Run{}, action.Action{}, false
 	}
 	rn, ok := r.resolved(fd, id, req)
 	if !ok {
-		return false
+		return Run{}, action.Action{}, false
 	}
+	submit := action.New(action.SubmitTask, action.KelosTask(KelosNamespace, rn.Name), "")
 	fd.Outcome = Dispatch
 	fd.Runs = append(fd.Runs, rn)
-	fd.Actions = append(fd.Actions, action.New(action.SubmitTask, action.KelosTask(KelosNamespace, rn.Name), ""))
-	return true
+	fd.Actions = append(fd.Actions, submit)
+	return rn, submit, true
 }

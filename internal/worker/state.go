@@ -9,9 +9,10 @@ import (
 	"github.com/sperano/gordon/internal/route"
 )
 
-// TaskReader reads a fresh Vikunja task.
+// TaskReader reads a fresh Vikunja task and its comments.
 type TaskReader interface {
 	Task(ctx context.Context, id int64) (event.Task, error)
+	TaskComments(ctx context.Context, id int64) ([]event.TaskComment, error)
 }
 
 // PullRequestReader reads a fresh GitHub pull request.
@@ -55,5 +56,31 @@ func (s StateReader) Read(ctx context.Context, ev event.Event, led route.Ledger)
 			st.Task = &t
 		}
 	}
+	if need.Chain && st.Task != nil && (route.Router{Config: s.Config}).ChainTask(*st.Task) {
+		errs = append(errs, s.readChain(ctx, &st))
+	}
 	return st, errors.Join(errs...)
+}
+
+// readChain reads a chain task's subtasks and comments. Any failure
+// leaves the task unread: a chain decided on part of its subtasks could
+// start one out of order, so the router answers retry instead.
+func (s StateReader) readChain(ctx context.Context, st *route.State) error {
+	t := st.Task
+	subs := make([]event.Task, 0, len(t.Relations.Subtasks))
+	for _, rel := range t.Relations.Subtasks {
+		sub, err := s.Tasks.Task(ctx, rel.ID)
+		if err != nil {
+			st.Task = nil
+			return err
+		}
+		subs = append(subs, sub)
+	}
+	comments, err := s.Tasks.TaskComments(ctx, t.ID)
+	if err != nil {
+		st.Task = nil
+		return err
+	}
+	st.Subtasks, st.Comments = subs, comments
+	return nil
 }

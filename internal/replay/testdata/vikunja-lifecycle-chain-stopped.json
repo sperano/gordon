@@ -1,0 +1,119 @@
+{
+  "description": "A next subtask the chain already started (Gordon's own chain-started notice) was stopped by the owner: the chain holds with one notice and does not move it back.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4350,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            },
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4350,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4351,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4351,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [
+          "claude-opus"
+        ],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1
+      }
+    ],
+    "comments": [
+      {
+        "id": 1,
+        "author": "gordon",
+        "body": "<p>NEXT UP IN THE CHAIN: <a href=\"https://vikunja.spe.quebec/tasks/4351\">#4351</a>. AGENT <code>claude-opus</code> TAKES IT FROM <code>Doing</code>.</p><!-- kelos:chain-started -->"
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "post-notice:vikunja/task/4350:chain-stopped:4351"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4350/84f812026792e6670440aecc8591a0d0",
+    "request_key": "vikunja/task/4350",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "in-progress"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "post-notice:vikunja/task/4350:chain-stopped:4351",
+            "kind": "post-notice",
+            "target": "vikunja/task/4350",
+            "value": "chain-stopped",
+            "detail": "4351"
+          }
+        ]
+      }
+    ]
+  }
+}

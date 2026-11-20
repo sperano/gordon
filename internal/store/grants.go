@@ -19,8 +19,10 @@ type Roles struct {
 
 // workerTables are the tables the worker reads and inserts into; it
 // never deletes, and it never changes the schema. The inbox is the
-// receiver's: the worker cannot insert a delivery, and it updates only
-// the queue bookkeeping and the body (pruning).
+// receiver's for webhooks: the worker inserts only its own synthetic
+// deliveries (workerInboxInsert: requeues and reconciliation, never a
+// body digest), and it updates only the queue bookkeeping and the body
+// (pruning).
 var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks"}
 
 // workerUpdates are the columns the worker may update in each of
@@ -41,6 +43,9 @@ var workerUpdates = map[string]string{
 // gordonTables are every table the schema has: a role's grants on them
 // are revoked before its mode's are applied.
 var gordonTables = append([]string{"schema_migrations", "inbox"}, workerTables...)
+
+// workerInboxInsert are the inbox columns a synthetic delivery sets.
+const workerInboxInsert = "source, delivery_key, request_key, kind, scope, headers, body"
 
 // workerInboxColumns are the inbox columns the worker may update.
 const workerInboxColumns = "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, " +
@@ -88,7 +93,8 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 		role := pgx.Identifier{r.Worker}.Sanitize()
 		stmts = append(stmts, revoke+role, usage+role,
 			"GRANT SELECT ON schema_migrations TO "+role,
-			"GRANT SELECT, UPDATE ("+workerInboxColumns+") ON inbox TO "+role)
+			"GRANT SELECT, UPDATE ("+workerInboxColumns+") ON inbox TO "+role,
+			"GRANT INSERT ("+workerInboxInsert+") ON inbox TO "+role)
 		for _, t := range workerTables {
 			stmts = append(stmts, fmt.Sprintf("GRANT SELECT, INSERT ON %s TO %s", t, role))
 			if cols, ok := workerUpdates[t]; ok {

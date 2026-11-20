@@ -56,6 +56,8 @@ func (f *tasks) Task(_ context.Context, id int64) (event.Task, error) {
 	return t, nil
 }
 
+func (f *tasks) TaskComments(context.Context, int64) ([]event.TaskComment, error) { return nil, nil }
+
 func (f *tasks) Comments(context.Context, int64, int) (json.RawMessage, error) {
 	return json.RawMessage("[]"), nil
 }
@@ -389,7 +391,7 @@ func TestHeldBranchKeepsSubmissionQueued(t *testing.T) {
 		t.Fatalf("on a held branch: %s, %d attempts, %q", st, attempts, msg)
 	}
 	var wait float64
-	storetest.QueryRow(t, e.dbURL, `SELECT extract(epoch FROM next_attempt_at - now())::float8 FROM actions`, nil, &wait)
+	storetest.QueryRow(t, e.dbURL, `SELECT extract(epoch FROM next_attempt_at - now())::float8 FROM actions WHERE kind = 'submit-task'`, nil, &wait)
 	if wait < (busyDelay - time.Minute).Seconds() {
 		t.Fatalf("deferred for %.0fs, want the busy delay", wait)
 	}

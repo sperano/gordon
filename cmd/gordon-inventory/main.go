@@ -13,4 +13,7 @@ func main() {
 	fmt.Print(inventory.Markdown(inventory.Entries()))
 	fmt.Print("\n")
 	fmt.Print(inventory.StagesMarkdown(inventory.Stages()))
+	fmt.Print("\n")
+	fmt.Print(inventory.SwitchesMarkdown(inventory.Switches()))
+	fmt.Print("\n" + inventory.RollbackContract + "\n")
 }

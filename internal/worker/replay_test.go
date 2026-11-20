@@ -51,6 +51,10 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 	e.proc.State.Config = r.Config
 	if f.State.Task != nil {
 		e.tasks.tasks[f.State.Task.ID] = *f.State.Task
+		e.tasks.comments[f.State.Task.ID] = f.State.Comments
+	}
+	for _, sub := range f.State.Subtasks {
+		e.tasks.tasks[sub.ID] = sub
 	}
 	if pr := f.State.PullRequest; pr != nil {
 		e.prs.prs[fmt.Sprintf("%s#%d", pr.Repository, pr.Number)] = *pr
@@ -157,11 +161,15 @@ func seedLedger(t *testing.T, e *env, l replay.Ledger) {
 			VALUES ($1, `+seed+`, 'dispatch', false)`, k)
 	}
 	for _, r := range l.Runs {
-		state := "finished"
+		state, family := "finished", string(r.Family)
 		if r.Active {
 			state = "active"
 		}
+		if family == "" {
+			family = "seed"
+		}
+		identity, _ := json.Marshal(map[string]any{"family": family, "task_id": r.TaskID}) //nolint:errcheck // plain map
 		storetest.Exec(t, e.dbURL, `INSERT INTO runs (name, family, inbox_id, identity, profile, state, task_exists)
-			VALUES ($1, 'seed', `+seed+`, '{}', '{}', $2, $3)`, r.Name, state, r.Exists)
+			VALUES ($1, $2, `+seed+`, $3, '{}', $4, $5)`, r.Name, family, identity, state, r.Exists)
 	}
 }

@@ -14,7 +14,11 @@ const fixtureDir = "testdata"
 
 // minFixtures is the committed fixture count: deleting one fails, and
 // the glob cannot silently match nothing.
-const minFixtures = 33
+const minFixtures = 52
+
+// minWriteFixtures is the committed count of fixtures recording the
+// legacy lifecycle's writes.
+const minWriteFixtures = 18
 
 func load(t *testing.T) []Fixture {
 	t.Helper()
@@ -74,6 +78,32 @@ func TestLegacyParity(t *testing.T) {
 				t.Errorf("runs %v, legacy created %v and no divergence is recorded", names, legacy)
 			}
 		})
+	}
+}
+
+// TestLegacyWritesParity checks that Gordon makes exactly the writes the
+// legacy hooks made, where a fixture records them, unless it explains
+// the divergence.
+func TestLegacyWritesParity(t *testing.T) {
+	recorded := 0
+	for _, f := range load(t) {
+		if f.Legacy.Writes == nil {
+			continue
+		}
+		recorded++
+		t.Run(f.Name, func(t *testing.T) {
+			got, err := f.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := slices.Sorted(slices.Values(f.Legacy.Writes))
+			if keys := WriteKeys(got); f.Legacy.WritesDivergence == "" && !slices.Equal(keys, want) {
+				t.Errorf("writes %v, legacy made %v and no divergence is recorded", keys, want)
+			}
+		})
+	}
+	if recorded < minWriteFixtures {
+		t.Fatalf("%d fixtures record legacy writes, want at least %d", recorded, minWriteFixtures)
 	}
 }
 

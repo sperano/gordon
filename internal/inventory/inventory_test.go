@@ -253,3 +253,31 @@ func TestStagesWithHollingsworthPathsNameIt(t *testing.T) {
 		}
 	}
 }
+
+// TestVikunjaFamiliesPublishTheirSwitch: every Vikunja family names the
+// legacy components the cutover turns off and what Gordon needs, once.
+func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
+	seen := map[run.Family]bool{}
+	for _, s := range Switches() {
+		if seen[s.Family] {
+			t.Errorf("%s: two switches", s.Family)
+		}
+		seen[s.Family] = true
+		if len(s.Legacy) == 0 || s.Off == "" || len(s.Needs) == 0 {
+			t.Errorf("%s: incomplete switch %+v", s.Family, s)
+		}
+		for _, p := range s.Legacy {
+			if !stagedBetween(p, StageVikunja, StageVikunjaCut) {
+				t.Errorf("%s: legacy %s is changed by neither stage 06 nor 07", s.Family, p)
+			}
+		}
+	}
+	for _, f := range run.Families {
+		if strings.HasPrefix(string(f), "vikunja-") && !seen[f] {
+			t.Errorf("Vikunja family %s publishes no switch", f)
+		}
+	}
+	if md := SwitchesMarkdown(Switches()); strings.Count(md, "\n") != len(Switches())+2 {
+		t.Errorf("switch table has %d lines for %d switches", strings.Count(md, "\n"), len(Switches()))
+	}
+}

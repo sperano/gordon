@@ -1,0 +1,118 @@
+{
+  "description": "A chain parent dragged back to To-Do pauses: it loses in progress, a running subtask keeps going, nothing new starts.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4340,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            },
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4340,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "To-Do"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4341,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4341,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "remove-label:vikunja/task/4340:in progress"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4340/74d544787142e82eaab6c9147970077e",
+    "request_key": "vikunja/task/4340",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "not-in-doing"
+      },
+      {
+        "family": "vikunja-drag-cancel",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "no-live-agent"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "reason": "chain-paused",
+        "actions": [
+          {
+            "key": "remove-label:vikunja/task/4340:in progress",
+            "kind": "remove-label",
+            "target": "vikunja/task/4340",
+            "value": "in progress"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -71,7 +71,7 @@ func (r Router) prComment(ev event.Event, st State, led Ledger) Decision {
 	kind := string(gh.CommentKind)
 	id := run.Identity{Family: run.PRFollowUp, Project: proj.Name, Workspace: proj.Workspace, Variant: variant,
 		PR: pr.Number, CommentKind: kind, CommentID: gh.CommentID, HeadRef: pr.HeadRef}
-	if r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: profile.ModeFollowUp}) {
+	if _, _, ok := r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: profile.ModeFollowUp}); ok {
 		r.followUpWrites(&fd, owner, gh, pr, true)
 	} else if fd.Outcome == Duplicate {
 		r.recoverWrites(&fd, owner, gh, pr)

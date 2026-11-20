@@ -42,3 +42,16 @@ func (s *Store) WithAdmission(ctx context.Context, fn func(context.Context) erro
 	}
 	return fn(ctx)
 }
+
+// WithTargetLock runs fn holding a transaction-scoped advisory lock on
+// target (a notice's task), so two workers never both find a notice
+// missing and both post it. The lock lives on a pool connection for the
+// duration of fn.
+func (s *Store) WithTargetLock(ctx context.Context, target string, fn func(context.Context) error) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "gordon-target:"+target); err != nil {
+			return fmt.Errorf("target lock: %w", err)
+		}
+		return fn(ctx)
+	})
+}

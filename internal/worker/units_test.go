@@ -130,6 +130,10 @@ func TestEveryStopsCallingOnceCancelled(t *testing.T) {
 	}
 }
 
+func (*recordingTasks) TaskComments(context.Context, int64) ([]event.TaskComment, error) {
+	return nil, nil
+}
+
 type recordingTasks struct{ ids []int64 }
 
 func (r *recordingTasks) Task(_ context.Context, id int64) (event.Task, error) {

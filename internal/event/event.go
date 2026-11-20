@@ -98,6 +98,9 @@ type Vikunja struct {
 	Comment *Comment
 	// Redispatch is set on a legacy reconciler resend.
 	Redispatch string
+	// Synthetic is set on a delivery Gordon itself queued (a requeue
+	// after a related change, or a reconciliation): nil on a webhook.
+	Synthetic *Synthetic
 }
 
 // Task is a Vikunja task snapshot, from a delivery or a fresh read.
@@ -113,6 +116,10 @@ type Task struct {
 	// Buckets holds bucket titles; nil when the snapshot did not carry
 	// them (a raw task.updated or any comment delivery).
 	Buckets []string `json:"buckets"`
+	// Index is the task's number in its project, the chain order.
+	Index int64 `json:"index,omitempty"`
+	// Relations are the task's related tasks, fresh reads only.
+	Relations Relations `json:"relations,omitzero"`
 }
 
 // Comment is a Vikunja task comment.

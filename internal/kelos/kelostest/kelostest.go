@@ -38,6 +38,7 @@ type Server struct {
 	tasks   map[string]json.RawMessage
 	order   []string
 	creates []kelos.Task
+	deletes []string
 	// failCreates answers the next creates with these statuses (0: apply
 	// the create, then drop the connection without answering).
 	failCreates []int
@@ -161,6 +162,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.list(w, r)
 	case strings.HasPrefix(rest, "/") && r.Method == http.MethodGet:
 		s.get(w, strings.TrimPrefix(rest, "/"))
+	case strings.HasPrefix(rest, "/") && r.Method == http.MethodDelete:
+		s.remove(w, strings.TrimPrefix(rest, "/"))
 	default:
 		writeStatus(w, http.StatusMethodNotAllowed, "MethodNotAllowed", r.Method)
 	}
@@ -253,6 +256,31 @@ func reasonFor(code int) string {
 	return "InternalError"
 }
 
+// remove answers a DELETE as the API server does: the deleted object's
+// Status, or NotFound.
+func (s *Server) remove(w http.ResponseWriter, name string) {
+	s.mu.Lock()
+	_, ok := s.tasks[name]
+	if ok {
+		delete(s.tasks, name)
+		s.order = slices.DeleteFunc(s.order, func(n string) bool { return n == name })
+		s.deletes = append(s.deletes, name)
+	}
+	s.mu.Unlock()
+	if !ok {
+		writeStatus(w, http.StatusNotFound, kelos.ReasonNotFound, "tasks.kelos.dev \""+name+"\" not found")
+		return
+	}
+	writeStatus(w, http.StatusOK, "", "deleted")
+}
+
+// Deletes lists the Tasks deleted through the API, in order.
+func (s *Server) Deletes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.deletes)
+}
+
 func (s *Server) get(w http.ResponseWriter, name string) {
 	s.mu.Lock()
 	raw, ok := s.tasks[name]
@@ -331,7 +359,11 @@ func (s *Server) resume(token string) (items []json.RawMessage, snap, start int,
 }
 
 // requirement is one k=v term of a label selector.
-type requirement struct{ key, value string }
+// requirement is key=value, or with absent the key's absence (!key).
+type requirement struct {
+	key, value string
+	absent     bool
+}
 
 // selector is every requirement of a label selector, repeated keys
 // included: as in the API server, a Task must meet them all.
@@ -346,18 +378,23 @@ func parseSelector(s string) (selector, error) {
 		return out, nil
 	}
 	for part := range strings.SplitSeq(s, ",") {
+		if k, ok := strings.CutPrefix(part, "!"); ok && k != "" && !strings.ContainsAny(k, "!=() ") {
+			out = append(out, requirement{key: k, absent: true})
+			continue
+		}
 		k, v, ok := strings.Cut(part, "=")
 		if !ok || k == "" || strings.ContainsAny(k, "!=() ") || strings.ContainsAny(v, "=!() ") {
 			return nil, fmt.Errorf("unsupported label selector %q", part)
 		}
-		out = append(out, requirement{k, v})
+		out = append(out, requirement{key: k, value: v})
 	}
 	return out, nil
 }
 
 func (s selector) matches(labels map[string]string) bool {
 	for _, r := range s {
-		if got, ok := labels[r.key]; !ok || got != r.value {
+		got, ok := labels[r.key]
+		if r.absent && ok || !r.absent && (!ok || got != r.value) {
 			return false
 		}
 	}

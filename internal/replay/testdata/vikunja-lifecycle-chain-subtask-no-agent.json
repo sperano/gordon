@@ -1,0 +1,112 @@
+{
+  "description": "A next subtask carrying no-agent waits for the owner: one notice on the parent.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4380,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            },
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4380,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4381,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4381,
+        "project_id": 3,
+        "done": false,
+        "labels": [
+          "no-agent"
+        ],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "post-notice:vikunja/task/4380:chain-waiting:4381"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4380/ff38d4c0c1e3141d700c8ba60b4172d9",
+    "request_key": "vikunja/task/4380",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "in-progress"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "post-notice:vikunja/task/4380:chain-waiting:4381",
+            "kind": "post-notice",
+            "target": "vikunja/task/4380",
+            "value": "chain-waiting",
+            "detail": "4381"
+          }
+        ]
+      }
+    ]
+  }
+}
