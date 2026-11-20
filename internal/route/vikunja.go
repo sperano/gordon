@@ -92,7 +92,7 @@ func judge(fd *FamilyDecision, sent, now *blocked) bool {
 func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 	proj, ok := r.Config.Project(ev.Vikunja.Task.ProjectID)
 	if !ok {
-		return Decision{Outcome: Ignore, Reason: ReasonProjectNotConfigured}
+		return r.unconfiguredDone(ev, st)
 	}
 	if st.Task == nil {
 		return Decision{Outcome: Retry, Reason: ReasonStateUnavailable}
@@ -112,6 +112,18 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 		}
 	}
 	dec.Requeue = r.requeues(ev, fresh)
+	return dec
+}
+
+// unconfiguredDone ignores a task of an unconfigured project, but a done
+// one still requeues the configured tasks it blocked (blockers count in
+// any project) and its configured parents. An unread one requeues nothing:
+// the reconciliation is the backstop.
+func (r Router) unconfiguredDone(ev event.Event, st State) Decision {
+	dec := Decision{Outcome: Ignore, Reason: ReasonProjectNotConfigured}
+	if st.Task != nil && st.Task.Done {
+		dec.Requeue = r.requeues(ev, *st.Task)
+	}
 	return dec
 }
 

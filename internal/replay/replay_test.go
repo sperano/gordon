@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 )
 
 const fixtureDir = "testdata"
@@ -160,5 +161,24 @@ func TestLoadRefusesTrailingData(t *testing.T) {
 	want := filepath.Join(dir, "a.json") + ": trailing data after the fixture"
 	if err == nil || err.Error() != want {
 		t.Errorf("err %v, want %q", err, want)
+	}
+}
+
+// TestLedgerTaskRunsByName pins the replay ledger's task runs in name
+// order, as the store's: fixture order would change which runs a
+// cancellation notice lists first.
+func TestLedgerTaskRunsByName(t *testing.T) {
+	l := Ledger{Runs: []route.RunRecord{
+		{Name: "vikunja-sillage-claude-opus-5", TaskID: 5, Family: run.VikunjaImplement},
+		{Name: "vikunja-other-6", TaskID: 6, Family: run.VikunjaImplement},
+		{Name: "vikunja-discuss-sillage-claude-opus-5", TaskID: 5, Family: run.VikunjaDiscuss},
+	}}
+	var got []string
+	for _, r := range l.TaskRuns(5, run.AgentFamilies) {
+		got = append(got, r.Name)
+	}
+	want := []string{"vikunja-discuss-sillage-claude-opus-5", "vikunja-sillage-claude-opus-5"}
+	if !slices.Equal(got, want) {
+		t.Errorf("TaskRuns = %v, want %v", got, want)
 	}
 }

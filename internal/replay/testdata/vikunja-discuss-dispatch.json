@@ -113,6 +113,7 @@
             "kind": "move-bucket",
             "target": "vikunja/task/4201",
             "value": "Doing",
+            "detail": "claim",
             "after": "submit-task:kelos/kelos-agents/vikunja-discuss-puckdb-gpt-astra-4201"
           },
           {

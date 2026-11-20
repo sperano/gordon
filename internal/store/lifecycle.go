@@ -13,6 +13,10 @@ import (
 // PhaseCancelled is the phase of a run stopped before its Task existed.
 const PhaseCancelled = "Cancelled"
 
+// RunStopped is why a stopped run's submission was cancelled, after the
+// cancelled prefix in the action's last error.
+const RunStopped = "run stopped"
+
 // CancelRuns stops the named runs that are not finished: each becomes
 // finished (a queued submission is never created), its pending or
 // ambiguous submission and every action waiting for it are cancelled. It
@@ -42,7 +46,7 @@ func (s *Store) CancelRuns(ctx context.Context, names []string) ([]string, error
 		for _, g := range gens {
 			submit := action.New(action.SubmitTask, action.KelosTask(route.KelosNamespace, g.name), "").Key
 			if _, err := tx.Exec(ctx, `UPDATE actions SET state = 'done', finished_at = now(),
-					last_error = '`+cancelledPrefix+`run stopped'
+					last_error = '`+cancelledPrefix+RunStopped+`'
 				WHERE inbox_id = $1 AND (key = $2 OR after_key = $2) AND state IN ('pending', 'ambiguous')`,
 				g.inboxID, submit); err != nil {
 				return err

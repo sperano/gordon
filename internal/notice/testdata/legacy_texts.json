@@ -18,5 +18,8 @@
   "I'VE GOT MY BEST PEOPLE ON THIS.",
   "I'VE GOT MY BEST PEOPLE ON THIS.",
   "I'VE GOT MY BEST PEOPLE ON THIS."
- ]
+ ],
+ "pr_open": "<p>PR CREATED: <a href=\"https://github.com/sperano/vigie/pull/4\">sperano/vigie#4</a>. THE AGENT'S LOCAL CHECKS PASSED; GITHUB CHECKS AND AUTOMATED REVIEWS MAY STILL BE RUNNING.</p><!-- kelos:pr-open -->",
+ "pr_open_ready": "<p>PR CREATED: <a href=\"https://github.com/sperano/vigie/pull/4\">sperano/vigie#4</a>. THE AGENT'S LOCAL CHECKS PASSED; GITHUB CHECKS AND AUTOMATED REVIEWS MAY STILL BE RUNNING. I'LL SPEAK UP AGAIN WHEN IT'S READY TO MERGE.</p><!-- kelos:pr-open -->",
+ "merged": "<p>MERGED: <a href=\"https://github.com/sperano/vigie/pull/4\">https://github.com/sperano/vigie/pull/4</a>. WHAT A BEAUTY. CASE CLOSED.</p><!-- kelos:merged -->"
 }

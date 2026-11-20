@@ -53,7 +53,12 @@ func TestTaskUpdatedEligibility(t *testing.T) {
 	for _, c := range cases {
 		d := r.Decide(updated(t, task(5, 136, c.sent, "claude-opus")), route.State{Task: fresh(5, 136, c.now, "claude-opus")}, replay.Ledger{})
 		// The agent family comes first; a chain parent adds its chain's.
-		t.Run(c.name, func(t *testing.T) { expectFamily(t, d.Families[0], c.family, c.outcome, c.reason) })
+		t.Run(c.name, func(t *testing.T) {
+			if len(d.Families) == 0 {
+				t.Fatalf("no family decided: %+v", d)
+			}
+			expectFamily(t, d.Families[0], c.family, c.outcome, c.reason)
+		})
 	}
 	none := r.Decide(updated(t, task(5, 136, nil)), route.State{Task: fresh(5, 136, nil)}, replay.Ledger{})
 	expectFamily(t, family(t, none), run.VikunjaImplement, route.Ignore, route.ReasonNoAgentAssignee)

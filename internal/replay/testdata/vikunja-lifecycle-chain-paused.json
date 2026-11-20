@@ -60,10 +60,14 @@
         "id": 4341,
         "project_id": 3,
         "done": false,
-        "labels": [],
-        "assignees": [],
+        "labels": [
+          "in progress"
+        ],
+        "assignees": [
+          "claude-opus"
+        ],
         "buckets": [
-          "To-Do"
+          "Doing"
         ],
         "index": 1
       }

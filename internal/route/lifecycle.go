@@ -29,8 +29,9 @@ const (
 
 // Action details the Vikunja executor reads.
 const (
-	// DetailClaim marks a claim's in-progress label: not added when the
-	// card went back to the backlog meanwhile.
+	// DetailClaim marks a claim's in-progress label and Doing move: not
+	// written when the card went back to the backlog or the task is done
+	// meanwhile.
 	DetailClaim = "claim"
 	// DetailIfDone removes a label only while the task is still done.
 	DetailIfDone = "if-done"
@@ -53,17 +54,19 @@ func (r Router) claim(fd *FamilyDecision, t event.Task, rn Run, submit action.Ac
 	p, target := r.Config.Policy, action.VikunjaTask(t.ID)
 	label := action.New(action.AddLabel, target, p.InProgressLabel)
 	label.Detail = DetailClaim
-	fd.Actions = append(fd.Actions, label.Then(submit))
+	fd.Actions = append(fd.Actions, label.WaitFor(submit))
 	r.clearStartLabels(fd, t, submit)
-	fd.Actions = append(fd.Actions, action.New(action.MoveBucket, target, p.DoingBucket).Then(submit),
-		action.Notice(target, notice.Start, rn.Name).Then(submit))
+	move := action.New(action.MoveBucket, target, p.DoingBucket)
+	move.Detail = DetailClaim
+	fd.Actions = append(fd.Actions, move.WaitFor(submit),
+		action.Notice(target, notice.Start, rn.Name).WaitFor(submit))
 }
 
 // announce is a follow-up's start (announce_start.py): the start-cleared
 // labels and the start notice, after the submission.
 func (r Router) announce(fd *FamilyDecision, t event.Task, rn Run, submit action.Action) {
 	r.clearStartLabels(fd, t, submit)
-	fd.Actions = append(fd.Actions, action.Notice(action.VikunjaTask(t.ID), notice.Start, rn.Name).Then(submit))
+	fd.Actions = append(fd.Actions, action.Notice(action.VikunjaTask(t.ID), notice.Start, rn.Name).WaitFor(submit))
 }
 
 // clearStartLabels removes the failure reporter's and the owner-inbox
@@ -72,7 +75,7 @@ func (r Router) clearStartLabels(fd *FamilyDecision, t event.Task, submit action
 	p := r.Config.Policy
 	for _, l := range []string{p.AgentErrorLabel, p.ActionNeededLabel} {
 		if l != "" && t.HasLabel(l) {
-			fd.Actions = append(fd.Actions, action.New(action.RemoveLabel, action.VikunjaTask(t.ID), l).Then(submit))
+			fd.Actions = append(fd.Actions, action.New(action.RemoveLabel, action.VikunjaTask(t.ID), l).WaitFor(submit))
 		}
 	}
 }
@@ -115,10 +118,10 @@ func (r Router) dragCancel(proj profile.Project, t event.Task, led Ledger) (Fami
 	// The notice comes last: it says whether the label could be removed.
 	last := cancel
 	if t.HasLabel(p.InProgressLabel) {
-		last = action.New(action.RemoveLabel, target, p.InProgressLabel).Then(cancel)
+		last = action.New(action.RemoveLabel, target, p.InProgressLabel).WaitFor(cancel)
 		fd.Actions = append(fd.Actions, last)
 	}
-	fd.Actions = append(fd.Actions, action.Notice(target, notice.Stop, cancel.Detail).Then(last))
+	fd.Actions = append(fd.Actions, action.Notice(target, notice.Stop, cancel.Detail).WaitFor(last))
 	fd.Outcome = Act
 	return fd, true
 }

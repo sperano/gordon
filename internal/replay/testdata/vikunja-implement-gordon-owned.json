@@ -127,6 +127,7 @@
             "kind": "move-bucket",
             "target": "vikunja/task/4101",
             "value": "Doing",
+            "detail": "claim",
             "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4101"
           },
           {

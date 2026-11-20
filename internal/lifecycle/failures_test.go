@@ -40,8 +40,11 @@ func TestFailures(t *testing.T) {
 		Project: "gordon", TaskID: 5}
 	discuss := failed
 	discuss.Name, discuss.Family = "vikunja-discuss-gordon-claude-opus-5", run.VikunjaDiscuss
+	// A review run keeps its task id: only the family guard skips it.
 	review := failed
-	review.Family, review.TaskID = run.PRReview, 0
+	review.Family = run.PRReview
+	untasked := failed
+	untasked.TaskID = 0
 	cases := []struct {
 		name  string
 		r     store.ObservedRun
@@ -59,6 +62,7 @@ func TestFailures(t *testing.T) {
 		{"discussion asked again since", discuss, kelos.PhaseSucceeded, owns(run.VikunjaFailure), true, nil},
 		{"legacy owns failures", failed, kelos.PhaseFailed, rollout.Table{}, false, nil},
 		{"review run", review, kelos.PhaseFailed, owns(run.VikunjaFailure), false, nil},
+		{"run without a task", untasked, kelos.PhaseFailed, owns(run.VikunjaFailure), false, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

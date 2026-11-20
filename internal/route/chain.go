@@ -81,12 +81,18 @@ func (r Router) chainStep(fd *FamilyDecision, parent event.Task, agent string, s
 	case slices.ContainsFunc(pending, r.inFlight):
 		fd.Reason = ReasonChainWaiting
 	default:
+		if i := slices.IndexFunc(pending, r.startedBy(st.Comments)); i >= 0 {
+			// Before the blocker filter: a stopped subtask holds the chain
+			// even while blocked, so the next one does not start past it.
+			fd.Actions = append(fd.Actions, action.Notice(action.VikunjaTask(parent.ID), notice.ChainStopped, itoa(pending[i].ID)))
+			break
+		}
 		ready := slices.DeleteFunc(pending, func(t event.Task) bool { return len(t.OpenBlockers()) > 0 })
 		if len(ready) == 0 {
 			fd.Reason = ReasonBlocked
 			break
 		}
-		r.next(fd, parent, ready[0], agent, st.Comments)
+		r.next(fd, parent, ready[0], agent)
 	}
 	if len(fd.Actions) == 0 {
 		fd.Outcome = Ignore
@@ -109,21 +115,26 @@ func (r Router) inFlight(t event.Task) bool {
 	return false
 }
 
+// startedBy reports, for an open subtask, that the chain already started
+// it (a trusted chain-started notice): no longer in flight, the owner
+// stopped it.
+func (r Router) startedBy(comments []event.TaskComment) func(event.Task) bool {
+	p := r.Config.Policy
+	return func(t event.Task) bool {
+		return notice.ChainStartedFor(comments, p.VikunjaServiceUser, p.VikunjaWebURL, t.ID)
+	}
+}
+
 // next hands the subtask to its agent (subtask_chain.start), or holds the
-// chain on it: waiting for the owner on a no-agent subtask, stopped when
-// the chain had already started it. The subtask gets the chain label
+// chain on it, waiting for the owner, on a no-agent subtask. The subtask gets the chain label
 // first when it has subtasks of its own, then its agent and the parent's
 // auto-merge label, and only then moves to Doing: the move is what starts
 // its run, which must see all three.
-func (r Router) next(fd *FamilyDecision, parent, sub event.Task, agent string, comments []event.TaskComment) {
+func (r Router) next(fd *FamilyDecision, parent, sub event.Task, agent string) {
 	p, ptarget, starget := r.Config.Policy, action.VikunjaTask(parent.ID), action.VikunjaTask(sub.ID)
 	detail := itoa(sub.ID)
-	switch {
-	case p.NoAgentLabel != "" && sub.HasLabel(p.NoAgentLabel):
+	if p.NoAgentLabel != "" && sub.HasLabel(p.NoAgentLabel) {
 		fd.Actions = append(fd.Actions, action.Notice(ptarget, notice.ChainWaiting, detail))
-		return
-	case notice.ChainStartedFor(comments, p.VikunjaServiceUser, p.VikunjaWebURL, sub.ID):
-		fd.Actions = append(fd.Actions, action.Notice(ptarget, notice.ChainStopped, detail))
 		return
 	}
 	var steps []action.Action
@@ -141,7 +152,7 @@ func (r Router) next(fd *FamilyDecision, parent, sub event.Task, agent string, c
 	steps = append(steps, action.New(action.MoveBucket, starget, p.DoingBucket),
 		action.Notice(ptarget, notice.ChainStarted, detail))
 	for i := 1; i < len(steps); i++ {
-		steps[i] = steps[i].Then(steps[i-1])
+		steps[i] = steps[i].WaitFor(steps[i-1])
 	}
 	fd.Actions = append(fd.Actions, steps...)
 }

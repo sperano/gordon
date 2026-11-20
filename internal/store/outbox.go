@@ -81,6 +81,16 @@ func (s *Store) ActionDone(ctx context.Context, l Lease) error {
 		releaseLease+` WHERE id = $1 AND lease_token = $2::uuid AND state = 'running'`, l.ID, l.Token)
 }
 
+// ActionCancelled records the action finished without being made: its
+// run was stopped meanwhile. Its last error starts with the cancelled
+// prefix, as a run cancelled before its submission was claimed
+// (CancelRuns), so the action's dependents are cancelled too.
+func (s *Store) ActionCancelled(ctx context.Context, l Lease, reason string) error {
+	return execFenced(ctx, s.pool, `UPDATE actions SET state = 'done', finished_at = now(),
+		last_error = '`+cancelledPrefix+`' || $3, `+releaseLease+`
+		WHERE id = $1 AND lease_token = $2::uuid AND state = 'running'`, l.ID, l.Token, reason)
+}
+
 // ActionRetry queues the action again after delay. ambiguous records
 // that the write may have happened, so the next attempt recovers first.
 func (s *Store) ActionRetry(ctx context.Context, l Lease, ambiguous bool, delay time.Duration, reason string) error {

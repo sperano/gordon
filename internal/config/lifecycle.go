@@ -35,7 +35,7 @@ var vikunjaWriting = []run.Family{run.VikunjaImplement, run.VikunjaDiscuss, run.
 
 func (r *reader) lifecycle() Lifecycle {
 	l := Lifecycle{WriteToken: r.secretFile("GORDON_VIKUNJA_WRITE_TOKEN_FILE"),
-		ReconcileInterval: r.duration("GORDON_VIKUNJA_RECONCILE_INTERVAL", 0),
+		ReconcileInterval: r.offDuration("GORDON_VIKUNJA_RECONCILE_INTERVAL"),
 		Lookback:          r.duration("GORDON_FOLLOWUP_LOOKBACK", DefaultFollowUpLookback),
 		RedispatchAfter:   r.duration("GORDON_FOLLOWUP_REDISPATCH_AFTER", DefaultRedispatchAfter),
 		LucarneURL:        r.optionalURL("GORDON_LUCARNE_URL"),
@@ -45,6 +45,14 @@ func (r *reader) lifecycle() Lifecycle {
 		r.fail("GORDON_FOLLOWUP_REDISPATCH_AFTER %s must be below GORDON_FOLLOWUP_LOOKBACK %s", l.RedispatchAfter, l.Lookback)
 	}
 	return l
+}
+
+// offDuration is duration for an interval that zero (or unset) turns off.
+func (r *reader) offDuration(name string) time.Duration {
+	if d, err := time.ParseDuration(r.str(name, "")); err == nil && d == 0 {
+		return 0
+	}
+	return r.duration(name, 0)
 }
 
 // optionalURL is baseURL for a URL that may be unset ("").

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -135,11 +137,16 @@ func (f *fakeVikunja) updateTask(w http.ResponseWriter, r *http.Request, ids []i
 	reply(w, t)
 }
 
-func (f *fakeVikunja) listComments(w http.ResponseWriter, r *http.Request, ids []int64) {
+// paged is the page of all a Vikunja listing returns for r's page
+// parameter, commentsPageSize items each.
+func paged[T any](r *http.Request, all []T) []T {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	all := f.comments[ids[0]]
 	from := min(max(page-1, 0)*commentsPageSize, len(all))
-	reply(w, all[from:min(from+commentsPageSize, len(all))])
+	return all[from:min(from+commentsPageSize, len(all))]
+}
+
+func (f *fakeVikunja) listComments(w http.ResponseWriter, r *http.Request, ids []int64) {
+	reply(w, paged(r, f.comments[ids[0]]))
 }
 
 func (f *fakeVikunja) addComment(w http.ResponseWriter, r *http.Request, ids []int64) {
@@ -204,7 +211,7 @@ func (f *fakeVikunja) assign(w http.ResponseWriter, r *http.Request, ids []int64
 
 func (f *fakeVikunja) listLabels(w http.ResponseWriter, r *http.Request, _ []int64) {
 	s := r.URL.Query().Get("s")
-	reply(w, slices.DeleteFunc(slices.Clone(f.labels), func(l Label) bool { return !regexp.MustCompile(regexp.QuoteMeta(s)).MatchString(l.Title) }))
+	reply(w, paged(r, slices.DeleteFunc(slices.Clone(f.labels), func(l Label) bool { return !strings.Contains(l.Title, s) })))
 }
 
 func (f *fakeVikunja) listViews(w http.ResponseWriter, _ *http.Request, ids []int64) {
@@ -233,8 +240,9 @@ func (f *fakeVikunja) move(w http.ResponseWriter, r *http.Request, ids []int64) 
 	reply(w, map[string]string{})
 }
 
-func (f *fakeVikunja) projectUsers(w http.ResponseWriter, _ *http.Request, ids []int64) {
-	reply(w, f.users[ids[0]])
+func (f *fakeVikunja) projectUsers(w http.ResponseWriter, r *http.Request, ids []int64) {
+	s := r.URL.Query().Get("s")
+	reply(w, paged(r, slices.DeleteFunc(slices.Clone(f.users[ids[0]]), func(u User) bool { return !strings.Contains(u.Username, s) })))
 }
 
 func (f *fakeVikunja) listReactions(w http.ResponseWriter, _ *http.Request, ids []int64) {
@@ -273,10 +281,15 @@ func (f *fakeVikunja) put(t Task) {
 	f.tasks[t.ID] = &t
 }
 
+// get returns a snapshot of the task: its slices are copies, so later
+// writes to the fake leave it as it was.
 func (f *fakeVikunja) get(id int64) Task {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return *f.tasks[id]
+	t := *f.tasks[id]
+	t.Labels, t.Buckets, t.Assignees = slices.Clone(t.Labels), slices.Clone(t.Buckets), slices.Clone(t.Assignees)
+	t.RelatedTasks = maps.Clone(t.RelatedTasks)
+	return t
 }
 
 func (f *fakeVikunja) inBucket(id int64, view int64) string {

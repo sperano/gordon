@@ -22,8 +22,8 @@ const submitKey = "submit-task:kelos/kelos-agents/" + runName
 func claimed() route.Decision {
 	dec := dispatch(true)
 	fd := &dec.Families[0]
-	label := action.New(action.AddLabel, action.VikunjaTask(5), "in progress").Then(fd.Actions[0])
-	fd.Actions = append(fd.Actions, label, action.Notice(action.VikunjaTask(5), "start", runName).Then(label))
+	label := action.New(action.AddLabel, action.VikunjaTask(5), "in progress").WaitFor(fd.Actions[0])
+	fd.Actions = append(fd.Actions, label, action.Notice(action.VikunjaTask(5), "start", runName).WaitFor(label))
 	return dec
 }
 
@@ -158,7 +158,10 @@ func TestCompleteQueuesRequeuesInShadow(t *testing.T) {
 		ev.Vikunja.Synthetic.Requeue != "k1" || ev.Vikunja.Synthetic.Depth != 1 || it.Scope != "vikunja/project/3" {
 		t.Fatalf("requeued delivery %+v (%v), scope %q", ev, err, it.Scope)
 	}
-	d := store.TaskUpdate(7, 3, event.Synthetic{Requeue: "k1", Depth: 1})
+	d, err := store.TaskUpdate(7, 3, event.Synthetic{Requeue: "k1", Depth: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if n, err := s.Enqueue(ctx, []store.Delivery{d}); err != nil || n != 0 {
 		t.Fatalf("the same requeue again stored %d (%v)", n, err)
 	}

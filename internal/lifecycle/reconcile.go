@@ -100,10 +100,16 @@ func (r *Reconciler) pass(ctx context.Context) (int, error) {
 	}
 	var ds []store.Delivery
 	for _, lt := range append(open, done...) {
-		if r.candidate(lt.Task) {
-			ds = append(ds, store.TaskUpdate(lt.Task.ID, lt.Task.ProjectID,
-				event.Synthetic{Reconcile: digest(lt), Depth: route.MaxRequeueDepth}))
+		if !r.candidate(lt.Task) {
+			continue
 		}
+		d, err := store.TaskUpdate(lt.Task.ID, lt.Task.ProjectID,
+			event.Synthetic{Reconcile: digest(lt), Depth: route.MaxRequeueDepth})
+		if err != nil {
+			r.Log.Warn("vikunja reconciliation skipped a task", "task", lt.Task.ID, "error", err)
+			continue
+		}
+		ds = append(ds, d)
 	}
 	requests, err := r.requests(ctx, open)
 	if err != nil {

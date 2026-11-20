@@ -152,6 +152,9 @@ type Policy struct {
 	AutoMergeLabelCreator string `json:"auto_merge_label_creator,omitempty"`
 	VikunjaServiceUser    string `json:"vikunja_service_user,omitempty"`
 	VikunjaWebURL         string `json:"vikunja_web_url,omitempty"`
+	// PRReadiness is pr_open's PR_READINESS_ENABLED: the pr-open notice
+	// promises a ready-to-merge notice.
+	PRReadiness bool `json:"pr_readiness,omitempty"`
 	// CancelReaction is the owner's reaction that withdraws a `/gordon`
 	// request: the reconciliation never recovers it.
 	CancelReaction string `json:"cancel_reaction,omitempty"`

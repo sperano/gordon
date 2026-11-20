@@ -40,7 +40,8 @@ var requestKinds = map[event.Kind]bool{
 // reaction and notice included); and the handled request. With shadow,
 // nothing is queued for execution and no run is recorded; the Task each
 // run not executed would have submitted is kept for the shadow
-// comparison instead.
+// comparison instead. The decision's requeues (synthetic inbox rows,
+// which write nothing outside Gordon) are queued in shadow as well.
 //
 // The owner request is claimed first: when another delivery of it was
 // recorded since the router read the ledger, this one queues nothing and

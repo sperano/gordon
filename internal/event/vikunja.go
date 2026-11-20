@@ -82,6 +82,11 @@ func ParseVikunja(body []byte) (Event, error) {
 	if data.Task == nil || data.Task.ID == nil || *data.Task.ID <= 0 {
 		return Event{}, fmt.Errorf("%w: data.task.id missing or not positive", ErrMalformed)
 	}
+	if data.Gordon != nil && data.Gordon.Depth < 0 {
+		// A negative depth would stay under route.MaxRequeueDepth for as
+		// many hops, defeating the fan-out bound.
+		return Event{}, fmt.Errorf("%w: data.gordon.depth is negative", ErrMalformed)
+	}
 	ev := Event{Source: SourceVikunja, Vikunja: &Vikunja{
 		Task: vikunjaTask(data), Redispatch: data.Redispatch, Synthetic: data.Gordon,
 	}}

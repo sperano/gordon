@@ -77,8 +77,12 @@ func (r *Reconciler) unseen(ctx context.Context, found []candidateRequest) ([]st
 		if known[keys[i]] || handled[keys[i]] {
 			continue
 		}
-		out = append(out, store.CommentCreated(f.task.ID, f.task.ProjectID, f.comment,
-			event.Synthetic{Reconcile: "request"}))
+		d, err := store.CommentCreated(f.task.ID, f.task.ProjectID, f.comment, event.Synthetic{Reconcile: "request"})
+		if err != nil {
+			r.Log.Warn("vikunja reconciliation skipped a request", "task", f.task.ID, "error", err)
+			continue
+		}
+		out = append(out, d)
 	}
 	return out, nil
 }

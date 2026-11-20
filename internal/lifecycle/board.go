@@ -17,6 +17,15 @@ type placement struct {
 	moves   [][2]int64 // view, bucket
 	// found is false when no manual view has a bucket of the title.
 	found bool
+	// stale is a move the task no longer wants (skipMove).
+	stale bool
+}
+
+// skipMove reports a move that would resurrect stale work: any move into
+// Doing once the task is done, and a claim's move once the card went
+// back to the backlog (Executor.skip).
+func (e *Executor) skipMove(t Task, a action.Action) bool {
+	return (a.Value == e.Policy.DoingBucket && t.Done) || e.skip(t, a)
 }
 
 func (e *Executor) placement(ctx context.Context, a action.Action) (placement, error) {
@@ -32,7 +41,10 @@ func (e *Executor) placement(ctx context.Context, a action.Action) (placement, e
 	if err != nil {
 		return placement{}, err
 	}
-	p := placement{project: t.ProjectID}
+	p := placement{project: t.ProjectID, stale: e.skipMove(t, a)}
+	if p.stale {
+		return p, nil
+	}
 	for _, v := range views {
 		if !v.Manual() {
 			continue
@@ -55,14 +67,15 @@ func (e *Executor) placement(ctx context.Context, a action.Action) (placement, e
 
 func (e *Executor) moveApplied(ctx context.Context, a action.Action) (bool, error) {
 	p, err := e.placement(ctx, a)
-	return err == nil && p.found && len(p.moves) == 0, err
+	return err == nil && (p.stale || p.found && len(p.moves) == 0), err
 }
 
 // move puts the task in the bucket of that title in every manual Kanban
-// view of its project (wait_for_blockers.move_to_bucket).
+// view of its project (wait_for_blockers.move_to_bucket), unless the
+// move went stale (skipMove).
 func (e *Executor) move(ctx context.Context, a action.Action) error {
 	p, err := e.placement(ctx, a)
-	if err != nil {
+	if err != nil || p.stale {
 		return err
 	}
 	if !p.found {

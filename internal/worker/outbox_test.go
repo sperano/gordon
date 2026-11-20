@@ -193,6 +193,22 @@ func TestPermanentFailureDeadLetters(t *testing.T) {
 	}
 }
 
+func TestCancelledWriteIsDoneAsCancelled(t *testing.T) {
+	p := newProvider()
+	p.execute = func(action.Action) error { return Cancelled("run stopped") }
+	e, o := outboxEnv(t, p)
+	perform(t, o)
+	if st, attempts, msg := e.actionRow(t); st != store.ActionDone || attempts != 1 || msg != "cancelled: run stopped" {
+		t.Fatalf("state %s, %d attempts, %q; want done, 1, cancelled: run stopped", st, attempts, msg)
+	}
+	if e.results(o, ResultCancelled) != 1 || e.results(o, ResultDone) != 0 {
+		t.Fatal("cancellation not counted as cancelled")
+	}
+	if perform(t, o) != 0 || p.executes != 1 {
+		t.Fatalf("a cancelled action ran again (%d executes)", p.executes)
+	}
+}
+
 func TestRetriesStopAtMaxAttempts(t *testing.T) {
 	p := newProvider()
 	p.execute = func(action.Action) error { return errors.New("503") }

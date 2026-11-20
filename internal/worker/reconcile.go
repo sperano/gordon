@@ -59,27 +59,46 @@ func (r *Reconciler) run(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// upkeep runs each housekeeping step whatever another's outcome, so one
+// failing query skips neither the metrics nor retention; it returns every
+// step's error.
 func (r *Reconciler) upkeep(ctx context.Context) error {
+	return errors.Join(r.expireLeases(ctx), r.cancelOrphans(ctx), r.queueStats(ctx), r.prune(ctx))
+}
+
+func (r *Reconciler) expireLeases(ctx context.Context) error {
 	inbox, actions, err := r.Store.ExpireLeases(ctx)
 	if err != nil {
 		return err
-	}
-	// Actions waiting for one that will never be done go too.
-	if n, err := r.Store.CancelOrphans(ctx); err != nil {
-		return err
-	} else if n > 0 {
-		r.Log.Info("cancelled actions whose prerequisite failed", "actions", n)
 	}
 	r.Metrics.LeasesExpired.WithLabelValues(store.QueueInbox).Add(float64(inbox))
 	r.Metrics.LeasesExpired.WithLabelValues(store.QueueActions).Add(float64(actions))
 	if inbox+actions > 0 {
 		r.Log.Warn("released expired leases", "inbox", inbox, "actions", actions)
 	}
+	return nil
+}
+
+// cancelOrphans cancels the actions waiting for one that will never be
+// done.
+func (r *Reconciler) cancelOrphans(ctx context.Context) error {
+	n, err := r.Store.CancelOrphans(ctx)
+	if n > 0 {
+		r.Log.Info("cancelled actions whose prerequisite failed", "actions", n)
+	}
+	return err
+}
+
+func (r *Reconciler) queueStats(ctx context.Context) error {
 	stats, err := r.Store.QueueStats(ctx)
 	if err != nil {
 		return err
 	}
 	r.Metrics.SetQueues(stats)
+	return nil
+}
+
+func (r *Reconciler) prune(ctx context.Context) error {
 	if r.BodyRetention <= 0 {
 		return nil
 	}

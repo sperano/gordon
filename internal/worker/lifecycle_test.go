@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,28 +21,96 @@ func chainUpdate(id int64) event.Event {
 		Vikunja: &event.Vikunja{Task: event.Task{ID: id, ProjectID: 3}}}
 }
 
-// TestStateReaderReadsAChainsSubtasks: a task carrying the chain label is
-// read with its subtasks and comments; any other task alone; a failed
-// subtask read leaves the whole state unread (the router retries).
+// TestStateReaderReadsAChainsSubtasks: a chain parent in Doing is read
+// with its subtasks and comments; any other task, a paused or done chain
+// parent included, alone; a failed subtask read leaves the whole state
+// unread (the router retries).
 func TestStateReaderReadsAChainsSubtasks(t *testing.T) {
-	parent := event.Task{ID: 1, ProjectID: 3, Labels: []string{"chain"},
+	parent := event.Task{ID: 1, ProjectID: 3, Labels: []string{"chain"}, Buckets: []string{"Doing"},
 		Relations: event.Relations{Subtasks: []event.Related{{ID: 2}, {ID: 3}}}}
-	tasks := &fakeTasks{tasks: map[int64]event.Task{1: parent, 2: {ID: 2}, 3: {ID: 3}, 4: {ID: 4, ProjectID: 3}},
-		comments: map[int64][]event.TaskComment{1: {{ID: 9, Author: "gordon"}}}}
+	paused, done := parent, parent
+	paused.ID, paused.Buckets = 5, []string{"To-Do"}
+	done.ID, done.Done = 6, true
+	tasks := &fakeTasks{tasks: map[int64]event.Task{1: parent, 2: {ID: 2}, 3: {ID: 3}, 4: {ID: 4, ProjectID: 3},
+		5: paused, 6: done}, comments: map[int64][]event.TaskComment{1: {{ID: 9, Author: "gordon"}}}}
 	sr := StateReader{Config: profile.Defaults(), Tasks: tasks}
 	st, err := sr.Read(context.Background(), chainUpdate(1), replay.Ledger{})
 	if err != nil || st.Task == nil || len(st.Subtasks) != 2 || st.Subtasks[1].ID != 3 || len(st.Comments) != 1 {
 		t.Fatalf("chain state %+v (%v)", st, err)
 	}
-	tasks.reads = 0
-	if st, err := sr.Read(context.Background(), chainUpdate(4), replay.Ledger{}); err != nil || st.Subtasks != nil || tasks.reads != 1 {
-		t.Fatalf("a plain task read %d times, subtasks %v (%v)", tasks.reads, st.Subtasks, err)
+	for _, id := range []int64{4, 5, 6} {
+		tasks.reads = 0
+		if st, err := sr.Read(context.Background(), chainUpdate(id), replay.Ledger{}); err != nil || st.Subtasks != nil || tasks.reads != 1 {
+			t.Fatalf("task %d read %d times, subtasks %v (%v), want the task alone", id, tasks.reads, st.Subtasks, err)
+		}
 	}
 	delete(tasks.tasks, 3)
 	st, err = sr.Read(context.Background(), chainUpdate(1), replay.Ledger{})
 	var ue *upstream.Error
 	if st.Task != nil || !errors.As(err, &ue) || ue.Class != upstream.NotFound {
 		t.Fatalf("missing subtask: task %v, err %v, want no state and the not-found read", st.Task, err)
+	}
+}
+
+// barrierTasks answers a subtask read only once want reads are in flight
+// together, and records the most it saw at once.
+type barrierTasks struct {
+	mu        sync.Mutex
+	want, cur int
+	most      int
+	opened    bool
+	all       chan struct{}
+}
+
+func (b *barrierTasks) Task(ctx context.Context, id int64) (event.Task, error) {
+	b.mu.Lock()
+	b.cur++
+	b.most = max(b.most, b.cur)
+	if b.cur == b.want && !b.opened {
+		b.opened = true
+		close(b.all)
+	}
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		b.cur--
+		b.mu.Unlock()
+	}()
+	select {
+	case <-b.all:
+	case <-ctx.Done():
+		return event.Task{}, ctx.Err()
+	}
+	return event.Task{ID: id}, nil
+}
+
+func (b *barrierTasks) TaskComments(context.Context, int64) ([]event.TaskComment, error) {
+	return nil, nil
+}
+
+// TestReadSubtasksIsConcurrentAndBounded: a chain's subtask reads run
+// together, chainReadFanOut at a time, so a sequential reader (which never
+// gets the barrier's fan-out in flight) fails under the guard deadline.
+func TestReadSubtasksIsConcurrentAndBounded(t *testing.T) {
+	const guard = 5 * time.Second
+	rels := make([]event.Related, 2*chainReadFanOut)
+	for i := range rels {
+		rels[i] = event.Related{ID: int64(i + 1)}
+	}
+	b := &barrierTasks{want: chainReadFanOut, all: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), guard)
+	defer cancel()
+	subs, err := StateReader{Tasks: b}.readSubtasks(ctx, rels)
+	if err != nil {
+		t.Fatalf("readSubtasks: %v", err)
+	}
+	for i, s := range subs {
+		if s.ID != int64(i+1) {
+			t.Fatalf("subtask %d is %d, want relation order", i, s.ID)
+		}
+	}
+	if b.most != chainReadFanOut {
+		t.Errorf("%d reads in flight at most, want %d", b.most, chainReadFanOut)
 	}
 }
 

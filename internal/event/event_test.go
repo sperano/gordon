@@ -280,6 +280,11 @@ func TestParseVikunjaSynthetic(t *testing.T) {
 		ev.Vikunja.Synthetic.Depth != 1 {
 		t.Fatalf("synthetic %+v, %v", ev.Vikunja, err)
 	}
+	_, err = ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3},` +
+		`"gordon":{"requeue":"k","depth":-1000000}}}`))
+	if !errors.Is(err, ErrMalformed) {
+		t.Fatalf("negative depth: %v, want ErrMalformed", err)
+	}
 	plain, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3}}}`))
 	if err != nil || plain.Vikunja.Synthetic != nil || plain.DeliveryKey == ev.DeliveryKey {
 		t.Fatalf("plain delivery %+v, %v: no marker, its own key", plain.Vikunja, err)

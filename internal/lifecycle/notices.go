@@ -74,6 +74,15 @@ func (e *Executor) legacyPosted(a action.Action, body string) bool {
 		return err == nil && notice.AboutTask(body, a.Value, e.Policy.VikunjaWebURL, sub)
 	case notice.ChainNoAgent, notice.ChainDone:
 		return notice.HasKind(body, a.Value, "")
+	case notice.PROpen, notice.Merged:
+		url, err := notice.PRURL(a.Detail)
+		if err != nil {
+			return false
+		}
+		if a.Value == notice.PROpen {
+			return notice.PROpenPosted(body, url)
+		}
+		return notice.MergedPosted(body, url)
 	}
 	return false
 }
@@ -168,6 +177,9 @@ func (e *Executor) render(ctx context.Context, a action.Action, task int64) (str
 	case notice.Failed:
 		text, err := e.failedText(ctx, a.Detail)
 		return text, 0, err
+	case notice.PROpen, notice.Merged:
+		text, err := e.pullRequestText(a)
+		return text, 0, err
 	}
 	text, err := e.chainText(ctx, a, task)
 	return text, 0, err
@@ -210,6 +222,19 @@ func (e *Executor) unansweredText(ctx context.Context, detail string, task int64
 	return notice.UnansweredText(e.Policy.Trigger, comment, []string{item}), nil
 }
 
+// pullRequestText is the pr-open or merged notice of the pull request
+// the detail names (pr_open.py, merge_close.py).
+func (e *Executor) pullRequestText(a action.Action) (string, error) {
+	url, err := notice.PRURL(a.Detail)
+	if err != nil {
+		return "", worker.Permanent(fmt.Errorf("%s detail: %w", a.Value, err))
+	}
+	if a.Value == notice.PROpen {
+		return notice.PROpenText(url, e.Policy.PRReadiness), nil
+	}
+	return notice.MergedText(url), nil
+}
+
 func (e *Executor) failedText(ctx context.Context, name string) (string, error) {
 	r, err := e.Runs.RunInfo(ctx, name)
 	if err != nil {
@@ -217,7 +242,9 @@ func (e *Executor) failedText(ctx context.Context, name string) (string, error) 
 	}
 	msg := ""
 	if e.Messages != nil {
-		msg = e.Messages(ctx, name)
+		if msg, err = e.Messages(ctx, name); err != nil {
+			return "", err
+		}
 	}
 	return notice.FailedText(notice.FailedInfo{Task: name, Message: msg, InProgressLabel: e.Policy.InProgressLabel,
 		ErrorLabel: e.Policy.AgentErrorLabel, Namespace: e.Namespace, FollowUp: slices.Contains(followUps, r.Family),

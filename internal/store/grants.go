@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/sperano/gordon/internal/event"
 )
 
 // Roles are the least-privilege database roles the receiver and the
@@ -21,8 +22,9 @@ type Roles struct {
 // never deletes, and it never changes the schema. The inbox is the
 // receiver's for webhooks: the worker inserts only its own synthetic
 // deliveries (workerInboxInsert: requeues and reconciliation, never a
-// body digest), and it updates only the queue bookkeeping and the body
-// (pruning).
+// body digest; a row policy refuses any row that is not a Vikunja
+// delivery with the synthetic header), and it updates only the queue
+// bookkeeping and the body (pruning).
 var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks"}
 
 // workerUpdates are the columns the worker may update in each of
@@ -46,6 +48,32 @@ var gordonTables = append([]string{"schema_migrations", "inbox"}, workerTables..
 
 // workerInboxInsert are the inbox columns a synthetic delivery sets.
 const workerInboxInsert = "source, delivery_key, request_key, kind, scope, headers, body"
+
+// Row policies on the inbox: every role may use any row (the column
+// grants decide what), except that the worker may insert only synthetic
+// Vikunja deliveries, which a column grant cannot express.
+const (
+	inboxAnyRowPolicy     = "gordon_any_row"
+	workerInsertPolicy    = "gordon_worker_synthetic_only"
+	workerInsertCondition = "source = '" + string(event.SourceVikunja) + "' AND headers ? '" + SyntheticHeader + "'"
+)
+
+// inboxPolicies (re)creates the inbox's row policies: the permissive one
+// for every role (a table owner, the migrator, bypasses them anyway) and,
+// for the worker (none when worker is ""), the restrictive insert check.
+func inboxPolicies(worker string) []string {
+	stmts := []string{
+		"ALTER TABLE inbox ENABLE ROW LEVEL SECURITY",
+		"DROP POLICY IF EXISTS " + inboxAnyRowPolicy + " ON inbox",
+		"CREATE POLICY " + inboxAnyRowPolicy + " ON inbox USING (true) WITH CHECK (true)",
+		"DROP POLICY IF EXISTS " + workerInsertPolicy + " ON inbox",
+	}
+	if worker != "" {
+		stmts = append(stmts, "CREATE POLICY "+workerInsertPolicy+" ON inbox AS RESTRICTIVE FOR INSERT TO "+worker+
+			" WITH CHECK ("+workerInsertCondition+")")
+	}
+	return stmts
+}
 
 // workerInboxColumns are the inbox columns the worker may update.
 const workerInboxColumns = "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, " +
@@ -101,6 +129,13 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 				stmts = append(stmts, fmt.Sprintf("GRANT UPDATE (%s) ON %s TO %s", cols, t, role))
 			}
 		}
+	}
+	if len(stmts) > 0 {
+		worker := ""
+		if r.Worker != "" {
+			worker = pgx.Identifier{r.Worker}.Sanitize()
+		}
+		stmts = append(stmts, inboxPolicies(worker)...)
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		for _, q := range stmts {

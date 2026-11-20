@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -59,14 +60,21 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 	}
 }
 
-// taskMessages reads a Task's status message for its failure notice.
+// taskMessages reads a Task's status message for its failure notice: ""
+// for a Task gone or without a status, the error of a failed read (the
+// notice retries rather than lose the message).
 func taskMessages(k *kelos.Client) lifecycle.TaskMessages {
-	return func(ctx context.Context, name string) string {
+	return func(ctx context.Context, name string) (string, error) {
 		t, _, err := k.Get(ctx, name)
-		if err != nil || t.Status == nil {
-			return ""
+		switch {
+		case kelos.IsNotFound(err):
+			return "", nil
+		case err != nil:
+			return "", fmt.Errorf("status message of Task %s: %w", name, err)
+		case t.Status == nil:
+			return "", nil
 		}
-		return t.Status.Message
+		return t.Status.Message, nil
 	}
 }
 

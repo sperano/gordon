@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison; nothing on `decisions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel`; nothing else (no Secrets, no pods) |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison; nothing on `decisions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source = 'vikunja'` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel`; nothing else (no Secrets, no pods) |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -153,7 +153,8 @@ with a write token; the routing configuration's `policy` carries the
 buckets and labels (`backlog_bucket`, `agent_error_label`,
 `action_needed_label`, `auto_merge_label` and its trusted
 `auto_merge_label_creator`, `vikunja_service_user`, `vikunja_web_url`,
-`cancel_reaction`).
+`cancel_reaction`, and `pr_readiness`, legacy `PR_READINESS_ENABLED`: the
+pr-open notice promises a ready-to-merge one).
 
 - **Blockers and claims** (`vikunja-implement`, `vikunja-discuss`): a run
   waits, unsubmitted, while a task blocking it (any project) is open; a
@@ -188,7 +189,7 @@ buckets and labels (`backlog_bucket`, `agent_error_label`,
 
 One rule per (project, family); `go run ./cmd/gordon-inventory` prints
 the full table, with a `Legacy` column naming the files acting for each
-family today; below is it without that column. When a rule makes Gordon
+family today; below is a summary without that column. When a rule makes Gordon
 the owner (Gordon 07), the same Hollingsworth change turns off, for the
 rule's projects, what the `Off when Gordon owns it` column names; the
 rollout table refuses `vikunja-drag-cancel` where Gordon does not own

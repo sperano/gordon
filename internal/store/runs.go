@@ -50,14 +50,20 @@ func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error)
 // a newer generation's row is left alone. Its uid is recorded whatever
 // the state; its state and phase only while the run is still
 // submitting: an observer that already followed the Task knows better.
+// A Task found already finished (a recovered submission) is recorded
+// active with no phase, so the observer sees it finish and tells its
+// hook (the failure notice) as for any other run.
 func (s *Store) RunSubmitted(ctx context.Context, name string, inboxID int64, uid, phase string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE runs SET task_uid = $4,
-			state = CASE WHEN state = 'submitting' THEN $3 ELSE state END,
+	if stateOf(phase) == runFinished {
+		phase = ""
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE runs SET task_uid = $3,
+			state = CASE WHEN state = 'submitting' THEN '`+runActive+`' ELSE state END,
 			task_exists = task_exists OR state = 'submitting',
-			phase = CASE WHEN state = 'submitting' THEN $5 ELSE phase END,
+			phase = CASE WHEN state = 'submitting' THEN $4 ELSE phase END,
 			updated_at = now()
 		WHERE name = $1 AND inbox_id = $2`,
-		name, inboxID, stateOf(phase), uid, phase)
+		name, inboxID, uid, phase)
 	return err
 }
 

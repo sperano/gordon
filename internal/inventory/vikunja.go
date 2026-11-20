@@ -72,7 +72,7 @@ func vikunjaLifecycle() []Entry {
 		{ID: "failure-reporter", Kind: Cron, Owner: Gordon, Decision: Migrate,
 			Legacy:  chartPath("scripts/report_failures.py", "templates/failure-reporter.yaml"),
 			Trigger: "5-59/10: Failed Tasks with a Vikunja task", Implement: StageVikunja, Cutover: StageVikunjaCut,
-			Families: []run.Family{run.VikunjaFailure},
+			Families: []run.Family{run.VikunjaFailure, run.VikunjaDoneCleanup},
 			Note:     "failed notice, agent-error and action-needed; done-task sweep backstop"},
 		{ID: "fetch-attachments", Kind: InitContainer, Owner: Kelos, Decision: Retain,
 			Legacy: chartPath("scripts/fetch_attachments.py", "templates/_attachments.tpl"), Trigger: "every Vikunja agent pod",

@@ -30,8 +30,9 @@ type Locker interface {
 	WithTargetLock(ctx context.Context, target string, fn func(context.Context) error) error
 }
 
-// TaskMessages reads a Kelos Task's status message ("" when it is gone).
-type TaskMessages func(ctx context.Context, name string) string
+// TaskMessages reads a Kelos Task's status message ("" when it is gone);
+// an error is a read that failed and is retried.
+type TaskMessages func(ctx context.Context, name string) (string, error)
 
 // Executor performs the Vikunja actions (the outbox's Executor).
 type Executor struct {
@@ -134,11 +135,11 @@ func inBucket(t Task, title string) bool {
 	return slices.ContainsFunc(t.Buckets, func(b Bucket) bool { return b.Title == title })
 }
 
-// skipLabel reports a conditional label write the task no longer wants:
-// a claim on a card dragged back to the backlog or done since, a label
-// for an undone task on one done since, a removal from a done task on
-// one reopened since.
-func (e *Executor) skipLabel(t Task, a action.Action) bool {
+// skip reports a conditional label or move write the task no longer
+// wants: a claim on a card dragged back to the backlog or done since, a
+// label for an undone task on one done since, a removal from a done task
+// on one reopened since.
+func (e *Executor) skip(t Task, a action.Action) bool {
 	switch a.Detail {
 	case route.DetailClaim:
 		p := e.Policy
@@ -161,7 +162,7 @@ func (e *Executor) labelApplied(ctx context.Context, a action.Action) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return hasLabel(t, a.Value) || e.skipLabel(t, a), nil
+	return hasLabel(t, a.Value) || e.skip(t, a), nil
 }
 
 func (e *Executor) addLabel(ctx context.Context, a action.Action) error {
@@ -185,7 +186,7 @@ func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, e
 	if err != nil {
 		return false, err
 	}
-	return !hasLabel(t, a.Value) || e.skipLabel(t, a), nil
+	return !hasLabel(t, a.Value) || e.skip(t, a), nil
 }
 
 // removeLabel removes every label of that title, by the ids on the task

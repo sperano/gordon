@@ -9,7 +9,7 @@ import (
 
 // Gordon Cole's voice: the legacy scripts' exact lines
 // (wait_for_blockers.py, drag_cancel.py, unanswered_notice.py,
-// subtask_chain.py, report_failures.py), so the owner, vigie and sillage
+// subtask_chain.py, report_failures.py, pr_open.py, merge_close.py), so the owner, vigie and sillage
 // read the same notices whoever posts them.
 var (
 	TaskStartedLines = []string{

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,8 @@ func TestVikunjaTasksListing(t *testing.T) {
 			fmt.Fprint(w, `[{"id":51,"project_id":3,"updated":"2026-11-20T10:00:00Z","comment_count":2,
 				"comments":[{"id":7,"comment":"<p>/gordon x</p>","author":{"username":"eric"},
 				"created":"2026-11-20T09:00:00Z","reactions":{"👎":[{"username":"eric"}]}}]}]`)
+		case "3":
+			fmt.Fprint(w, `[]`)
 		default:
 			t.Errorf("page %s read", r.URL.Query().Get("page"))
 		}
@@ -66,6 +69,48 @@ func TestVikunjaTasksListing(t *testing.T) {
 	if !strings.Contains(queries[0], "expand=buckets&expand=comments&expand=comment_count") ||
 		!strings.Contains(queries[0], "filter=done+%3D+false") {
 		t.Fatalf("query %q", queries[0])
+	}
+}
+
+// pagedTasks serves pages of size tasks each, numbered from 1, up to
+// pages pages, then empty pages; it counts the pages read.
+func pagedTasks(t *testing.T, size, pages int, read *int) Vikunja {
+	c, _ := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		*read++
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		var items []string
+		for i := range size {
+			if page <= pages {
+				items = append(items, fmt.Sprintf(`{"id":%d,"project_id":3}`, (page-1)*size+i+1))
+			}
+		}
+		fmt.Fprint(w, "["+strings.Join(items, ",")+"]")
+	})
+	return Vikunja{c}
+}
+
+func TestVikunjaTasksServerPageCapBelowOurs(t *testing.T) {
+	const serverPage, serverPages = 10, 3
+	read := 0
+	got, err := pagedTasks(t, serverPage, serverPages, &read).Tasks(ctx, "done = false", false)
+	if err != nil || len(got) != serverPage*serverPages || read != serverPages+1 {
+		t.Fatalf("Tasks = %d tasks in %d reads, %v; want %d in %d", len(got), read, err, serverPage*serverPages, serverPages+1)
+	}
+}
+
+func TestVikunjaTasksExactlyAtTheCap(t *testing.T) {
+	read := 0
+	got, err := pagedTasks(t, TaskPageSize, maxTaskPages, &read).Tasks(ctx, "done = false", false)
+	if err != nil || len(got) != TaskPageSize*maxTaskPages {
+		t.Fatalf("Tasks = %d tasks, %v; want %d", len(got), err, TaskPageSize*maxTaskPages)
+	}
+}
+
+func TestVikunjaTasksOverTheCap(t *testing.T) {
+	read := 0
+	_, err := pagedTasks(t, TaskPageSize, maxTaskPages+1, &read).Tasks(ctx, "done = false", false)
+	if err == nil || err.Error() != fmt.Sprintf("vikunja: invalid: more than %d task pages", maxTaskPages) {
+		t.Fatalf("Tasks over the cap: %v", err)
 	}
 }
 

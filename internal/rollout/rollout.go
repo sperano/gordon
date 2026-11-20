@@ -127,17 +127,35 @@ func (t Table) Validate() error {
 	return t.checkCoupled()
 }
 
-// checkCoupled refuses a Gordon-owned family whose coupled families
-// Gordon does not own in the same scope.
+// checkCoupled refuses a family Gordon owns in a project (by a project
+// rule or an AllProjects one) whose coupled families Gordon does not own
+// in that project: every project a rule names is checked, so a project
+// override of a coupled family under an AllProjects rule is caught too.
 func (t Table) checkCoupled() error {
+	projects := []string{AllProjects}
 	for _, r := range t.Rules {
-		if r.Owner != Gordon {
-			continue
+		if !slices.Contains(projects, r.Project) {
+			projects = append(projects, r.Project)
 		}
-		for _, f := range coupled[r.Family] {
-			if t.Owner(r.Project, f) != Gordon {
-				return fmt.Errorf("rule %s/%s: needs %s owned by gordon too", r.Project, r.Family, f)
+	}
+	for _, family := range run.Families {
+		for _, p := range projects {
+			if err := t.checkCoupledIn(p, family); err != nil {
+				return err
 			}
+		}
+	}
+	return nil
+}
+
+// checkCoupledIn checks one family's coupling in one project.
+func (t Table) checkCoupledIn(project string, family run.Family) error {
+	if t.Owner(project, family) != Gordon {
+		return nil
+	}
+	for _, f := range coupled[family] {
+		if t.Owner(project, f) != Gordon {
+			return fmt.Errorf("rule %s/%s: needs %s owned by gordon too", project, family, f)
 		}
 	}
 	return nil

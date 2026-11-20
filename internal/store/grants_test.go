@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
@@ -123,7 +124,7 @@ func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 		t.Fatalf("worker inbox INSERT of a body digest = %v, want permission denied", err)
 	}
 	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, request_key, kind, scope, headers, body)
-		VALUES ('vikunja', 'synthetic', '', 'vikunja/task.updated', '', '{}', '\x7b7d')`); err != nil {
+		VALUES ('vikunja', 'synthetic', '', 'vikunja/task.updated', '', '{"X-Gordon-Synthetic": "requeue"}', '\x7b7d')`); err != nil {
 		t.Fatalf("worker synthetic inbox INSERT = %v, want allowed", err)
 	}
 	if _, err := conn.Exec(ctx, `UPDATE inbox SET source = 'github'`); !denied(err) {
@@ -306,5 +307,70 @@ func TestGrantWorkerDispatchRights(t *testing.T) {
 	}
 	if _, err := ws.PruneTasks(ctx, 0); err != nil {
 		t.Fatalf("worker PruneTasks: %v", err)
+	}
+}
+
+// TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries: the row policy
+// refuses a worker insert of a GitHub delivery or of a Vikunja delivery
+// without the synthetic header; the receiver and the worker's own
+// synthetic deliveries are unaffected.
+func TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	receiver, worker := role(t, dbURL), role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Receiver: receiver, Worker: worker}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	syn, err := store.TaskUpdate(7, 3, event.Synthetic{Reconcile: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	github := syn
+	github.Source, github.DeliveryKey = event.SourceGitHub, "forged-github"
+	unmarked := syn
+	unmarked.DeliveryKey, unmarked.Headers = "forged-unmarked", map[string]string{"X-Test": "1"}
+	for name, d := range map[string]store.Delivery{"github": github, "no synthetic header": unmarked} {
+		if _, err := ws.Enqueue(ctx, []store.Delivery{d}); !denied(err) {
+			t.Errorf("worker insert of a %s delivery = %v, want permission denied", name, err)
+		}
+	}
+	if n, err := ws.Enqueue(ctx, []store.Delivery{syn}); err != nil || n != 1 {
+		t.Fatalf("worker synthetic Enqueue = %d, %v; want 1 stored", n, err)
+	}
+	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, receiver, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	if _, dup, err := rs.Accept(ctx, delivery("k")); err != nil || dup {
+		t.Fatalf("receiver Accept under the row policies = %v, %v; want a new row", dup, err)
+	}
+	if _, err := ws.Claim(ctx, "w", 2, testTTL); err != nil {
+		t.Fatalf("worker Claim under the row policies: %v", err)
+	}
+}
+
+// TestGrantWorkerRoleReusedAsReceiverLosesTheInsertPolicy: the restrictive
+// policy follows the worker role, so a former worker receives anything.
+func TestGrantWorkerRoleReusedAsReceiverLosesTheInsertPolicy(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	reused := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Worker: reused}); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Grant(ctx, store.Roles{Receiver: reused}); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, reused, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	if _, dup, err := rs.Accept(ctx, delivery("k")); err != nil || dup {
+		t.Fatalf("former worker's receiver Accept = %v, %v; want a new row", dup, err)
 	}
 }

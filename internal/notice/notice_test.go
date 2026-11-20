@@ -11,7 +11,8 @@ import (
 
 // legacy holds the texts the legacy scripts render for the same inputs
 // (Hollingsworth helm/kelos/scripts at 034b9a4: wait_for_blockers,
-// drag_cancel, unanswered_notice, subtask_chain, discuss_fallback),
+// drag_cancel, unanswered_notice, subtask_chain, discuss_fallback,
+// pr_open, merge_close),
 // printed by running their functions. Gordon's notices must equal them
 // byte for byte: vigie and sillage read them.
 func legacy(t *testing.T) map[string]json.RawMessage {

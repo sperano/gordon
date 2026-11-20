@@ -81,8 +81,9 @@ type listedTask struct {
 }
 
 // Tasks lists every task matching a Vikunja filter (GET /tasks, page by
-// page until a short or empty page), with their buckets and, with
-// comments, their first comments and comment count.
+// page until an empty or all-seen page, so a server capping pages below
+// TaskPageSize truncates nothing), with their buckets and, with comments,
+// their first comments and comment count.
 func (v Vikunja) Tasks(ctx context.Context, filter string, comments bool) ([]ListedTask, error) {
 	expand := []string{"buckets"}
 	if comments {
@@ -90,7 +91,7 @@ func (v Vikunja) Tasks(ctx context.Context, filter string, comments bool) ([]Lis
 	}
 	var out []ListedTask
 	seen := map[int64]bool{}
-	for page := 1; page <= maxTaskPages; page++ {
+	for page := 1; page <= maxTaskPages+1; page++ {
 		q := url.Values{"filter": {filter}, "expand": expand,
 			"per_page": {strconv.Itoa(TaskPageSize)}, "page": {strconv.Itoa(page)}}
 		var items []listedTask
@@ -99,13 +100,12 @@ func (v Vikunja) Tasks(ctx context.Context, filter string, comments bool) ([]Lis
 		}
 		fresh := 0
 		for _, it := range items {
-			if seen[it.ID] {
-				continue
+			if !seen[it.ID] {
+				seen[it.ID], fresh = true, fresh+1
+				out = append(out, it.toListed())
 			}
-			seen[it.ID], fresh = true, fresh+1
-			out = append(out, it.toListed())
 		}
-		if len(items) < TaskPageSize || fresh == 0 {
+		if fresh == 0 {
 			return out, nil
 		}
 	}

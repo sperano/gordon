@@ -67,11 +67,25 @@ func Deferred(err error, limit string, delay time.Duration) error {
 	return deferredError{err: err, limit: limit, delay: delay}
 }
 
+// cancelledError is a write not made because what it served was stopped
+// meanwhile (a run cancelled under the admission lock).
+type cancelledError struct{ reason string }
+
+func (e cancelledError) Error() string { return "cancelled: " + e.reason }
+
+// Cancelled reports a write not made, and never to be made, because what
+// it served was stopped: the action is done as cancelled, which cancels
+// the actions waiting for it.
+func Cancelled(reason string) error { return cancelledError{reason} }
+
 // Ambiguous marks err as an outcome that may have applied the write.
 func Ambiguous(err error) error { return ambiguousError{err} }
 
 // Permanent marks err as a refusal retrying cannot change.
 func Permanent(err error) error { return permanentError{err} }
+
+// IsCancelled reports whether err, or an error it wraps, is Cancelled.
+func IsCancelled(err error) bool { return errors.As(err, new(cancelledError)) }
 
 func isAmbiguous(err error) bool { return errors.As(err, new(ambiguousError)) }
 
@@ -86,6 +100,7 @@ const (
 	ResultAmbiguous = "ambiguous"
 	ResultFailed    = "failed"
 	ResultDeferred  = "deferred"
+	ResultCancelled = "cancelled"
 )
 
 // ReasonNoExecutor defers an action whose kind has no executor in this
@@ -213,6 +228,8 @@ func (o *Outbox) attempt(ctx context.Context, ex Executor, c store.ClaimedAction
 		return ResultDone, nil
 	case errors.As(err, new(deferredError)):
 		return ResultDeferred, err
+	case IsCancelled(err):
+		return ResultCancelled, err
 	case IsPermanent(err):
 		return ResultFailed, err
 	case isAmbiguous(err):
@@ -232,6 +249,10 @@ func (o *Outbox) finish(ctx context.Context, log *slog.Logger, c store.ClaimedAc
 		werr = o.Store.ActionDone(ctx, c.Lease)
 		o.Metrics.ActionQueueLatency.WithLabelValues(kind).Observe(time.Since(c.CreatedAt).Seconds())
 		log.Info("action " + result)
+	case result == ResultCancelled:
+		ce, _ := errors.AsType[cancelledError](err)
+		werr = o.Store.ActionCancelled(ctx, c.Lease, ce.reason)
+		log.Info("action cancelled", "reason", ce.reason)
 	case result == ResultFailed || c.Attempts >= o.MaxAttempts:
 		msg := err.Error()
 		if result == ResultAmbiguous {

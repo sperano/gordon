@@ -91,6 +91,8 @@ func (l Ledger) Run(name string) (route.RunRecord, bool) {
 	return route.RunRecord{}, false
 }
 
+// TaskRuns returns the task's runs in the families, ordered by name as
+// the store's ledger returns them.
 func (l Ledger) TaskRuns(taskID int64, families []run.Family) []route.RunRecord {
 	var out []route.RunRecord
 	for _, r := range l.Runs {
@@ -98,6 +100,7 @@ func (l Ledger) TaskRuns(taskID int64, families []run.Family) []route.RunRecord 
 			out = append(out, r)
 		}
 	}
+	slices.SortFunc(out, func(a, b route.RunRecord) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 

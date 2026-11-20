@@ -263,6 +263,9 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 			t.Errorf("%s: two switches", s.Family)
 		}
 		seen[s.Family] = true
+		if !strings.HasPrefix(string(s.Family), "vikunja-") {
+			t.Errorf("%s: a switch for a family that is not Vikunja's", s.Family)
+		}
 		if len(s.Legacy) == 0 || s.Off == "" || len(s.Needs) == 0 {
 			t.Errorf("%s: incomplete switch %+v", s.Family, s)
 		}
@@ -279,5 +282,22 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 	}
 	if md := SwitchesMarkdown(Switches()); strings.Count(md, "\n") != len(Switches())+2 {
 		t.Errorf("switch table has %d lines for %d switches", strings.Count(md, "\n"), len(Switches()))
+	}
+}
+
+// TestVikunjaEntriesMatchTheirSwitches: an inventory entry that acts for a
+// Vikunja family has its script in that family's switch, so the switch
+// names every legacy component the cutover turns off.
+func TestVikunjaEntriesMatchTheirSwitches(t *testing.T) {
+	legacy := map[run.Family][]string{}
+	for _, s := range Switches() {
+		legacy[s.Family] = s.Legacy
+	}
+	for _, e := range Entries() {
+		for _, f := range e.Families {
+			if sw, ok := legacy[f]; ok && len(e.Legacy) > 0 && !slices.Contains(sw, e.Legacy[0]) {
+				t.Errorf("%s acts for %s, but its switch's legacy %v omits %s", e.ID, f, sw, e.Legacy[0])
+			}
+		}
 	}
 }

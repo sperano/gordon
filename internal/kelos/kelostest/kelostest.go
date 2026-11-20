@@ -163,7 +163,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(rest, "/") && r.Method == http.MethodGet:
 		s.get(w, strings.TrimPrefix(rest, "/"))
 	case strings.HasPrefix(rest, "/") && r.Method == http.MethodDelete:
-		s.remove(w, strings.TrimPrefix(rest, "/"))
+		s.remove(w, r, strings.TrimPrefix(rest, "/"))
 	default:
 		writeStatus(w, http.StatusMethodNotAllowed, "MethodNotAllowed", r.Method)
 	}
@@ -256,23 +256,50 @@ func reasonFor(code int) string {
 	return "InternalError"
 }
 
-// remove answers a DELETE as the API server does: the deleted object's
-// Status, or NotFound.
-func (s *Server) remove(w http.ResponseWriter, name string) {
+// remove answers a DELETE as the API server does: a Success Status, or
+// NotFound, or a Conflict when the body's preconditions.uid is not the
+// stored Task's.
+func (s *Server) remove(w http.ResponseWriter, r *http.Request, name string) {
+	var opts struct {
+		Preconditions struct {
+			UID string `json:"uid"`
+		} `json:"preconditions"`
+	}
+	if body, err := io.ReadAll(r.Body); err != nil || len(body) > 0 && json.Unmarshal(body, &opts) != nil {
+		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid DeleteOptions")
+		return
+	}
 	s.mu.Lock()
-	_, ok := s.tasks[name]
-	if ok {
+	raw, ok := s.tasks[name]
+	var stored kelos.Task
+	_ = json.Unmarshal(raw, &stored) //nolint:errcheck // stored by store()
+	uid := opts.Preconditions.UID
+	conflict := ok && uid != "" && uid != stored.Metadata.UID
+	if ok && !conflict {
 		delete(s.tasks, name)
 		s.order = slices.DeleteFunc(s.order, func(n string) bool { return n == name })
 		s.deletes = append(s.deletes, name)
 	}
 	s.mu.Unlock()
-	if !ok {
+	switch {
+	case !ok:
 		writeStatus(w, http.StatusNotFound, kelos.ReasonNotFound, "tasks.kelos.dev \""+name+"\" not found")
-		return
+	case conflict:
+		writeStatus(w, http.StatusConflict, ReasonConflict, "Precondition failed: UID in precondition: "+uid+
+			", UID in object meta: "+stored.Metadata.UID)
+	default:
+		writeJSONStatus(w, http.StatusOK, statusSuccess, "", "deleted")
 	}
-	writeStatus(w, http.StatusOK, "", "deleted")
 }
+
+// ReasonConflict is the Status reason of a refused delete precondition.
+const ReasonConflict = "Conflict"
+
+// Status values of a Kubernetes Status.
+const (
+	statusSuccess = "Success"
+	statusFailure = "Failure"
+)
 
 // Deletes lists the Tasks deleted through the API, in order.
 func (s *Server) Deletes() []string {
@@ -369,9 +396,10 @@ type requirement struct {
 // included: as in the API server, a Task must meet them all.
 type selector []requirement
 
-// parseSelector reads equality selectors (k=v,k2=v2), all the client
-// uses; any other syntax (k!=v, k==v, k in (...), a bare k) is an
-// error, so a test cannot pass on a selector the fake misread.
+// parseSelector reads equality selectors (k=v,k2=v2) and absence
+// selectors (!k), all the client sends (the drag-cancel's listing uses
+// !k); any other syntax (k!=v, k==v, k in (...), a bare k) is an error,
+// so a test cannot pass on a selector the fake misread.
 func parseSelector(s string) (selector, error) {
 	var out selector
 	if s == "" {
@@ -401,11 +429,16 @@ func (s selector) matches(labels map[string]string) bool {
 	return true
 }
 
+// writeStatus answers a failure Status.
 func writeStatus(w http.ResponseWriter, code int, reason, msg string) {
+	writeJSONStatus(w, code, statusFailure, reason, msg)
+}
+
+func writeJSONStatus(w http.ResponseWriter, code int, status, reason, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // test server
-		"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": reason, "message": msg, "code": code,
+		"kind": "Status", "apiVersion": "v1", "status": status, "reason": reason, "message": msg, "code": code,
 	})
 }
 

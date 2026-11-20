@@ -150,7 +150,7 @@ func (e *Executor) createLocked(ctx context.Context, r store.SubmitRun) error {
 	switch {
 	case now.Stopped():
 		e.Log.Info("run stopped before its Task was created", "task", r.Name)
-		return nil
+		return worker.Cancelled(store.RunStopped)
 	case now.Submitted():
 		e.Log.Info("run already submitted by another submitter", "task", r.Name)
 		return nil

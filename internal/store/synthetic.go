@@ -45,14 +45,17 @@ type synthData struct {
 }
 
 // TaskUpdate is a synthetic task.updated: the router re-reads the task.
-func TaskUpdate(task, project int64, s event.Synthetic) Delivery {
+// It fails on ids the router would refuse (a task id that is not
+// positive), which come from Vikunja's data.
+func TaskUpdate(task, project int64, s event.Synthetic) (Delivery, error) {
 	return synthetic(SyntheticKind(s), "task.updated", synthData{Task: synthTask{task, project}, Gordon: &s})
 }
 
 // CommentCreated is a synthetic task.comment.created for an owner request
 // whose webhook never arrived; its author is the comment's, as Vikunja's
-// comment listing reports it.
-func CommentCreated(task, project int64, c event.TaskComment, s event.Synthetic) Delivery {
+// comment listing reports it. It fails as TaskUpdate does, and on a
+// comment id that is not positive.
+func CommentCreated(task, project int64, c event.TaskComment, s event.Synthetic) (Delivery, error) {
 	return synthetic(SyntheticKind(s), "task.comment.created", synthData{Task: synthTask{task, project},
 		Comment: &synthComment{c.ID, c.Body}, Doer: &synthUser{c.Author}, Gordon: &s, Redispatch: SyntheticReconcile})
 }
@@ -66,21 +69,22 @@ func SyntheticKind(s event.Synthetic) string {
 }
 
 // synthetic parses the body it builds, so its keys are the router's.
-func synthetic(kind, name string, data synthData) Delivery {
+func synthetic(kind, name string, data synthData) (Delivery, error) {
 	body, err := json.Marshal(map[string]any{"event_name": name, "data": data})
 	if err != nil {
 		panic(err) // plain structs always marshal
 	}
 	ev, err := event.ParseVikunja(body)
 	if err != nil {
-		panic(fmt.Sprintf("synthetic delivery does not parse: %v", err))
+		return Delivery{}, fmt.Errorf("synthetic %s: %w", name, err)
 	}
 	return Delivery{Source: event.SourceVikunja, DeliveryKey: ev.DeliveryKey, RequestKey: ev.RequestKey,
-		Kind: ev.Kind, Scope: ev.Scope(), Headers: map[string]string{SyntheticHeader: kind}, Body: body}
+		Kind: ev.Kind, Scope: ev.Scope(), Headers: map[string]string{SyntheticHeader: kind}, Body: body}, nil
 }
 
 // Enqueue stores synthetic deliveries, each unless its key is stored
-// already; it returns how many it stored.
+// already; it returns how many it stored, none when it fails (the
+// transaction rolled back).
 func (s *Store) Enqueue(ctx context.Context, ds []Delivery) (int, error) {
 	n := 0
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -88,7 +92,10 @@ func (s *Store) Enqueue(ctx context.Context, ds []Delivery) (int, error) {
 		n, err = enqueue(ctx, tx, ds)
 		return err
 	})
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func enqueue(ctx context.Context, tx pgx.Tx, ds []Delivery) (int, error) {
@@ -106,11 +113,16 @@ func enqueue(ctx context.Context, tx pgx.Tx, ds []Delivery) (int, error) {
 }
 
 // requeues are the synthetic deliveries a decision asks for, each naming
-// the delivery that asked.
+// the delivery that asked. A requeue of a task id the router would refuse
+// (Vikunja's relation data) is skipped: retrying the decision cannot fix
+// it.
 func requeues(dec route.Decision) []Delivery {
 	out := make([]Delivery, 0, len(dec.Requeue))
 	for _, q := range dec.Requeue {
-		out = append(out, TaskUpdate(q.TaskID, q.ProjectID, event.Synthetic{Requeue: dec.DeliveryKey, Depth: q.Depth}))
+		d, err := TaskUpdate(q.TaskID, q.ProjectID, event.Synthetic{Requeue: dec.DeliveryKey, Depth: q.Depth})
+		if err == nil {
+			out = append(out, d)
+		}
 	}
 	return out
 }

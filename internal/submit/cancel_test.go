@@ -11,6 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
+	"github.com/sperano/gordon/internal/worker"
 )
 
 func agentTask(name, task, role, phase string) kelos.Task {
@@ -41,9 +42,11 @@ func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 	for _, tk := range []kelos.Task{
 		agentTask("vikunja-gordon-claude-opus-7", "7", "", kelos.PhaseRunning),
 		agentTask("vikunja-gordon-claude-opus-7-retry1", "7", "", kelos.PhasePending),
-		agentTask("vikunja-discuss-gordon-gpt-sol-7", "7", "", kelos.PhaseSucceeded),
+		agentTask("vikunja-discuss-gordon-gpt-sol-7", "7", "", kelos.PhaseRunning),
+		agentTask("vikunja-discuss-gordon-claude-opus-7", "7", "", kelos.PhaseSucceeded),
 		agentTask("vikunja-fu-gordon-7-c1", "7", "task-followup", kelos.PhaseRunning),
-		agentTask("vikunja-fu-gordon-7-c2", "7", "", kelos.PhaseRunning),
+		// No role label and named for the task: only the name guard skips it.
+		agentTask("vikunja-fu-gordon-7", "7", "", kelos.PhaseRunning),
 		agentTask("vikunja-gordon-claude-opus-17", "17", "", kelos.PhaseRunning),
 	} {
 		e.kelos.Put(tk)
@@ -56,15 +59,46 @@ func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 	if err := c.Execute(ctx, a); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"vikunja-gordon-claude-opus-7", "vikunja-gordon-claude-opus-7-retry1"}
+	want := []string{"vikunja-discuss-gordon-gpt-sol-7", "vikunja-gordon-claude-opus-7", "vikunja-gordon-claude-opus-7-retry1"}
 	if got := e.kelos.Deletes(); !slices.Equal(got, want) {
 		t.Fatalf("deleted %v, want %v", got, want)
 	}
 	if applied, err := c.Recover(ctx, a); err != nil || !applied {
 		t.Fatalf("Recover after = %v, %v", applied, err)
 	}
-	if err := c.Execute(ctx, cancelOf("7")); err != nil || len(e.kelos.Deletes()) != 2 {
+	if err := c.Execute(ctx, cancelOf("7")); err != nil || len(e.kelos.Deletes()) != len(want) {
 		t.Fatalf("a second cancellation: %v, deletes %v", err, e.kelos.Deletes())
+	}
+}
+
+// recreateOnList is the Kelos API with a legacy spawner recreating a
+// listed Task under its name right after the list.
+type recreateOnList struct {
+	Deleter
+	srv  interface{ Put(kelos.Task) }
+	task kelos.Task
+}
+
+func (r recreateOnList) List(ctx context.Context, selector string) ([]kelos.Task, error) {
+	tasks, err := r.Deleter.List(ctx, selector)
+	r.srv.Put(r.task) // a new uid under the same name
+	return tasks, err
+}
+
+// TestCancelNeverDeletesATaskRecreatedSinceTheList: the delete is
+// preconditioned on the listed uid, so the newer Task stays and the
+// cancellation is retried (not dead-lettered) to list it again.
+func TestCancelNeverDeletesATaskRecreatedSinceTheList(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	tk := agentTask("vikunja-gordon-claude-opus-7", "7", "", kelos.PhaseRunning)
+	e.kelos.Put(tk)
+	c := &Canceller{Store: e.store, Kelos: recreateOnList{Deleter: e.api, srv: e.kelos, task: tk}}
+	err := c.Execute(ctx, cancelOf("7"))
+	if err == nil || worker.IsPermanent(err) {
+		t.Fatalf("Execute = %v, want a retried Conflict", err)
+	}
+	if got := e.kelos.Deletes(); len(got) != 0 {
+		t.Fatalf("deleted %v, a Task the list never saw", got)
 	}
 }
 
@@ -105,19 +139,21 @@ func (c cancelOnAdmission) WithAdmission(ctx context.Context, fn func(context.Co
 
 // TestRunCancelledDuringAdmissionIsNotCreated: the submission reads its
 // run again under the admission lock, so a cancellation after its first
-// read creates nothing.
+// read creates nothing, and the submission is recorded cancelled, as one
+// cancelled before it was claimed.
 func TestRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
 	e := newEnv(t, false, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.exec.Runs = cancelOnAdmission{Store: e.store, name: name}
-	if err := e.exec.Execute(ctx, action.New(action.SubmitTask, action.KelosTask("kelos-agents", name), "")); err != nil {
-		t.Fatal(err)
-	}
+	e.perform(t)
 	if creates := e.kelos.Creates(); len(creates) != 0 {
 		t.Fatalf("created %d Tasks after the cancellation", len(creates))
 	}
 	if !strings.Contains(e.logs.String(), "run stopped before its Task was created") {
 		t.Fatalf("the in-lock re-read did not stop it: %s", e.logs.String())
+	}
+	if st, _, msg := e.action(t, name); st != store.ActionDone || msg != "cancelled: run stopped" {
+		t.Fatalf("submission %s %q, want done, cancelled: run stopped", st, msg)
 	}
 }
 
@@ -128,8 +164,9 @@ func TestUncheckedRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
 	name := e.implement(t, implementID, "claude-opus")
 	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}'`)
 	e.exec.Runs = cancelOnAdmission{Store: e.store, name: name}
-	if err := e.exec.Execute(ctx, action.New(action.SubmitTask, action.KelosTask("kelos-agents", name), "")); err != nil {
-		t.Fatal(err)
+	err := e.exec.Execute(ctx, action.New(action.SubmitTask, action.KelosTask("kelos-agents", name), ""))
+	if !worker.IsCancelled(err) {
+		t.Fatalf("Execute = %v, want cancelled", err)
 	}
 	if creates := e.kelos.Creates(); len(creates) != 0 {
 		t.Fatalf("created %d Tasks after the cancellation", len(creates))

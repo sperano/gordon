@@ -74,8 +74,9 @@ type Action struct {
 	After string `json:"after,omitempty"`
 }
 
-// Then returns a with After set to the key of first.
-func (a Action) Then(first Action) Action {
+// WaitFor returns a waiting for first: After set to first's key, so
+// a.WaitFor(first) runs a once first is done.
+func (a Action) WaitFor(first Action) Action {
 	a.After = first.Key
 	return a
 }

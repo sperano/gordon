@@ -73,19 +73,23 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	}
 }
 
+// TestRunSubmittedFinishedTask: a Task found already finished is left to
+// the observer, which sees it finish (and tells its hook) on its next pass.
 func TestRunSubmittedFinishedTask(t *testing.T) {
-	s, dbURL := storetest.Open(t)
+	s, _ := storetest.Open(t)
 	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
-	if err := s.RunSubmitted(ctx, runName, id, "u", kelos.PhaseSucceeded); err != nil {
+	if err := s.RunSubmitted(ctx, runName, id, "u", kelos.PhaseFailed); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	storetest.QueryRow(t, dbURL, `SELECT state FROM runs WHERE name = $1`, []any{runName}, &state)
-	if state != "finished" {
-		t.Fatalf("run found already succeeded is %s, want finished", state)
+	if r, err := s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() || r.Stopped() {
+		t.Fatalf("a recovered finished run: %+v (%v), want submitted, not stopped", r, err)
 	}
-	if r, err := s.RunToSubmit(ctx, runName); err != nil || !r.Stopped() {
-		t.Fatalf("a finished run: Stopped() = false (%+v, %v)", r, err)
+	runs, err := s.ObservedRuns(ctx, 10)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("ObservedRuns = %+v, %v", runs, err)
+	}
+	if r := runs[0]; r.State != "active" || !r.Exists || r.Phase != "" {
+		t.Fatalf("observed %+v, want active, present, no phase yet", r)
 	}
 }
 
@@ -177,7 +181,7 @@ func TestRunSubmittedAfterTheObserver(t *testing.T) {
 	if err := s.ObserveRun(ctx, runName, id, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RunSubmitted(ctx, runName, id, "uid-2", kelos.PhaseRunning); err != nil {
+	if err := s.RunSubmitted(ctx, runName, id, "uid-2", kelos.PhaseSucceeded); err != nil {
 		t.Fatal(err)
 	}
 	// A run seen gone keeps its last observed phase (ObserveRun).

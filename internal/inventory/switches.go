@@ -47,7 +47,7 @@ func Switches() []Switch {
 		{run.VikunjaDragCancel, chartPath("scripts/drag_cancel.py"),
 			"the enricher's drag-cancel hook (`BACKLOG_BUCKET`); needs Gordon to own `vikunja-implement` and `vikunja-discuss` of the same projects (the ownership table refuses otherwise)",
 			[]string{needWriter, needDelete}},
-		{run.VikunjaDoneCleanup, chartPath("scripts/done_unlabel.py", "scripts/action_needed.py"),
+		{run.VikunjaDoneCleanup, chartPath("scripts/done_unlabel.py", "scripts/action_needed.py", "scripts/report_failures.py"),
 			"the enricher's done-unlabel and action-needed hooks (`IN_PROGRESS_LABEL`, `ACTION_NEEDED_LABEL`) and the failure reporter's done sweeps",
 			[]string{needWriter, needReconcile}},
 		{run.VikunjaChain, chartPath("scripts/subtask_chain.py", "templates/subtask-chain-reconcile.yaml"),
