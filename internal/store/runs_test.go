@@ -1,9 +1,13 @@
 package store_test
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
@@ -187,6 +191,37 @@ func TestObservedRunsRotateUnchangedRuns(t *testing.T) {
 	}
 	if got := observedNames(t, s, 2); !slices.Equal(got, []string{"run-a", runName}) {
 		t.Fatalf("second batch %v, want the run not yet observed, then the oldest observed", got)
+	}
+}
+
+// lockWaitGuard ends a read that waits on a row lock, so a missing
+// SKIP LOCKED fails the test instead of hanging it.
+const lockWaitGuard = 5 * time.Second
+
+// TestObservedRunsSkipsRunsAnotherObserverHolds: a run locked by a
+// concurrent observer's batch is left out of this batch, not waited on.
+func TestObservedRunsSkipsRunsAnotherObserverHolds(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
+	copyRun(t, dbURL, "run-a", "active")
+	conn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT name FROM runs WHERE name = 'run-a' FOR UPDATE`); err != nil {
+		t.Fatal(err)
+	}
+	guarded, cancel := context.WithTimeout(ctx, lockWaitGuard)
+	defer cancel()
+	runs, err := s.ObservedRuns(guarded, 10)
+	if err != nil || len(runs) != 1 || runs[0].Name != runName {
+		t.Fatalf("ObservedRuns = %+v, %v; want only the run nobody holds", runs, err)
 	}
 }
 

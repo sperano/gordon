@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -341,8 +342,32 @@ func TestVikunjaCommentsPageCap(t *testing.T) {
 		fmt.Fprint(w, `[{"id":1}]`) // a server that ignores page
 	})
 	_, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
-	if ClassOf(err) != Invalid || !strings.Contains(err.Error(), "more than 20 pages") || len(o.results) != maxCommentPages {
-		t.Fatalf("Comments = %v after %d requests, want invalid after %d pages", err, len(o.results), maxCommentPages)
+	if ClassOf(err) != Invalid || !strings.Contains(err.Error(), "more than 20 pages") || len(o.results) != maxCommentPages+1 {
+		t.Fatalf("Comments = %v after %d requests, want invalid after %d pages", err, len(o.results), maxCommentPages+1)
+	}
+}
+
+// TestVikunjaCommentsExactlyAtPageCap: maxCommentPages full pages and
+// the empty page after them are read, not refused.
+func TestVikunjaCommentsExactlyAtPageCap(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page > maxCommentPages {
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		fmt.Fprintf(w, `[{"id":%d}]`, page)
+	})
+	got, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
+	var want []string
+	for page := 1; page <= maxCommentPages; page++ {
+		want = append(want, fmt.Sprintf(`{"id":%d}`, page))
+	}
+	if err != nil || string(got) != "["+strings.Join(want, ",")+"]" {
+		t.Fatalf("Comments = %s, %v; want the %d pages' comments", got, err, maxCommentPages)
+	}
+	if len(o.results) != maxCommentPages+1 {
+		t.Fatalf("%d requests, want %d", len(o.results), maxCommentPages+1)
 	}
 }
 

@@ -61,10 +61,26 @@ type volume struct {
 	CSI *struct {
 		NodePublishSecretRef *secretRef `json:"nodePublishSecretRef"`
 	} `json:"csi"`
+	// The in-tree volume types that take a Secret reference.
+	CephFS     *withSecretRef `json:"cephfs"`
+	RBD        *withSecretRef `json:"rbd"`
+	ISCSI      *withSecretRef `json:"iscsi"`
+	Cinder     *withSecretRef `json:"cinder"`
+	FlexVolume *withSecretRef `json:"flexVolume"`
+	ScaleIO    *withSecretRef `json:"scaleIO"`
+	StorageOS  *withSecretRef `json:"storageos"`
+	AzureFile  *struct {
+		SecretName string `json:"secretName"`
+	} `json:"azureFile"`
+}
+
+// withSecretRef is an in-tree volume source's Secret reference.
+type withSecretRef struct {
+	SecretRef *secretRef `json:"secretRef"`
 }
 
 // referencedSecrets lists the Secrets a Task's worker references: its
-// credentials, env, Secret, projected and CSI volumes, and init
+// credentials, env, Secret, projected, CSI and in-tree volumes, and init
 // containers' env and envFrom. An entry that is not an object of its kind
 // is refused: its references could not be checked.
 func referencedSecrets(t kelos.Task) ([]string, error) {
@@ -122,6 +138,14 @@ func volumeSecrets(v volume) []string {
 	}
 	if v.CSI != nil && v.CSI.NodePublishSecretRef != nil {
 		out = append(out, v.CSI.NodePublishSecretRef.Name)
+	}
+	for _, src := range []*withSecretRef{v.CephFS, v.RBD, v.ISCSI, v.Cinder, v.FlexVolume, v.ScaleIO, v.StorageOS} {
+		if src != nil && src.SecretRef != nil {
+			out = append(out, src.SecretRef.Name)
+		}
+	}
+	if v.AzureFile != nil {
+		out = append(out, v.AzureFile.SecretName)
 	}
 	return out
 }

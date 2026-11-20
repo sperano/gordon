@@ -100,9 +100,6 @@ func TestNoCommentReadForGitHubRuns(t *testing.T) {
 	}
 }
 
-// TestUnbuildableTaskRejectsTheFamily: a Task the configuration cannot
-// build (or admission would refuse) is an explicit reject naming why,
-// with no run and no write left, the 👀 included.
 // unbuildable is a dispatch config edit and the reject it makes.
 type unbuildable struct {
 	edit   func(*dispatch.Config)
@@ -119,6 +116,9 @@ func withReviewPod(edit func(*dispatch.Pod), reason string) unbuildable {
 	}, prOpened(), reason}
 }
 
+// TestUnbuildableTaskRejectsTheFamily: a Task the configuration cannot
+// build (or admission would refuse) is an explicit reject naming why,
+// with no run and no write left, the 👀 included.
 func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
 	cases := map[string]unbuildable{
 		"no template": {func(c *dispatch.Config) { delete(c.Families, run.VikunjaFollowUp) },
@@ -170,6 +170,18 @@ func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
 		"env entry not an object": withReviewPod(func(p *dispatch.Pod) {
 			p.Env = append(p.Env, json.RawMessage(`"FOO=bar"`))
 		}, "task-spec-pod-invalid"),
+		"volume not an object": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`"vault-root"`))
+		}, "task-spec-pod-invalid"),
+		"init container not an object": withReviewPod(func(p *dispatch.Pod) {
+			p.ExtraInitContainers = append(p.ExtraInitContainers, json.RawMessage(`"busybox"`))
+		}, "task-spec-pod-invalid"),
+		"in-tree volume secret not granted": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","rbd":{"image":"i","secretRef":{"name":"vault-root"}}}`))
+		}, "task-spec-secret-not-granted"),
+		"azure file secret not granted": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","azureFile":{"shareName":"s","secretName":"vault-root"}}`))
+		}, "task-spec-secret-not-granted"),
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

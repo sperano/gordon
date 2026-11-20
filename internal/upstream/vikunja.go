@@ -64,7 +64,8 @@ func (v Vikunja) Task(ctx context.Context, id int64) (event.Task, error) {
 
 // maxCommentPages bounds the comment pages one read follows: 1000
 // comments at Vikunja's 50 a page, far past what a prompt quotes
-// (dispatch.DefaultCommentsMaxBytes).
+// (dispatch.DefaultCommentsMaxBytes). The empty page after the last
+// one is still read, so exactly maxCommentPages full pages fit.
 const maxCommentPages = 20
 
 // emptyPageBytes is the room a page read keeps past the comment budget,
@@ -87,7 +88,7 @@ func (v Vikunja) Comments(ctx context.Context, id int64, maxBytes int) (json.Raw
 	var first json.RawMessage
 	var all []json.RawMessage
 	used := 0
-	for page := 1; page <= maxCommentPages; page++ {
+	for page := 1; page <= maxCommentPages+1; page++ {
 		raw, items, err := v.commentsPage(ctx, id, page, maxBytes-used+emptyPageBytes)
 		if err != nil {
 			return nil, err
@@ -100,6 +101,9 @@ func (v Vikunja) Comments(ctx context.Context, id int64, maxBytes int) (json.Raw
 				return first, nil
 			}
 			return json.Marshal(all)
+		}
+		if page > maxCommentPages {
+			break
 		}
 		if used += len(raw); used > maxBytes {
 			return nil, &Error{Provider: ProviderVikunja, Class: Invalid,

@@ -256,7 +256,7 @@ func TestWorkerKelosDefaults(t *testing.T) {
 	}
 }
 
-func TestExecuteWithInvalidDispatchConfigNamesOnlyTheFile(t *testing.T) {
+func TestLoadWorkerWithInvalidDispatchConfigNamesOnlyTheFile(t *testing.T) {
 	env := workerEnv(t)
 	env["GORDON_SHADOW"] = "false"
 	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"namespace":"default"}`)
