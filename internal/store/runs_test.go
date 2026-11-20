@@ -11,6 +11,7 @@ import (
 
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
@@ -46,7 +47,8 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	}
 	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("do it"))
 	r, err := s.RunToSubmit(ctx, runName)
-	if err != nil || r.InboxID != id || r.Variant != "claude-opus" || r.State != "submitting" || r.Submitted() ||
+	if err != nil || r.InboxID != id || r.Variant != "claude-opus" || r.Family != run.VikunjaFollowUp ||
+		r.State != "submitting" || r.Submitted() || r.Stopped() ||
 		r.Task == nil || r.Task.Spec.Prompt != "do it" || r.Task.Metadata.Labels["a"] != "b" {
 		t.Fatalf("RunToSubmit = %+v, %v", r, err)
 	}
@@ -66,8 +68,8 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	if state != "active" || uid != "uid-1" || phase != kelos.PhasePending || !exists {
 		t.Fatalf("submitted run state %s uid %s phase %s exists %v", state, uid, phase, exists)
 	}
-	if r, err = s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() {
-		t.Fatal("a created run still reads as unsubmitted")
+	if r, err = s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() || r.Stopped() {
+		t.Fatal("a created run reads as unsubmitted or stopped")
 	}
 }
 
@@ -81,6 +83,9 @@ func TestRunSubmittedFinishedTask(t *testing.T) {
 	storetest.QueryRow(t, dbURL, `SELECT state FROM runs WHERE name = $1`, []any{runName}, &state)
 	if state != "finished" {
 		t.Fatalf("run found already succeeded is %s, want finished", state)
+	}
+	if r, err := s.RunToSubmit(ctx, runName); err != nil || !r.Stopped() {
+		t.Fatalf("a finished run: Stopped() = false (%+v, %v)", r, err)
 	}
 }
 

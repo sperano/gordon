@@ -97,15 +97,26 @@ func (c *Canceller) Execute(ctx context.Context, a action.Action) error {
 	})
 }
 
-// Recover: applied once no live agent Task is left; the runs' store
-// cancellation is idempotent and repeated by Execute anyway.
+// Recover finishes the runs the action names, as Execute does, then
+// reports the cancel applied once no live agent Task is left. Both hold
+// the admission lock: a first attempt that failed before its store
+// cancellation committed would otherwise be recovered with its queued
+// submission still to create a Task.
 func (c *Canceller) Recover(ctx context.Context, a action.Action) (bool, error) {
 	task, err := c.task(a)
 	if err != nil {
 		return false, err
 	}
-	names, err := c.live(ctx, task)
-	return err == nil && len(names) == 0, err
+	applied := false
+	err = c.Store.WithAdmission(ctx, func(ctx context.Context) error {
+		if _, err := c.Store.CancelRuns(ctx, strings.Split(a.Detail, ",")); err != nil {
+			return err
+		}
+		names, err := c.live(ctx, task)
+		applied = err == nil && len(names) == 0
+		return err
+	})
+	return applied, err
 }
 
 // refusedPermanent dead-letters what the Kelos API refuses (RBAC): a

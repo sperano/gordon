@@ -31,10 +31,25 @@ func TestUncheckedSubmissionTakesNoAdmission(t *testing.T) {
 	runs := &countingRuns{Runs: e.store}
 	e.exec.Runs = runs
 	name := e.implement(t, implementID, "claude-opus")
-	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}'`)
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}', family = 'vikunja-followup'`)
 	e.perform(t)
 	if st, _, _ := e.action(t, name); st != store.ActionDone || runs.admissions != 0 || len(e.kelos.Creates()) != 1 {
 		t.Fatalf("no limit, no branch: %s with %d admissions, %d creates; want created unlocked", st,
+			runs.admissions, len(e.kelos.Creates()))
+	}
+}
+
+// TestUncheckedAgentRunTakesTheAdmission: an implementation run with no
+// limit and no branch is still created under the lock a drag-cancel holds.
+func TestUncheckedAgentRunTakesTheAdmission(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	runs := &countingRuns{Runs: e.store}
+	e.exec.Runs = runs
+	name := e.implement(t, implementID, "claude-opus")
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}'`)
+	e.perform(t)
+	if st, _, _ := e.action(t, name); st != store.ActionDone || runs.admissions != 1 || len(e.kelos.Creates()) != 1 {
+		t.Fatalf("an unchecked implementation: %s with %d admissions, %d creates; want one of each", st,
 			runs.admissions, len(e.kelos.Creates()))
 	}
 }

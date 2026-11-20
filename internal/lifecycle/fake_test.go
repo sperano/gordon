@@ -126,11 +126,12 @@ func (f *fakeVikunja) updateTask(w http.ResponseWriter, r *http.Request, ids []i
 	if t == nil {
 		return
 	}
-	var body map[string]any
+	// Vikunja's update replaces the task with the body: a field left out
+	// is cleared.
+	var body Task
 	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck // test server
-	if d, ok := body["done"].(bool); ok {
-		t.Done = d
-	}
+	body.ID = t.ID
+	*t = body
 	reply(w, t)
 }
 

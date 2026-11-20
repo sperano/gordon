@@ -99,7 +99,10 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	if err != nil {
 		return err
 	}
-	proc := processor(cfg, s, m, log, projects)
+	// One Vikunja reader for the router and the reconciliation, so the
+	// Vikunja upstream limit bounds every read of this process.
+	vikunja := vikunjaReader(cfg, m)
+	proc := processor(cfg, s, m, log, projects, vikunja)
 	g := newGroup(ctx)
 	if err := start(g, log, ServerAdmin, cfg.AdminAddr, adminServer(admin.Handler()), cfg.ShutdownGrace, onListen); err != nil {
 		g.cancel()
@@ -127,7 +130,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		worker.Every(ctx, cfg.ReconcileInterval, func(ctx context.Context) { rec.Once(ctx) }) //nolint:errcheck // logged and counted
 		return nil
 	})
-	startVikunjaReconcile(g, cfg, s, m, log)
+	startVikunjaReconcile(g, cfg, s, vikunja, m, log)
 	log.Info("worker started", "config", cfg.String())
 	return g.Wait()
 }
@@ -147,10 +150,10 @@ func vikunjaReader(cfg config.Worker, m *metrics.Metrics) upstream.Vikunja {
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: upstreamObserver(m)}}
 }
 
-func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter) *worker.Processor {
+func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter,
+	vikunja upstream.Vikunja) *worker.Processor {
 	hc := &http.Client{Timeout: cfg.UpstreamTimeout}
 	observe := upstreamObserver(m)
-	vikunja := vikunjaReader(cfg, m)
 	github := &upstream.Client{Provider: upstream.ProviderGitHub, BaseURL: cfg.GitHubAPIURL,
 		Authorization: "Bearer " + cfg.GitHubToken, Headers: upstream.GitHubHeaders, HTTP: hc,
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: observe}

@@ -187,10 +187,12 @@ buckets and labels (`backlog_bucket`, `agent_error_label`,
 ### Ownership switches
 
 One rule per (project, family); `go run ./cmd/gordon-inventory` prints
-this table. When a rule makes Gordon the owner (Gordon 07), the same
-Hollingsworth change turns off, for the rule's projects, what the third
-column names; the table refuses `vikunja-drag-cancel` where Gordon does
-not own both agent families.
+the full table, with a `Legacy` column naming the files acting for each
+family today; below is it without that column. When a rule makes Gordon
+the owner (Gordon 07), the same Hollingsworth change turns off, for the
+rule's projects, what the `Off when Gordon owns it` column names; the
+rollout table refuses `vikunja-drag-cancel` where Gordon does not own
+both agent families.
 
 | Family | Off when Gordon owns it | Gordon needs |
 |---|---|---|

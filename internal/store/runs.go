@@ -21,6 +21,7 @@ type SubmitRun struct {
 	Name    string
 	InboxID int64
 	Variant string
+	Family  run.Family
 	State   string
 	Task    *kelos.Task
 }
@@ -30,11 +31,15 @@ type SubmitRun struct {
 // Either way nothing is left to submit.
 func (r SubmitRun) Submitted() bool { return r.State != runSubmitting }
 
+// Stopped reports a run finished before its Task was created by this
+// submission (a drag-cancel, or the observer finishing it).
+func (r SubmitRun) Stopped() bool { return r.State == runFinished }
+
 // RunToSubmit reads a run by Task name; ErrNoRun when there is none.
 func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error) {
 	r := SubmitRun{Name: name}
-	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), state, task
-		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.State, &r.Task)
+	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), family, state, task
+		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.Family, &r.State, &r.Task)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SubmitRun{}, ErrNoRun
 	}

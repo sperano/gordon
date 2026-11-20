@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
@@ -92,8 +93,17 @@ func (e *Executor) noticeApplied(ctx context.Context, a action.Action) (bool, er
 	}), nil
 }
 
-// postNotice posts the notice with its action marker. A discuss
-// follow-up's start notice replaces the fallback line its request got.
+// noticeLockTimeout bounds the check and the post held under a notice's
+// target lock, so a slow Vikunja cannot keep the lock's pool connection
+// idle in its transaction for longer. A post cut short is ambiguous and
+// recovered by its marker.
+const noticeLockTimeout = time.Minute
+
+// postNotice renders the notice, then, holding the target lock, checks
+// again that it is missing and posts it with its action marker. The
+// render (the run's row, the subtasks of a done chain) happens before the
+// lock: the lock's transaction holds a pool connection, and a read needing
+// a second one while every connection is so held would wait for ever.
 func (e *Executor) postNotice(ctx context.Context, a action.Action) error {
 	id, _ := taskTarget(a)
 	text, replace, err := e.render(ctx, a, id)
@@ -101,6 +111,19 @@ func (e *Executor) postNotice(ctx context.Context, a action.Action) error {
 		return err
 	}
 	text += notice.ActionMarker(a.Key)
+	ctx, cancel := context.WithTimeout(ctx, noticeLockTimeout)
+	defer cancel()
+	return e.Lock.WithTargetLock(ctx, string(a.Target), func(ctx context.Context) error {
+		if done, err := e.noticeApplied(ctx, a); err != nil || done {
+			return err
+		}
+		return e.post(ctx, id, text, replace)
+	})
+}
+
+// post adds the comment; a discuss follow-up's start notice replaces the
+// fallback line its request (comment replace) got.
+func (e *Executor) post(ctx context.Context, id int64, text string, replace int64) error {
 	if replace > 0 {
 		cs, err := e.trusted(ctx, id)
 		if err != nil {
@@ -112,7 +135,7 @@ func (e *Executor) postNotice(ctx context.Context, a action.Action) error {
 			return e.W.UpdateComment(ctx, id, c.ID, text)
 		}
 	}
-	_, err = e.W.Comment(ctx, id, text)
+	_, err := e.W.Comment(ctx, id, text)
 	return err
 }
 

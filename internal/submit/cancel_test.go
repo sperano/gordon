@@ -10,6 +10,7 @@ import (
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/store"
+	"github.com/sperano/gordon/internal/store/storetest"
 )
 
 func agentTask(name, task, role, phase string) kelos.Task {
@@ -117,6 +118,75 @@ func TestRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
 	}
 	if !strings.Contains(e.logs.String(), "run stopped before its Task was created") {
 		t.Fatalf("the in-lock re-read did not stop it: %s", e.logs.String())
+	}
+}
+
+// TestUncheckedRunCancelledDuringAdmissionIsNotCreated: an implementation
+// run with no limit and no branch also reads its run again under the lock.
+func TestUncheckedRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	name := e.implement(t, implementID, "claude-opus")
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}'`)
+	e.exec.Runs = cancelOnAdmission{Store: e.store, name: name}
+	if err := e.exec.Execute(ctx, action.New(action.SubmitTask, action.KelosTask("kelos-agents", name), "")); err != nil {
+		t.Fatal(err)
+	}
+	if creates := e.kelos.Creates(); len(creates) != 0 {
+		t.Fatalf("created %d Tasks after the cancellation", len(creates))
+	}
+}
+
+// submitOnAdmission is the store with another submitter creating the
+// run's Task between the submission's first read and its admission lock.
+type submitOnAdmission struct {
+	*store.Store
+	name    string
+	inboxID int64
+}
+
+func (s submitOnAdmission) WithAdmission(ctx context.Context, fn func(context.Context) error) error {
+	if err := s.RunSubmitted(ctx, s.name, s.inboxID, "uid-other", kelos.PhaseRunning); err != nil {
+		return err
+	}
+	return s.Store.WithAdmission(ctx, fn)
+}
+
+// TestRunSubmittedDuringAdmissionIsNotLoggedStopped: a run another
+// submitter created is skipped and logged as already submitted.
+func TestRunSubmittedDuringAdmissionIsNotLoggedStopped(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	name := e.implement(t, implementID, "claude-opus")
+	r, err := e.store.RunToSubmit(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.exec.Runs = submitOnAdmission{Store: e.store, name: name, inboxID: r.InboxID}
+	if err := e.exec.Execute(ctx, action.New(action.SubmitTask, action.KelosTask("kelos-agents", name), "")); err != nil {
+		t.Fatal(err)
+	}
+	logs := e.logs.String()
+	if len(e.kelos.Creates()) != 0 || !strings.Contains(logs, "run already submitted by another submitter") ||
+		strings.Contains(logs, "run stopped before its Task was created") {
+		t.Fatalf("creates %d, logs: %s", len(e.kelos.Creates()), logs)
+	}
+}
+
+// TestRecoverFinishesTheRuns: a retry recovered with no live agent Task
+// still finishes the queued run its first attempt did not, so its
+// submission creates nothing.
+func TestRecoverFinishesTheRuns(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	name := e.implement(t, implementID, "claude-opus")
+	c := &Canceller{Store: e.store, Kelos: e.api}
+	if applied, err := c.Recover(ctx, cancelOf("1624", name)); err != nil || !applied {
+		t.Fatalf("Recover = %v, %v; want applied", applied, err)
+	}
+	if st, _ := e.run(t, name); st != "finished" {
+		t.Fatalf("run %s after Recover, want finished", st)
+	}
+	e.perform(t)
+	if creates := e.kelos.Creates(); len(creates) != 0 {
+		t.Fatalf("created %d Tasks for a recovered cancellation", len(creates))
 	}
 }
 

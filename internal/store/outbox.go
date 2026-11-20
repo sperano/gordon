@@ -39,7 +39,9 @@ type ClaimedAction struct {
 
 // ClaimActions leases up to limit due actions to owner for ttl: pending
 // or ambiguous rows past their backoff, and running rows whose lease
-// expired (a worker died mid-write).
+// expired (a worker died mid-write). A pending row with an after_key also
+// waits until the action it names is done; one finished as cancelled
+// does not count.
 func (s *Store) ClaimActions(ctx context.Context, owner string, limit int, ttl time.Duration) ([]ClaimedAction, error) {
 	rows, err := s.pool.Query(ctx, `WITH due AS (
 			SELECT id, state FROM actions a

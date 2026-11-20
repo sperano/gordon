@@ -60,6 +60,76 @@ func TestAmbiguousNoticeIsRecovered(t *testing.T) {
 	}
 }
 
+// heldLock is a Locker recording whether it is held and whether fn ran
+// under a deadline.
+type heldLock struct {
+	held, bounded bool
+}
+
+func (l *heldLock) WithTargetLock(ctx context.Context, _ string, fn func(context.Context) error) error {
+	_, l.bounded = ctx.Deadline()
+	l.held = true
+	defer func() { l.held = false }()
+	return fn(ctx)
+}
+
+// lockFreeRuns refuses a run read made while the target lock is held.
+type lockFreeRuns struct {
+	runs
+	lock *heldLock
+}
+
+func (r lockFreeRuns) RunInfo(ctx context.Context, name string) (store.RunInfo, error) {
+	if r.lock.held {
+		return store.RunInfo{}, errors.New("run read under the target lock")
+	}
+	return r.runs.RunInfo(ctx, name)
+}
+
+// TestNoticeReadsRunsOutsideTheLock: the start notice reads its run
+// before taking the target lock (whose transaction holds a pool
+// connection), and posts under a deadline.
+func TestNoticeReadsRunsOutsideTheLock(t *testing.T) {
+	f := newFake(t)
+	f.put(Task{ID: 5, ProjectID: 3})
+	lock := &heldLock{}
+	ex := executor(f, nil)
+	ex.Runs, ex.Lock = lockFreeRuns{runs: startRun(), lock: lock}, lock
+	if err := ex.Execute(ctx, action.Notice(action.VikunjaTask(5), notice.Start, runName)); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.comments[5]) != 1 || !lock.bounded {
+		t.Fatalf("%d comments, lock bounded %v; want one notice posted under a deadline", len(f.comments[5]), lock.bounded)
+	}
+}
+
+// postOnLock is a Locker that posts the notice's twin (another worker
+// winning the race) before running fn.
+type postOnLock struct {
+	f    *fakeVikunja
+	body string
+}
+
+func (l postOnLock) WithTargetLock(ctx context.Context, _ string, fn func(context.Context) error) error {
+	l.f.mu.Lock()
+	l.f.comments[5] = append(l.f.comments[5], Comment{ID: 99, Author: User{Username: gordon}, Comment: l.body})
+	l.f.mu.Unlock()
+	return fn(ctx)
+}
+
+// TestNoticeChecksAgainUnderTheLock: a notice another worker posted
+// between the first check and the lock is not posted twice.
+func TestNoticeChecksAgainUnderTheLock(t *testing.T) {
+	f := newFake(t)
+	f.put(Task{ID: 5, ProjectID: 3})
+	ex := executor(f, startRun())
+	a := action.Notice(action.VikunjaTask(5), notice.Start, runName)
+	ex.Lock = postOnLock{f: f, body: notice.ActionMarker(a.Key)}
+	if err := ex.Execute(ctx, a); err != nil || len(f.comments[5]) != 1 {
+		t.Fatalf("Execute = %v, %d comments, want only the other worker's", err, len(f.comments[5]))
+	}
+}
+
 // TestForgedMarkerDoesNotSuppress: the same marker in the owner's comment
 // is no notice of Gordon's.
 func TestForgedMarkerDoesNotSuppress(t *testing.T) {
@@ -133,6 +203,10 @@ func TestClaimLabelSkipsADraggedCard(t *testing.T) {
 	}
 	if err := ex.Execute(ctx, claim); err != nil || len(f.get(5).Labels) != 1 {
 		t.Fatalf("repeated claim: %v, labels %v", err, labels(f.get(5)))
+	}
+	f.put(Task{ID: 5, ProjectID: 3, Done: true, Buckets: []Bucket{f.buckets[1][1]}})
+	if err := ex.Execute(ctx, claim); err != nil || len(labels(f.get(5))) != 0 {
+		t.Fatalf("claim on a done task in Doing: %v, labels %v", err, labels(f.get(5)))
 	}
 }
 
@@ -245,10 +319,16 @@ func TestReactOnce(t *testing.T) {
 
 func TestMarkDone(t *testing.T) {
 	f := newFake(t)
-	f.put(Task{ID: 5, ProjectID: 3})
+	f.put(Task{ID: 5, ProjectID: 3, Title: "Ship it", Labels: []Label{{ID: 1, Title: "in progress"}}})
 	ex := executor(f, nil)
-	if err := ex.Execute(ctx, action.New(action.MarkDone, action.VikunjaTask(5), "")); err != nil || !f.get(5).Done {
-		t.Fatalf("mark done: %v, done %v", err, f.get(5).Done)
+	if err := ex.Execute(ctx, action.New(action.MarkDone, action.VikunjaTask(5), "")); err != nil {
+		t.Fatal(err)
+	}
+	// The fake replaces the task with the body, as Vikunja does: the
+	// title and labels survive only if MarkDone sent the whole task back.
+	if got := f.get(5); !got.Done || got.Title != "Ship it" || got.ProjectID != 3 ||
+		!slices.Equal(labels(got), []string{"in progress"}) {
+		t.Fatalf("after mark done: %+v, want the task kept with done set", got)
 	}
 }
 

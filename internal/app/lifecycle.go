@@ -76,18 +76,20 @@ func failureHook(cfg config.Worker, s *store.Store) submit.FinishHook {
 }
 
 // vikunjaReconciler is the Vikunja reconciliation, nil when it is off.
-func vikunjaReconciler(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger) *lifecycle.Reconciler {
+func vikunjaReconciler(cfg config.Worker, s *store.Store, vikunja upstream.Vikunja, m *metrics.Metrics,
+	log *slog.Logger) *lifecycle.Reconciler {
 	l := cfg.Lifecycle
 	if l.ReconcileInterval <= 0 {
 		return nil
 	}
-	return &lifecycle.Reconciler{Tasks: vikunjaReader(cfg, m), Inbox: s, Config: cfg.Routing,
+	return &lifecycle.Reconciler{Tasks: vikunja, Inbox: s, Config: cfg.Routing,
 		Lookback: l.Lookback, After: l.RedispatchAfter, Metrics: m, Log: log.With("pass", "vikunja-reconcile")}
 }
 
 // startVikunjaReconcile runs the Vikunja reconciliation in g, when it is on.
-func startVikunjaReconcile(g *group, cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger) {
-	vr := vikunjaReconciler(cfg, s, m, log)
+func startVikunjaReconcile(g *group, cfg config.Worker, s *store.Store, vikunja upstream.Vikunja, m *metrics.Metrics,
+	log *slog.Logger) {
+	vr := vikunjaReconciler(cfg, s, vikunja, m, log)
 	if vr == nil {
 		return
 	}

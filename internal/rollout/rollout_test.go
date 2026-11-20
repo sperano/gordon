@@ -96,6 +96,10 @@ func TestDragCancelNeedsTheAgentFamilies(t *testing.T) {
 		!strings.Contains(err.Error(), "needs vikunja-discuss owned by gordon") {
 		t.Fatalf("drag-cancel without discuss: %v", err)
 	}
+	if err := (Table{Rules: []Rule{drag, discuss}}).Validate(); err == nil ||
+		!strings.Contains(err.Error(), "needs vikunja-implement owned by gordon") {
+		t.Fatalf("drag-cancel without implement: %v", err)
+	}
 	if err := (Table{Rules: []Rule{drag, implement, discuss}}).Validate(); err != nil {
 		t.Fatalf("drag-cancel with both agent families: %v", err)
 	}

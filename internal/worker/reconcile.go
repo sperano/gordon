@@ -24,7 +24,8 @@ type Pass interface {
 
 // Reconciler is the periodic upkeep of the queues: it releases the leases
 // of crashed or stalled workers (a running action becomes ambiguous, to be
-// recovered), refreshes the queue depth and age gauges, drops stored
+// recovered), cancels the pending actions whose prerequisite failed or was
+// cancelled, refreshes the queue depth and age gauges, drops stored
 // bodies and built Tasks past their retention, then runs its Passes. A
 // failed pass does not stop the next one; the run fails if any did.
 type Reconciler struct {

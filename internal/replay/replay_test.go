@@ -17,8 +17,8 @@ const fixtureDir = "testdata"
 const minFixtures = 52
 
 // minWriteFixtures is the committed count of fixtures recording the
-// legacy lifecycle's writes.
-const minWriteFixtures = 18
+// legacy lifecycle's writes (an empty list included): deleting one fails.
+const minWriteFixtures = 19
 
 func load(t *testing.T) []Fixture {
 	t.Helper()

@@ -95,7 +95,7 @@ func (e *Executor) handler(k action.Kind) (handler, bool) {
 	case action.MarkDone:
 		return handler{e.doneApplied, e.markDone}, true
 	case action.PostNotice:
-		return handler{e.noticeApplied, e.postNotice}, true
+		return handler{e.noticeApplied, e.postNotice}, true // checks again under the target lock
 	}
 	return handler{}, false
 }
@@ -105,9 +105,6 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 	h, ok := e.handler(a.Kind)
 	if !ok {
 		return worker.Permanent(fmt.Errorf("no Vikunja writer for %s", a.Kind))
-	}
-	if a.Kind == action.PostNotice {
-		return e.Lock.WithTargetLock(ctx, string(a.Target), func(ctx context.Context) error { return e.once(ctx, h, a) })
 	}
 	return e.once(ctx, h, a)
 }

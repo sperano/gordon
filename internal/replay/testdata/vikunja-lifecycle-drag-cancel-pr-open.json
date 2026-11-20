@@ -1,5 +1,5 @@
 {
-  "description": "A card dragged to To-Do with its PR open stops nothing: the agent finished, the PR is the deliverable.",
+  "description": "A card dragged to To-Do with its PR open stops nothing, not even its still-active run: the open PR is the deliverable.",
   "delivery": {
     "source": "vikunja",
     "body": {
