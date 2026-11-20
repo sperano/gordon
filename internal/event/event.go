@@ -10,6 +10,7 @@
 package event
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -77,6 +78,18 @@ type Event struct {
 	Actor   string
 	Vikunja *Vikunja
 	GitHub  *GitHub
+}
+
+// Scope is the project hint the worker's per-project limit keys on: the
+// Vikunja project or the GitHub repository; "" for neither.
+func (e Event) Scope() string {
+	switch {
+	case e.Vikunja != nil:
+		return fmt.Sprintf("vikunja/project/%d", e.Vikunja.Task.ProjectID)
+	case e.GitHub != nil:
+		return "github/" + e.GitHub.Repository
+	}
+	return ""
 }
 
 // Vikunja is the part of a Vikunja delivery Gordon routes on.
@@ -157,4 +170,17 @@ func contains(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// Parse parses an authenticated delivery of a routed source (Vikunja or
+// GitHub); any other source is ErrUnsupported.
+func Parse(d Delivery) (Event, error) {
+	switch d.Source {
+	case SourceGitHub:
+		return ParseGitHub(d)
+	case SourceVikunja:
+		return ParseVikunja(d.Body)
+	default:
+		return Event{}, fmt.Errorf("%w: source %q", ErrUnsupported, d.Source)
+	}
 }

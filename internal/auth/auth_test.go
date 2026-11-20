@@ -118,3 +118,18 @@ func TestSign(t *testing.T) {
 		t.Errorf("empty key: %v", err)
 	}
 }
+
+func TestMaxBodyBytes(t *testing.T) {
+	cases := map[event.Source]int{
+		event.SourceVikunja: MaxVikunjaBodyBytes, event.SourceGitHub: MaxGitHubBodyBytes,
+		event.SourceWikiComment: MaxDispatchBodyBytes, event.SourceImageBuild: MaxDispatchBodyBytes,
+	}
+	for src, want := range cases {
+		if got, ok := MaxBodyBytes(src); !ok || got != want {
+			t.Errorf("MaxBodyBytes(%s) = %d, %v; want %d", src, got, ok, want)
+		}
+	}
+	if _, ok := MaxBodyBytes("gitlab"); ok {
+		t.Error("MaxBodyBytes(gitlab) known")
+	}
+}

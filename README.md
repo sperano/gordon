@@ -8,10 +8,16 @@ submit ordinary Kelos Tasks, replacing Hollingsworth's webhook glue and its
 project × model × mode TaskSpawner fan-out. Kelos stays the execution
 engine; Sillage keeps usage history and Lucarne run inspection.
 
-This first stage holds the routing contracts only. Nothing here serves
-traffic, and no production routing changes: every family is owned by the
-legacy Hollingsworth glue until a rollout rule with its gate evidence says
-otherwise.
+The service runs as one image in three modes: `gordon receiver` (signed
+webhook intake that stores each verified delivery before answering),
+`gordon worker` (fresh-state reads, routing, the action outbox and
+periodic reconciliation) and `gordon migrate` (schema and role grants).
+The worker starts in shadow mode, recording decisions and executing none,
+and no production routing changes: every family is owned by the legacy
+Hollingsworth glue until a rollout rule with its gate evidence says
+otherwise. No action has an executor yet (Kelos submission is the next
+stage), so even an executed decision's actions stay queued.
+[DEPLOYMENT.md](DEPLOYMENT.md) is the deployment contract.
 
 ## Contracts
 
@@ -27,11 +33,27 @@ otherwise.
 | `internal/inventory` | Every legacy dispatch family, hook and reconciler with its future owner, decision and stages, and the Hollingsworth files each later stage changes. `go run ./cmd/gordon-inventory` prints it as Markdown. |
 | `internal/replay` | Sanitized legacy deliveries in `testdata/` with their exact expected decisions and the Task names the legacy spawners created. |
 
+## Service
+
+| Package | Role |
+|---|---|
+| `internal/intake` | The receiver: method, declared length against the source cap, bounded slots per client address, body read under the request deadline, signature, delivery keys, then the stored row; 2xx only once stored. |
+| `internal/store` | Postgres: the inbox, decisions, handled requests, runs and the action outbox; migrations under an advisory lock; leases fenced by a token, so a worker that lost its lease writes nothing; role grants. |
+| `internal/worker` | Inbox processor (fresh state, route, one fenced transaction), outbox (recover an ambiguous write before retrying it), limits, backoff, graceful loops and the reconciler. |
+| `internal/upstream` | GET-only Vikunja and GitHub readers, bounded per provider. |
+| `internal/metrics`, `internal/logging` | Prometheus metrics with fixed label sets; JSON logs with redaction. |
+| `internal/config`, `internal/app`, `cmd/gordon` | Environment configuration, the three modes, health, readiness and metrics. |
+
 ## Checks
 
 ```sh
 go build ./... && go vet ./... && go test ./...
 ```
+
+The store, worker and service tests need Postgres: they skip without
+`GORDON_TEST_DATABASE_URL` (an admin URL that may create databases and
+roles). `scripts/test-postgres.sh` starts a throwaway server from
+`initdb`/`pg_ctl` on `PATH` (or `PG_BIN`) and runs the checks against it.
 
 ## Mascot
 

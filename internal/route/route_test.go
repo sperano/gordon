@@ -94,3 +94,30 @@ func TestShadowOwnershipRecordsWithoutExecuting(t *testing.T) {
 		t.Errorf("shadow family %+v", fd)
 	}
 }
+
+func TestDecideAuthenticatedSkipsOnlyTheSignature(t *testing.T) {
+	r := route.Router{Config: profile.Defaults()}
+	unsigned := event.Delivery{Source: event.SourceVikunja,
+		Body: []byte(`{"event_name":"task.comment.created","data":{"task":{"id":1,"project_id":3},"comment":{"id":2,"comment":"hello"}}}`)}
+	if d := r.Decide(unsigned, route.State{}, replay.Ledger{}); d.Outcome != route.Reject || d.Reason != "signature-missing" {
+		t.Fatalf("Decide unsigned = %s/%s, want reject/signature-missing", d.Outcome, d.Reason)
+	}
+	d := r.DecideAuthenticated(unsigned, route.State{}, replay.Ledger{})
+	if d.Outcome != route.Ignore || d.Reason != route.ReasonNotARequest || d.DeliveryKey != "vikunja/comment/2" {
+		t.Fatalf("DecideAuthenticated = %+v, want the routed ignore/not-a-request", d)
+	}
+	other := event.Delivery{Source: "gitlab", Body: []byte(`{}`)}
+	if d := r.DecideAuthenticated(other, route.State{}, replay.Ledger{}); d.Outcome != route.Ignore || d.Reason != route.ReasonUnsupported {
+		t.Fatalf("DecideAuthenticated on an unknown source = %s/%s, want ignore/unsupported", d.Outcome, d.Reason)
+	}
+}
+
+func TestOverallMatchesPrecedence(t *testing.T) {
+	fams := []route.FamilyDecision{{Outcome: route.Duplicate}, {Outcome: route.Act}, {Outcome: route.Stale}}
+	if got := route.Overall(fams); got != route.Act {
+		t.Fatalf("Overall = %s, want act", got)
+	}
+	if got := route.Overall(nil); got != route.Ignore {
+		t.Fatalf("Overall(nil) = %s, want ignore", got)
+	}
+}
