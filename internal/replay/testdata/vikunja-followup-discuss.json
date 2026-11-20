@@ -108,10 +108,19 @@
             "value": "eyes"
           },
           {
-            "key": "post-notice:vikunja/comment/90003:discuss-start",
+            "key": "post-notice:vikunja/task/4302:discuss-start:90003",
             "kind": "post-notice",
-            "target": "vikunja/comment/90003",
-            "value": "discuss-start"
+            "target": "vikunja/task/4302",
+            "value": "discuss-start",
+            "detail": "90003"
+          },
+          {
+            "key": "post-notice:vikunja/task/4302:start:vikunja-fu-hollingsworth-4302-c90003",
+            "kind": "post-notice",
+            "target": "vikunja/task/4302",
+            "value": "start",
+            "detail": "vikunja-fu-hollingsworth-4302-c90003",
+            "after": "submit-task:kelos/kelos-agents/vikunja-fu-hollingsworth-4302-c90003"
           }
         ]
       }

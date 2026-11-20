@@ -1,6 +1,7 @@
-// Command gordon-inventory prints the legacy dispatch inventory and the
-// Hollingsworth paths of each later stage as the Markdown tables kept on
-// the shared wiki.
+// Command gordon-inventory prints, as the Markdown kept on the shared
+// wiki, the legacy dispatch inventory, the Hollingsworth paths of each
+// later stage, the Vikunja families' ownership switches and the rollback
+// contract.
 package main
 
 import (
@@ -13,4 +14,7 @@ func main() {
 	fmt.Print(inventory.Markdown(inventory.Entries()))
 	fmt.Print("\n")
 	fmt.Print(inventory.StagesMarkdown(inventory.Stages()))
+	fmt.Print("\n")
+	fmt.Print(inventory.SwitchesMarkdown(inventory.Switches()))
+	fmt.Print("\n" + inventory.RollbackContract + "\n")
 }

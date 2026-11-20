@@ -19,6 +19,15 @@ const (
 	PostNotice    Kind = "post-notice"
 	ConvertDraft  Kind = "convert-to-draft"
 	SkippedChecks Kind = "post-skipped-checks"
+	// Assign assigns a Vikunja task to the user Value unless an agent
+	// user already has it.
+	Assign Kind = "assign"
+	// SyncLabel makes the target carry the Value label of the task
+	// Detail names, exactly as created by the configured creator.
+	SyncLabel Kind = "sync-label"
+	// CancelRun stops a Vikunja task's implementation and discuss runs:
+	// queued submissions are cancelled, live Kelos Tasks deleted.
+	CancelRun Kind = "cancel-run"
 )
 
 // Target is the object an action writes to.
@@ -51,13 +60,28 @@ type Action struct {
 	Key    string `json:"key"`
 	Kind   Kind   `json:"kind"`
 	Target Target `json:"target"`
-	// Value is the label, bucket, reaction or notice kind, or the Task
-	// name; "" when the kind needs none.
+	// Value is the label, bucket, reaction or notice kind, the Task name,
+	// or the username an assign gives the task; "" when the kind needs
+	// none.
 	Value string `json:"value,omitempty"`
-	// Detail qualifies a notice (the unanswered reason code, or the pull
-	// request a pr-open or merged notice names) or carries a GitHub
-	// reaction's subject node id; it is not part of a reaction's key.
+	// Detail qualifies a notice (the unanswered reason code, the pull
+	// request a pr-open or merged notice names, the run or subtask it is
+	// about), names the runs a cancel-run stops (comma-separated) or the
+	// task a sync-label copies from, or carries a GitHub reaction's
+	// subject node id; it is not part of a reaction's key.
 	Detail string `json:"detail,omitempty"`
+	// After is the key of an action of the same decision that must be
+	// done first ("" for none): a claim waits for its run's submission,
+	// a chain's move for the subtask's assignment. When that action is
+	// dead-lettered or cancelled, this one is cancelled.
+	After string `json:"after,omitempty"`
+}
+
+// WaitFor returns a waiting for first: After set to first's key, so
+// a.WaitFor(first) runs a once first is done.
+func (a Action) WaitFor(first Action) Action {
+	a.After = first.Key
+	return a
 }
 
 // New builds an action and its durable key, kind:target[:value].

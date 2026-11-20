@@ -57,6 +57,9 @@ type Metrics struct {
 	ReconcileLastSuccess prometheus.Gauge
 	LeasesExpired        *prometheus.CounterVec
 	BodiesPruned         prometheus.Counter
+
+	VikunjaReconciles      *prometheus.CounterVec
+	VikunjaReconcileQueued prometheus.Counter
 }
 
 // New registers Gordon's metrics, with the Go and process collectors, on
@@ -104,13 +107,21 @@ func New() *Metrics {
 		BodiesPruned: prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
 			Name: "bodies_pruned_total", Help: "Stored delivery bodies and built Task prompts dropped after their retention."}),
 	}
+	m.lifecycle()
 	m.Registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		m.Intake, m.Decisions, m.DecisionLatency, m.InboxRetries, m.InboxFailures, m.Deferred,
 		m.QueueDepth, m.QueueOldest, m.ActionResults, m.ActionDuration, m.ActionQueueLatency,
 		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions, m.ShadowComparisons,
 		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
-		m.LeasesExpired, m.BodiesPruned)
+		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued)
 	return m
+}
+
+// lifecycle creates the Vikunja reconciliation's metrics.
+func (m *Metrics) lifecycle() {
+	m.VikunjaReconciles = counter("vikunja_reconcile_runs_total", "Vikunja reconciliation passes by result.", "result")
+	m.VikunjaReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
+		Name: "vikunja_reconcile_queued_total", Help: "Synthetic deliveries the Vikunja reconciliation queued."})
 }
 
 func counter(name, help string, labels ...string) *prometheus.CounterVec {

@@ -3,15 +3,17 @@ package worker
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
 )
 
-// TaskReader reads a fresh Vikunja task.
+// TaskReader reads a fresh Vikunja task and its comments.
 type TaskReader interface {
 	Task(ctx context.Context, id int64) (event.Task, error)
+	TaskComments(ctx context.Context, id int64) ([]event.TaskComment, error)
 }
 
 // PullRequestReader reads a fresh GitHub pull request.
@@ -55,5 +57,49 @@ func (s StateReader) Read(ctx context.Context, ev event.Event, led route.Ledger)
 			st.Task = &t
 		}
 	}
+	if need.Chain && st.Task != nil && (route.Router{Config: s.Config}).ChainTask(*st.Task) {
+		errs = append(errs, s.readChain(ctx, &st))
+	}
 	return st, errors.Join(errs...)
+}
+
+// chainReadFanOut bounds the subtask reads of one chain decision in
+// flight at once, so a long chain fits the read deadline without one
+// decision taking every upstream slot.
+const chainReadFanOut = 4
+
+// readChain reads a chain task's subtasks and comments. Any failure
+// leaves the task unread: a chain decided on part of its subtasks could
+// start one out of order, so the router answers retry instead.
+func (s StateReader) readChain(ctx context.Context, st *route.State) error {
+	t := st.Task
+	subs, err := s.readSubtasks(ctx, t.Relations.Subtasks)
+	if err != nil {
+		st.Task = nil
+		return err
+	}
+	comments, err := s.Tasks.TaskComments(ctx, t.ID)
+	if err != nil {
+		st.Task = nil
+		return err
+	}
+	st.Subtasks, st.Comments = subs, comments
+	return nil
+}
+
+// readSubtasks reads the subtasks concurrently, at most chainReadFanOut
+// at a time, in relation order; the errors are joined.
+func (s StateReader) readSubtasks(ctx context.Context, rels []event.Related) ([]event.Task, error) {
+	subs, errs := make([]event.Task, len(rels)), make([]error, len(rels))
+	slots := make(chan struct{}, chainReadFanOut)
+	var wg sync.WaitGroup
+	for i, rel := range rels {
+		slots <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			subs[i], errs[i] = s.Tasks.Task(ctx, rel.ID)
+		})
+	}
+	wg.Wait()
+	return subs, errors.Join(errs...)
 }

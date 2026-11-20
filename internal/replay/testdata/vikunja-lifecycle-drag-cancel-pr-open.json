@@ -1,0 +1,88 @@
+{
+  "description": "A card dragged to To-Do with its PR open stops nothing, not even its still-active run: the open PR is the deliverable.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4121,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            },
+            {
+              "title": "pr open"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4121,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "in progress",
+        "pr open"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "To-Do"
+      ]
+    }
+  },
+  "ledger": {
+    "runs": [
+      {
+        "name": "vikunja-hollingsworth-claude-opus-4121",
+        "active": true,
+        "exists": true,
+        "family": "vikunja-implement",
+        "task_id": 4121
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": [],
+    "writes": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "vikunja/task.updated/4121/c194b6505c56dc9fbbade61831cca5cb",
+    "request_key": "vikunja/task/4121",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "not-in-doing"
+      },
+      {
+        "family": "vikunja-drag-cancel",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "pr-open"
+      }
+    ]
+  }
+}

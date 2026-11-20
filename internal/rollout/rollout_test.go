@@ -83,3 +83,42 @@ func TestExecutesFailsClosedOnInvalidTable(t *testing.T) {
 		t.Error("a Gordon rule lacking legacy-disabled executes")
 	}
 }
+
+// TestDragCancelNeedsTheAgentFamilies: Gordon can stop only the runs it
+// submitted, so it owns drag-cancel only where it owns both agent
+// families, by a project rule or an all-projects one.
+func TestDragCancelNeedsTheAgentFamilies(t *testing.T) {
+	all := []Gate{ReplayParity, ShadowParity, RollbackTested, LegacyDisabled}
+	drag := Rule{Project: "gordon", Family: run.VikunjaDragCancel, Owner: Gordon, Evidence: all}
+	implement := Rule{Project: "gordon", Family: run.VikunjaImplement, Owner: Gordon, Evidence: all}
+	discuss := Rule{Project: AllProjects, Family: run.VikunjaDiscuss, Owner: Gordon, Evidence: all}
+	if err := (Table{Rules: []Rule{drag, implement}}).Validate(); err == nil ||
+		!strings.Contains(err.Error(), "needs vikunja-discuss owned by gordon") {
+		t.Fatalf("drag-cancel without discuss: %v", err)
+	}
+	if err := (Table{Rules: []Rule{drag, discuss}}).Validate(); err == nil ||
+		!strings.Contains(err.Error(), "needs vikunja-implement owned by gordon") {
+		t.Fatalf("drag-cancel without implement: %v", err)
+	}
+	if err := (Table{Rules: []Rule{drag, implement, discuss}}).Validate(); err != nil {
+		t.Fatalf("drag-cancel with both agent families: %v", err)
+	}
+	allDrag := drag
+	allDrag.Project = AllProjects
+	allImplement := implement
+	allImplement.Project = AllProjects
+	vigieShadow := Rule{Project: "vigie", Family: run.VikunjaImplement, Owner: Shadow, Evidence: []Gate{ReplayParity}}
+	if err := (Table{Rules: []Rule{allDrag, allImplement, discuss, vigieShadow}}).Validate(); err == nil ||
+		err.Error() != "rule vigie/vikunja-drag-cancel: needs vikunja-implement owned by gordon too" {
+		t.Fatalf("all-projects drag-cancel over a project's shadow implement: %v", err)
+	}
+	vigieLegacyDrag := Rule{Project: "vigie", Family: run.VikunjaDragCancel, Owner: Legacy}
+	if err := (Table{Rules: []Rule{allDrag, allImplement, discuss, vigieShadow, vigieLegacyDrag}}).Validate(); err != nil {
+		t.Fatalf("drag-cancel overridden to legacy where implement is shadow: %v", err)
+	}
+	shadowDrag := drag
+	shadowDrag.Owner, shadowDrag.Evidence = Shadow, []Gate{ReplayParity}
+	if err := (Table{Rules: []Rule{shadowDrag}}).Validate(); err != nil {
+		t.Fatalf("drag-cancel in shadow needs nothing else: %v", err)
+	}
+}

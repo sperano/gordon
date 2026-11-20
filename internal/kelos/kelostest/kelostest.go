@@ -38,6 +38,7 @@ type Server struct {
 	tasks   map[string]json.RawMessage
 	order   []string
 	creates []kelos.Task
+	deletes []string
 	// failCreates answers the next creates with these statuses (0: apply
 	// the create, then drop the connection without answering).
 	failCreates []int
@@ -161,6 +162,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.list(w, r)
 	case strings.HasPrefix(rest, "/") && r.Method == http.MethodGet:
 		s.get(w, strings.TrimPrefix(rest, "/"))
+	case strings.HasPrefix(rest, "/") && r.Method == http.MethodDelete:
+		s.remove(w, r, strings.TrimPrefix(rest, "/"))
 	default:
 		writeStatus(w, http.StatusMethodNotAllowed, "MethodNotAllowed", r.Method)
 	}
@@ -253,6 +256,58 @@ func reasonFor(code int) string {
 	return "InternalError"
 }
 
+// remove answers a DELETE as the API server does: a Success Status, or
+// NotFound, or a Conflict when the body's preconditions.uid is not the
+// stored Task's.
+func (s *Server) remove(w http.ResponseWriter, r *http.Request, name string) {
+	var opts struct {
+		Preconditions struct {
+			UID string `json:"uid"`
+		} `json:"preconditions"`
+	}
+	if body, err := io.ReadAll(r.Body); err != nil || len(body) > 0 && json.Unmarshal(body, &opts) != nil {
+		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid DeleteOptions")
+		return
+	}
+	s.mu.Lock()
+	raw, ok := s.tasks[name]
+	var stored kelos.Task
+	_ = json.Unmarshal(raw, &stored) //nolint:errcheck // stored by store()
+	uid := opts.Preconditions.UID
+	conflict := ok && uid != "" && uid != stored.Metadata.UID
+	if ok && !conflict {
+		delete(s.tasks, name)
+		s.order = slices.DeleteFunc(s.order, func(n string) bool { return n == name })
+		s.deletes = append(s.deletes, name)
+	}
+	s.mu.Unlock()
+	switch {
+	case !ok:
+		writeStatus(w, http.StatusNotFound, kelos.ReasonNotFound, "tasks.kelos.dev \""+name+"\" not found")
+	case conflict:
+		writeStatus(w, http.StatusConflict, ReasonConflict, "Precondition failed: UID in precondition: "+uid+
+			", UID in object meta: "+stored.Metadata.UID)
+	default:
+		writeJSONStatus(w, http.StatusOK, statusSuccess, "", "deleted")
+	}
+}
+
+// ReasonConflict is the Status reason of a refused delete precondition.
+const ReasonConflict = "Conflict"
+
+// Status values of a Kubernetes Status.
+const (
+	statusSuccess = "Success"
+	statusFailure = "Failure"
+)
+
+// Deletes lists the Tasks deleted through the API, in order.
+func (s *Server) Deletes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.deletes)
+}
+
 func (s *Server) get(w http.ResponseWriter, name string) {
 	s.mu.Lock()
 	raw, ok := s.tasks[name]
@@ -330,45 +385,59 @@ func (s *Server) resume(token string) (items []json.RawMessage, snap, start int,
 	return items, snap, start, nil
 }
 
-// requirement is one k=v term of a label selector.
-type requirement struct{ key, value string }
+// requirement is key=value, or with absent the key's absence (!key).
+type requirement struct {
+	key, value string
+	absent     bool
+}
 
 // selector is every requirement of a label selector, repeated keys
 // included: as in the API server, a Task must meet them all.
 type selector []requirement
 
-// parseSelector reads equality selectors (k=v,k2=v2), all the client
-// uses; any other syntax (k!=v, k==v, k in (...), a bare k) is an
-// error, so a test cannot pass on a selector the fake misread.
+// parseSelector reads equality selectors (k=v,k2=v2) and absence
+// selectors (!k), all the client sends (the drag-cancel's listing uses
+// !k); any other syntax (k!=v, k==v, k in (...), a bare k) is an error,
+// so a test cannot pass on a selector the fake misread.
 func parseSelector(s string) (selector, error) {
 	var out selector
 	if s == "" {
 		return out, nil
 	}
 	for part := range strings.SplitSeq(s, ",") {
+		if k, ok := strings.CutPrefix(part, "!"); ok && k != "" && !strings.ContainsAny(k, "!=() ") {
+			out = append(out, requirement{key: k, absent: true})
+			continue
+		}
 		k, v, ok := strings.Cut(part, "=")
 		if !ok || k == "" || strings.ContainsAny(k, "!=() ") || strings.ContainsAny(v, "=!() ") {
 			return nil, fmt.Errorf("unsupported label selector %q", part)
 		}
-		out = append(out, requirement{k, v})
+		out = append(out, requirement{key: k, value: v})
 	}
 	return out, nil
 }
 
 func (s selector) matches(labels map[string]string) bool {
 	for _, r := range s {
-		if got, ok := labels[r.key]; !ok || got != r.value {
+		got, ok := labels[r.key]
+		if r.absent && ok || !r.absent && (!ok || got != r.value) {
 			return false
 		}
 	}
 	return true
 }
 
+// writeStatus answers a failure Status.
 func writeStatus(w http.ResponseWriter, code int, reason, msg string) {
+	writeJSONStatus(w, code, statusFailure, reason, msg)
+}
+
+func writeJSONStatus(w http.ResponseWriter, code int, status, reason, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // test server
-		"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": reason, "message": msg, "code": code,
+		"kind": "Status", "apiVersion": "v1", "status": status, "reason": reason, "message": msg, "code": code,
 	})
 }
 

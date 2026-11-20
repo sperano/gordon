@@ -48,6 +48,14 @@ var required = map[Owner][]Gate{
 	Gordon: {ReplayParity, ShadowParity, RollbackTested, LegacyDisabled},
 }
 
+// coupled lists, per family, the families Gordon must own wherever it
+// owns that one: a drag to the backlog stops the task's runs from the
+// run ledger, which has only the runs Gordon submitted, so Gordon must
+// be the one submitting them.
+var coupled = map[run.Family][]run.Family{
+	run.VikunjaDragCancel: {run.VikunjaImplement, run.VikunjaDiscuss},
+}
+
 // AllProjects is the project of a rule that covers every project.
 const AllProjects = "*"
 
@@ -91,7 +99,8 @@ func (t Table) Executes(project string, family run.Family) bool {
 }
 
 // Validate refuses a table with an unknown family or owner, two rules for
-// one scope, or a rule lacking its owner's gate evidence.
+// one scope, a rule lacking its owner's gate evidence, or a family Gordon
+// owns in a project without its coupled families (checkCoupled).
 func (t Table) Validate() error {
 	seen := map[[2]string]bool{}
 	for _, r := range t.Rules {
@@ -114,6 +123,40 @@ func (t Table) Validate() error {
 			if !slices.Contains(r.Evidence, g) {
 				return fmt.Errorf("rule %s/%s: owner %s lacks gate %s", r.Project, r.Family, r.Owner, g)
 			}
+		}
+	}
+	return t.checkCoupled()
+}
+
+// checkCoupled refuses a family Gordon owns in a project (by a project
+// rule or an AllProjects one) whose coupled families Gordon does not own
+// in that project: every project a rule names is checked, so a project
+// override of a coupled family under an AllProjects rule is caught too.
+func (t Table) checkCoupled() error {
+	projects := []string{AllProjects}
+	for _, r := range t.Rules {
+		if !slices.Contains(projects, r.Project) {
+			projects = append(projects, r.Project)
+		}
+	}
+	for _, family := range run.Families {
+		for _, p := range projects {
+			if err := t.checkCoupledIn(p, family); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkCoupledIn checks one family's coupling in one project.
+func (t Table) checkCoupledIn(project string, family run.Family) error {
+	if t.Owner(project, family) != Gordon {
+		return nil
+	}
+	for _, f := range coupled[family] {
+		if t.Owner(project, f) != Gordon {
+			return fmt.Errorf("rule %s/%s: needs %s owned by gordon too", project, family, f)
 		}
 	}
 	return nil

@@ -1,0 +1,110 @@
+{
+  "description": "A chain parent with two agent users starts nothing and asks for exactly one.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4360,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            },
+            {
+              "username": "gpt-sol"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4360,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain"
+      ],
+      "assignees": [
+        "claude-opus",
+        "gpt-sol"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4361,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4361,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "post-notice:vikunja/task/4360:chain-no-agent"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4360/bb87ac8d6fe9ddf9d974826ffeaaa351",
+    "request_key": "vikunja/task/4360",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "chain-parent"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "reason": "multiple-agent-assignees",
+        "actions": [
+          {
+            "key": "post-notice:vikunja/task/4360:chain-no-agent",
+            "kind": "post-notice",
+            "target": "vikunja/task/4360",
+            "value": "chain-no-agent"
+          }
+        ]
+      }
+    ]
+  }
+}

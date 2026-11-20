@@ -34,10 +34,21 @@ var testBackoff = Backoff{Base: time.Second, Max: time.Minute}
 // fakeTasks serves tasks by id; a missing id answers like Vikunja's 404,
 // and down answers like an outage.
 type fakeTasks struct {
-	mu    sync.Mutex
-	tasks map[int64]event.Task
-	down  bool
-	reads int
+	mu       sync.Mutex
+	tasks    map[int64]event.Task
+	comments map[int64][]event.TaskComment
+	down     bool
+	reads    int
+}
+
+func (f *fakeTasks) TaskComments(_ context.Context, id int64) ([]event.TaskComment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	if f.down {
+		return nil, &upstream.Error{Provider: upstream.ProviderVikunja, Class: upstream.Unavailable, Status: 503}
+	}
+	return f.comments[id], nil
 }
 
 func (f *fakeTasks) Task(_ context.Context, id int64) (event.Task, error) {
@@ -93,7 +104,7 @@ func newEnv(t *testing.T, ownership rollout.Table) *env {
 	s, dbURL := storetest.Open(t)
 	logs := &bytes.Buffer{}
 	m := metrics.New()
-	tasks, prs := &fakeTasks{tasks: map[int64]event.Task{}}, &fakePRs{prs: map[string]event.PullRequest{}}
+	tasks, prs := &fakeTasks{tasks: map[int64]event.Task{}, comments: map[int64][]event.TaskComment{}}, &fakePRs{prs: map[string]event.PullRequest{}}
 	cfg := profile.Defaults()
 	proc := &Processor{
 		Store: s, Router: route.Router{Config: cfg, Ownership: ownership},

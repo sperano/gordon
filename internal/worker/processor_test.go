@@ -326,6 +326,10 @@ func (d *deadlineTasks) Task(ctx context.Context, _ int64) (event.Task, error) {
 	return eligible(), nil
 }
 
+func (d *deadlineTasks) TaskComments(context.Context, int64) ([]event.TaskComment, error) {
+	return nil, nil
+}
+
 // deadlinePreparer is fixedTask recording the deadline it was given.
 type deadlinePreparer struct {
 	fixedTask
@@ -356,6 +360,10 @@ func TestStateReadsGetPartOfTheLease(t *testing.T) {
 }
 
 // leaseStealer is a task outage during which another worker takes the row.
+func (leaseStealer) TaskComments(context.Context, int64) ([]event.TaskComment, error) {
+	return nil, nil
+}
+
 type leaseStealer struct {
 	t     *testing.T
 	dbURL string

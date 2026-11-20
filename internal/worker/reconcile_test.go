@@ -116,3 +116,54 @@ func TestReconcilePrunesTasksWhenBodyPruneFails(t *testing.T) {
 		t.Fatal("a failed body prune kept the finished run's Task past retention")
 	}
 }
+
+// orphanedClaims queues an implementation run whose submission was then
+// dead-lettered: its claim actions wait for it for ever.
+func orphanedClaims(t *testing.T) *env {
+	t.Helper()
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.tasks[implementTaskID] = eligible()
+	e.proc.Tasks = fixedTask{}
+	e.tick(t)
+	if n := e.count(t, `SELECT count(*) FROM actions WHERE after_key <> '' AND state = 'pending'`); n == 0 {
+		t.Fatal("the implementation queued no claim action")
+	}
+	storetest.Exec(t, e.dbURL, `UPDATE actions SET state = 'failed' WHERE kind = 'submit-task'`)
+	return e
+}
+
+func TestReconcileCancelsTheDependentsOfADeadLetteredAction(t *testing.T) {
+	e := orphanedClaims(t)
+	r := &Reconciler{Store: e.store, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
+	if err := r.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM actions WHERE after_key <> '' AND state = 'pending'`); n != 0 {
+		t.Fatalf("%d claim actions still wait for the dead-lettered submission", n)
+	}
+	if n := e.count(t, `SELECT count(*) FROM actions WHERE state = 'done' AND last_error LIKE 'cancelled: waited for %'`); n == 0 {
+		t.Fatal("no dependent recorded cancelled")
+	}
+}
+
+// TestReconcileKeepsUpkeepWhenCancelOrphansFails: a failing orphan
+// cancellation is reported, and the queue gauges and the prunes still run.
+func TestReconcileKeepsUpkeepWhenCancelOrphansFails(t *testing.T) {
+	e := orphanedClaims(t)
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET state = 'finished', updated_at = now() - interval '2 hours'`)
+	storetest.Exec(t, e.dbURL, `CREATE FUNCTION refuse_cancel() RETURNS trigger LANGUAGE plpgsql AS
+		$$ BEGIN RAISE EXCEPTION 'orphan cancel refused'; END $$`)
+	storetest.Exec(t, e.dbURL, `CREATE TRIGGER refuse_cancel BEFORE UPDATE ON actions FOR EACH ROW
+		WHEN (NEW.last_error LIKE 'cancelled: waited for %') EXECUTE FUNCTION refuse_cancel()`)
+	r := &Reconciler{Store: e.store, BodyRetention: time.Hour, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
+	if err := r.Once(ctx); err == nil || !strings.Contains(err.Error(), "orphan cancel refused") {
+		t.Fatalf("Once = %v, want the orphan cancellation's error", err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM runs WHERE task IS NULL`); n != 1 {
+		t.Fatal("a failed orphan cancellation skipped the Task prune")
+	}
+	if v := testutil.ToFloat64(e.metric.QueueDepth.WithLabelValues("actions", "failed")); v != 1 {
+		t.Fatalf("failed actions depth = %v, want 1: the queue gauges were skipped", v)
+	}
+}

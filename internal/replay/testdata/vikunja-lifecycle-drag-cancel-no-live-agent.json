@@ -1,0 +1,84 @@
+{
+  "description": "A card in To-Do whose run already finished stops nothing and keeps its label, as legacy does.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4122,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4122,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "To-Do"
+      ]
+    }
+  },
+  "ledger": {
+    "runs": [
+      {
+        "name": "vikunja-hollingsworth-claude-opus-4122",
+        "active": false,
+        "exists": true,
+        "family": "vikunja-implement",
+        "task_id": 4122
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": [],
+    "writes": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "vikunja/task.updated/4122/93324397b77edb54092d939824bdaca7",
+    "request_key": "vikunja/task/4122",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "not-in-doing"
+      },
+      {
+        "family": "vikunja-drag-cancel",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "no-live-agent"
+      }
+    ]
+  }
+}

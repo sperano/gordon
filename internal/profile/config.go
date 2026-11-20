@@ -140,6 +140,24 @@ type Policy struct {
 	FixSuggestionsLabel string   `json:"fix_suggestions_label"`
 	NoReviewLabel       string   `json:"no_review_label"`
 	ReviewBots          []Bot    `json:"review_bots"`
+	// The Vikunja lifecycle (Gordon 06): the bucket a stopped card goes
+	// back to, the labels a start clears and a failure sets, the chain's
+	// auto-merge label and its trusted creator, Gordon's own Vikunja
+	// user (only its comments count as notices) and the web base links
+	// point at.
+	BacklogBucket         string `json:"backlog_bucket,omitempty"`
+	AgentErrorLabel       string `json:"agent_error_label,omitempty"`
+	ActionNeededLabel     string `json:"action_needed_label,omitempty"`
+	AutoMergeLabel        string `json:"auto_merge_label,omitempty"`
+	AutoMergeLabelCreator string `json:"auto_merge_label_creator,omitempty"`
+	VikunjaServiceUser    string `json:"vikunja_service_user,omitempty"`
+	VikunjaWebURL         string `json:"vikunja_web_url,omitempty"`
+	// PRReadiness is pr_open's PR_READINESS_ENABLED: the pr-open notice
+	// promises a ready-to-merge notice.
+	PRReadiness bool `json:"pr_readiness,omitempty"`
+	// CancelReaction is the owner's reaction that withdraws a `/gordon`
+	// request: the reconciliation never recovers it.
+	CancelReaction string `json:"cancel_reaction,omitempty"`
 }
 
 // Bot is a review bot whose findings start a PR follow-up.

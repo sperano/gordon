@@ -100,6 +100,14 @@
             "kind": "react",
             "target": "vikunja/comment/90002",
             "value": "eyes"
+          },
+          {
+            "key": "post-notice:vikunja/task/4301:start:vikunja-fu-sillage-4301-c90002",
+            "kind": "post-notice",
+            "target": "vikunja/task/4301",
+            "value": "start",
+            "detail": "vikunja-fu-sillage-4301-c90002",
+            "after": "submit-task:kelos/kelos-agents/vikunja-fu-sillage-4301-c90002"
           }
         ]
       }

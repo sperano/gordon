@@ -2,6 +2,7 @@ package submit
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/sperano/gordon/internal/kelos"
@@ -35,11 +36,19 @@ type ObserverStore interface {
 // whose submission was dead-lettered is finished too, so it does not
 // block that name for ever.
 type Observer struct {
-	Store   ObserverStore
-	Kelos   TaskAPI
-	Batch   int
-	Metrics *metrics.Metrics
-	Log     *slog.Logger
+	Store ObserverStore
+	Kelos TaskAPI
+	// Finished, when set, is told of each run this observer sees finish
+	// (its Task Succeeded or Failed): the lifecycle's failure notices.
+	Finished FinishHook
+	Batch    int
+	Metrics  *metrics.Metrics
+	Log      *slog.Logger
+}
+
+// FinishHook handles a run that finished with phase.
+type FinishHook interface {
+	Finished(ctx context.Context, r store.ObservedRun, phase string) error
 }
 
 // Once observes one batch of runs against one Task list.
@@ -100,6 +109,14 @@ func pendingSubmit(state string) bool {
 }
 
 func (o *Observer) record(ctx context.Context, r store.ObservedRun, exists bool, phase, state string) error {
+	// The hook queues idempotently, so it goes first: an observation not
+	// recorded after it is observed again, and the hook's actions are
+	// not queued twice; one recorded before a failed hook would be lost.
+	if o.Finished != nil && state == ObservedFinished && r.State != store.RunFinished {
+		if err := o.Finished.Finished(ctx, r, phase); err != nil {
+			return fmt.Errorf("lifecycle of finished run %s: %w", r.Name, err)
+		}
+	}
 	if err := o.Store.ObserveRun(ctx, r.Name, r.InboxID, exists, phase); err != nil {
 		return err
 	}

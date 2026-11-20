@@ -119,6 +119,7 @@ func apply(ctx context.Context, conn *pgx.Conn, m migration) error {
 
 type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
 func version(ctx context.Context, q querier) (int, error) {

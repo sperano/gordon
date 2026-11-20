@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 )
 
 // Ledger answers the router's questions about handled work from the
@@ -74,4 +76,33 @@ func runRecord(ctx context.Context, q querier, name string, lock bool) (route.Ru
 	}
 	rec.Active = state != runFinished
 	return rec, true, nil
+}
+
+// TaskRuns returns the runs of a Vikunja task in the given families.
+func (l *Ledger) TaskRuns(taskID int64, families []run.Family) []route.RunRecord {
+	if l.Err != nil {
+		return nil
+	}
+	names := make([]string, len(families))
+	for i, f := range families {
+		names[i] = string(f)
+	}
+	rows, err := l.q.Query(l.ctx, `SELECT name, state, task_exists, family FROM runs
+		WHERE identity->>'task_id' = $1 AND family = ANY($2) ORDER BY name`, strconv.FormatInt(taskID, 10), names)
+	if err != nil {
+		l.Err = err
+		return nil
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (route.RunRecord, error) {
+		rec := route.RunRecord{TaskID: taskID}
+		var state, family string
+		err := r.Scan(&rec.Name, &state, &rec.Exists, &family)
+		rec.Active, rec.Family = state != runFinished, run.Family(family)
+		return rec, err
+	})
+	if err != nil {
+		l.Err = err
+		return nil
+	}
+	return out
 }

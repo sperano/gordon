@@ -17,17 +17,34 @@ type Reads struct {
 	// OwnerRequest marks an owner `/gordon` request, whose state the
 	// router reads only once it knows the request is not handled yet.
 	OwnerRequest bool
+	// Chain reads, once the task is read and ChainTask holds for it, its
+	// subtasks and its comments.
+	Chain bool
+}
+
+// ChainTask reports a fresh chain parent whose chain steps through its
+// subtasks (the default case of Router.chain): it carries the chain
+// label, is open, in Doing, not held by the discuss or no-agent label and
+// not blocked. Only then are its subtasks and comments read, so a done,
+// paused or dragged parent's cleanup never waits on reads it does not use.
+func (r Router) ChainTask(t event.Task) bool {
+	p := r.Config.Policy
+	return p.ChainLabel != "" && t.HasLabel(p.ChainLabel) && !t.Done && t.InBucket(p.DoingBucket) &&
+		!t.HasLabel(p.DiscussLabel) && !t.HasLabel(p.NoAgentLabel) && len(t.OpenBlockers()) == 0
 }
 
 // Reads is what the router would read to decide ev: nothing for an event
-// it refuses before looking at the state (an unconfigured project or
-// repository, a comment that is no request from the owner or a review
+// it refuses before looking at the state (an unconfigured project's open
+// task or repository, a comment that is no request from the owner or a review
 // bot), and a pull request's files only for an action that may review.
 func (r Router) Reads(ev event.Event) Reads {
 	p := r.Config.Policy
 	switch ev.Kind {
 	case event.VikunjaTaskUpdated:
 		if _, ok := r.Config.Project(ev.Vikunja.Task.ProjectID); ok {
+			return Reads{Task: ev.Vikunja.Task.ID, Chain: true}
+		}
+		if ev.Vikunja.Task.Done { // a blocker anywhere: its relations requeue
 			return Reads{Task: ev.Vikunja.Task.ID}
 		}
 	case event.VikunjaTaskCommentCreated:

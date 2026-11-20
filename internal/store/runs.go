@@ -9,6 +9,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 )
 
 // ErrNoRun is a run the store does not have.
@@ -20,6 +21,7 @@ type SubmitRun struct {
 	Name    string
 	InboxID int64
 	Variant string
+	Family  run.Family
 	State   string
 	Task    *kelos.Task
 }
@@ -29,11 +31,15 @@ type SubmitRun struct {
 // Either way nothing is left to submit.
 func (r SubmitRun) Submitted() bool { return r.State != runSubmitting }
 
+// Stopped reports a run finished before its Task was created by this
+// submission (a drag-cancel, or the observer finishing it).
+func (r SubmitRun) Stopped() bool { return r.State == runFinished }
+
 // RunToSubmit reads a run by Task name; ErrNoRun when there is none.
 func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error) {
 	r := SubmitRun{Name: name}
-	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), state, task
-		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.State, &r.Task)
+	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), family, state, task
+		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.Family, &r.State, &r.Task)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SubmitRun{}, ErrNoRun
 	}
@@ -44,14 +50,20 @@ func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error)
 // a newer generation's row is left alone. Its uid is recorded whatever
 // the state; its state and phase only while the run is still
 // submitting: an observer that already followed the Task knows better.
+// A Task found already finished (a recovered submission) is recorded
+// active with no phase, so the observer sees it finish and tells its
+// hook (the failure notice) as for any other run.
 func (s *Store) RunSubmitted(ctx context.Context, name string, inboxID int64, uid, phase string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE runs SET task_uid = $4,
-			state = CASE WHEN state = 'submitting' THEN $3 ELSE state END,
+	if stateOf(phase) == runFinished {
+		phase = ""
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE runs SET task_uid = $3,
+			state = CASE WHEN state = 'submitting' THEN '`+runActive+`' ELSE state END,
 			task_exists = task_exists OR state = 'submitting',
-			phase = CASE WHEN state = 'submitting' THEN $5 ELSE phase END,
+			phase = CASE WHEN state = 'submitting' THEN $4 ELSE phase END,
 			updated_at = now()
 		WHERE name = $1 AND inbox_id = $2`,
-		name, inboxID, stateOf(phase), uid, phase)
+		name, inboxID, uid, phase)
 	return err
 }
 
@@ -73,6 +85,11 @@ type ObservedRun struct {
 	// SubmitState is the state of this generation's submit action ("" if
 	// none): while it is not done, a missing Task is not yet created.
 	SubmitState string
+	// Family, Project and TaskID locate the run on its Vikunja task (0
+	// for a run of none), for the lifecycle's failure notices.
+	Family  run.Family
+	Project string
+	TaskID  int64
 }
 
 // ObservedRuns takes the runs the observer follows, at most limit, the
@@ -83,16 +100,20 @@ func (s *Store) ObservedRuns(ctx context.Context, limit int) ([]ObservedRun, err
 			UPDATE runs SET observed_at = now()
 			WHERE name IN (SELECT name FROM runs WHERE state <> 'finished' OR task_exists
 				ORDER BY observed_at, name LIMIT $1 FOR UPDATE SKIP LOCKED)
-			RETURNING name, inbox_id, state, task_exists, phase)
+			RETURNING name, inbox_id, state, task_exists, phase, family, project,
+				coalesce((identity->>'task_id')::bigint, 0) AS task_id)
 		SELECT r.name, r.inbox_id, r.state, r.task_exists, r.phase,
-			coalesce((SELECT a.state FROM actions a WHERE a.inbox_id = r.inbox_id AND a.key = $2 || r.name), '')
+			coalesce((SELECT a.state FROM actions a WHERE a.inbox_id = r.inbox_id AND a.key = $2 || r.name), ''),
+			r.family, r.project, r.task_id
 		FROM taken r ORDER BY r.name`, limit, submitKeyPrefix())
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ObservedRun, error) {
 		var o ObservedRun
-		err := r.Scan(&o.Name, &o.InboxID, &o.State, &o.Exists, &o.Phase, &o.SubmitState)
+		var family string
+		err := r.Scan(&o.Name, &o.InboxID, &o.State, &o.Exists, &o.Phase, &o.SubmitState, &family, &o.Project, &o.TaskID)
+		o.Family = run.Family(family)
 		return o, err
 	})
 }

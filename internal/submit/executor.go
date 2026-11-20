@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -105,20 +107,34 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 	if found, err := e.existing(ctx, r); found || err != nil {
 		return err
 	}
-	if !e.checked(r) {
+	if !e.locked(r) {
 		created, err := e.Kelos.Create(ctx, *r.Task)
 		return e.created(ctx, r, created, err)
 	}
-	// The limit and branch check and the create that follows hold the
-	// database-wide admission lock together, so no two submissions, in
-	// any replica, both pass a check one of them fills.
+	return e.createLocked(ctx, r)
+}
+
+// createLocked creates the run's Task holding the database-wide admission
+// lock: the limit and branch check and the create that follows hold it
+// together, so no two submissions, in any replica, both pass a check one
+// of them fills; and a drag to the backlog cancels runs under it, so the
+// run is read again and one cancelled since the first read is never
+// created.
+func (e *Executor) createLocked(ctx context.Context, r store.SubmitRun) error {
 	var created kelos.Task
 	var createErr error
+	var now store.SubmitRun
 	locked := false
 	if err := e.Runs.WithAdmission(ctx, func(ctx context.Context) error {
 		locked = true
-		if err := e.admit(ctx, r); err != nil {
+		var err error
+		if now, err = e.Runs.RunToSubmit(ctx, r.Name); err != nil || now.Submitted() {
 			return err
+		}
+		if e.checked(r) {
+			if err := e.admit(ctx, r); err != nil {
+				return err
+			}
 		}
 		created, createErr = e.Kelos.Create(ctx, *r.Task)
 		return nil
@@ -131,13 +147,28 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 		}
 		return err
 	}
+	switch {
+	case now.Stopped():
+		e.Log.Info("run stopped before its Task was created", "task", r.Name)
+		return worker.Cancelled(store.RunStopped)
+	case now.Submitted():
+		e.Log.Info("run already submitted by another submitter", "task", r.Name)
+		return nil
+	}
 	return e.created(ctx, r, created, createErr)
 }
 
 // checked reports a submission admission checks: its variant has a limit
-// or its Task a branch. Any other is created without the lock.
+// or its Task a branch.
 func (e *Executor) checked(r store.SubmitRun) bool {
 	return e.Limits.For(r.Variant) > 0 || r.Task.Spec.Branch != ""
+}
+
+// locked reports a submission created under the admission lock: a checked
+// one, or a run a drag-cancel can stop (run.AgentFamilies). Any other is
+// created without the lock.
+func (e *Executor) locked(r store.SubmitRun) bool {
+	return e.checked(r) || slices.Contains(run.AgentFamilies, r.Family)
 }
 
 // created records the outcome of the run's create.

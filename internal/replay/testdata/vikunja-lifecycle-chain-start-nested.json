@@ -1,0 +1,146 @@
+{
+  "description": "A next subtask with subtasks of its own gets the chain label before anything moves it, and keeps its own agent.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4310,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            },
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4310,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4311,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4311,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [
+          "gpt-sol"
+        ],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 1,
+        "relations": {
+          "subtasks": [
+            {
+              "id": 4312,
+              "project_id": 3,
+              "done": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "add-label:vikunja/task/4311:chain",
+      "sync-label:vikunja/task/4311:auto-merge",
+      "move-bucket:vikunja/task/4311:Doing",
+      "post-notice:vikunja/task/4310:chain-started:4311"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4310/e1a11fa391eeaffdbd94a9c4249077ba",
+    "request_key": "vikunja/task/4310",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "in-progress"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "add-label:vikunja/task/4311:chain",
+            "kind": "add-label",
+            "target": "vikunja/task/4311",
+            "value": "chain"
+          },
+          {
+            "key": "sync-label:vikunja/task/4311:auto-merge",
+            "kind": "sync-label",
+            "target": "vikunja/task/4311",
+            "value": "auto-merge",
+            "detail": "4310",
+            "after": "add-label:vikunja/task/4311:chain"
+          },
+          {
+            "key": "move-bucket:vikunja/task/4311:Doing",
+            "kind": "move-bucket",
+            "target": "vikunja/task/4311",
+            "value": "Doing",
+            "after": "sync-label:vikunja/task/4311:auto-merge"
+          },
+          {
+            "key": "post-notice:vikunja/task/4310:chain-started:4311",
+            "kind": "post-notice",
+            "target": "vikunja/task/4310",
+            "value": "chain-started",
+            "detail": "4311",
+            "after": "move-bucket:vikunja/task/4311:Doing"
+          }
+        ]
+      }
+    ]
+  }
+}

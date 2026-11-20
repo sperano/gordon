@@ -99,7 +99,11 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	if err != nil {
 		return err
 	}
-	proc := processor(cfg, s, m, log, projects)
+	// One Vikunja reader for the router and the reconciliation, so the
+	// Vikunja upstream limit bounds their reads together (the lifecycle
+	// writer reads through its own client, under the outbox's limiter).
+	vikunja := vikunjaReader(cfg, m)
+	proc := processor(cfg, s, m, log, projects, vikunja)
 	g := newGroup(ctx)
 	if err := start(g, log, ServerAdmin, cfg.AdminAddr, adminServer(admin.Handler()), cfg.ShutdownGrace, onListen); err != nil {
 		g.cancel()
@@ -127,19 +131,30 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		worker.Every(ctx, cfg.ReconcileInterval, func(ctx context.Context) { rec.Once(ctx) }) //nolint:errcheck // logged and counted
 		return nil
 	})
+	startVikunjaReconcile(g, cfg, s, vikunja, m, log)
 	log.Info("worker started", "config", cfg.String())
 	return g.Wait()
 }
 
-func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter) *worker.Processor {
-	hc := &http.Client{Timeout: cfg.UpstreamTimeout}
-	observe := func(provider, result string, d time.Duration) {
+// upstreamObserver counts and times upstream reads.
+func upstreamObserver(m *metrics.Metrics) upstream.Observer {
+	return func(provider, result string, d time.Duration) {
 		m.Upstream.WithLabelValues(provider, result).Inc()
 		m.UpstreamDuration.WithLabelValues(provider).Observe(d.Seconds())
 	}
-	vikunja := upstream.Vikunja{Client: &upstream.Client{Provider: upstream.ProviderVikunja, BaseURL: cfg.VikunjaURL,
-		Authorization: "Bearer " + cfg.VikunjaToken, HTTP: hc,
-		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: observe}}
+}
+
+// vikunjaReader is the GET-only Vikunja client of the worker's token.
+func vikunjaReader(cfg config.Worker, m *metrics.Metrics) upstream.Vikunja {
+	return upstream.Vikunja{Client: &upstream.Client{Provider: upstream.ProviderVikunja, BaseURL: cfg.VikunjaURL,
+		Authorization: "Bearer " + cfg.VikunjaToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout},
+		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: upstreamObserver(m)}}
+}
+
+func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter,
+	vikunja upstream.Vikunja) *worker.Processor {
+	hc := &http.Client{Timeout: cfg.UpstreamTimeout}
+	observe := upstreamObserver(m)
 	github := &upstream.Client{Provider: upstream.ProviderGitHub, BaseURL: cfg.GitHubAPIURL,
 		Authorization: "Bearer " + cfg.GitHubToken, Headers: upstream.GitHubHeaders, HTTP: hc,
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: observe}

@@ -8,13 +8,18 @@ import (
 	"testing"
 
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 )
 
 const fixtureDir = "testdata"
 
 // minFixtures is the committed fixture count: deleting one fails, and
 // the glob cannot silently match nothing.
-const minFixtures = 33
+const minFixtures = 52
+
+// minWriteFixtures is the committed count of fixtures recording the
+// legacy lifecycle's writes (an empty list included): deleting one fails.
+const minWriteFixtures = 19
 
 func load(t *testing.T) []Fixture {
 	t.Helper()
@@ -77,6 +82,32 @@ func TestLegacyParity(t *testing.T) {
 	}
 }
 
+// TestLegacyWritesParity checks that Gordon makes exactly the writes the
+// legacy hooks made, where a fixture records them, unless it explains
+// the divergence.
+func TestLegacyWritesParity(t *testing.T) {
+	recorded := 0
+	for _, f := range load(t) {
+		if f.Legacy.Writes == nil {
+			continue
+		}
+		recorded++
+		t.Run(f.Name, func(t *testing.T) {
+			got, err := f.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := slices.Sorted(slices.Values(f.Legacy.Writes))
+			if keys := WriteKeys(got); f.Legacy.WritesDivergence == "" && !slices.Equal(keys, want) {
+				t.Errorf("writes %v, legacy made %v and no divergence is recorded", keys, want)
+			}
+		})
+	}
+	if recorded < minWriteFixtures {
+		t.Fatalf("%d fixtures record legacy writes, want at least %d", recorded, minWriteFixtures)
+	}
+}
+
 // TestFixturesCoverOutcomes keeps a representative fixture for every
 // outcome the acceptance names.
 func TestFixturesCoverOutcomes(t *testing.T) {
@@ -130,5 +161,24 @@ func TestLoadRefusesTrailingData(t *testing.T) {
 	want := filepath.Join(dir, "a.json") + ": trailing data after the fixture"
 	if err == nil || err.Error() != want {
 		t.Errorf("err %v, want %q", err, want)
+	}
+}
+
+// TestLedgerTaskRunsByName pins the replay ledger's task runs in name
+// order, as the store's: fixture order would change which runs a
+// cancellation notice lists first.
+func TestLedgerTaskRunsByName(t *testing.T) {
+	l := Ledger{Runs: []route.RunRecord{
+		{Name: "vikunja-sillage-claude-opus-5", TaskID: 5, Family: run.VikunjaImplement},
+		{Name: "vikunja-other-6", TaskID: 6, Family: run.VikunjaImplement},
+		{Name: "vikunja-discuss-sillage-claude-opus-5", TaskID: 5, Family: run.VikunjaDiscuss},
+	}}
+	var got []string
+	for _, r := range l.TaskRuns(5, run.AgentFamilies) {
+		got = append(got, r.Name)
+	}
+	want := []string{"vikunja-discuss-sillage-claude-opus-5", "vikunja-sillage-claude-opus-5"}
+	if !slices.Equal(got, want) {
+		t.Errorf("TaskRuns = %v, want %v", got, want)
 	}
 }

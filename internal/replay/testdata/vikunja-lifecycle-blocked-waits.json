@@ -1,0 +1,73 @@
+{
+  "description": "A card in Doing whose blocker (in another project) is open starts nothing yet: Gordon waits before submitting.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4110,
+          "project_id": 3,
+          "done": false,
+          "labels": [],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4110,
+      "project_id": 3,
+      "done": false,
+      "labels": [],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "blocked_by": [
+          {
+            "id": 5000,
+            "project_id": 136,
+            "done": false,
+            "title": "blocker"
+          }
+        ]
+      }
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "vikunja-hollingsworth-claude-opus-4110"
+    ],
+    "divergence": "legacy created the Task at once and its pod waited in the wait-for-blockers init container (up to 7 days, then a blocker-timeout notice); Gordon submits nothing until the blocker is done, so no pod waits and no timeout exists",
+    "writes": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "vikunja/task.updated/4110/066ae8a96ccfe95a4cb90a7823a8ead2",
+    "request_key": "vikunja/task/4110",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "blocked"
+      }
+    ]
+  }
+}

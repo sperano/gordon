@@ -272,3 +272,21 @@ func TestParseBySource(t *testing.T) {
 		t.Fatalf("Parse(github) = %+v, %v", ev, err)
 	}
 }
+
+func TestParseVikunjaSynthetic(t *testing.T) {
+	ev, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3},` +
+		`"gordon":{"requeue":"vikunja/task.updated/5/x","depth":1}}}`))
+	if err != nil || ev.Vikunja.Synthetic == nil || ev.Vikunja.Synthetic.Requeue != "vikunja/task.updated/5/x" ||
+		ev.Vikunja.Synthetic.Depth != 1 {
+		t.Fatalf("synthetic %+v, %v", ev.Vikunja, err)
+	}
+	_, err = ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3},` +
+		`"gordon":{"requeue":"k","depth":-1000000}}}`))
+	if !errors.Is(err, ErrMalformed) {
+		t.Fatalf("negative depth: %v, want ErrMalformed", err)
+	}
+	plain, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3}}}`))
+	if err != nil || plain.Vikunja.Synthetic != nil || plain.DeliveryKey == ev.DeliveryKey {
+		t.Fatalf("plain delivery %+v, %v: no marker, its own key", plain.Vikunja, err)
+	}
+}

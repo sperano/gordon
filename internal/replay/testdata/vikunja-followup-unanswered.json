@@ -59,11 +59,11 @@
             "value": "eyes"
           },
           {
-            "key": "post-notice:vikunja/comment/90005:unanswered:no-agent-assignee",
+            "key": "post-notice:vikunja/task/4301:unanswered:90005:no-agent-assignee",
             "kind": "post-notice",
-            "target": "vikunja/comment/90005",
+            "target": "vikunja/task/4301",
             "value": "unanswered",
-            "detail": "no-agent-assignee"
+            "detail": "90005:no-agent-assignee"
           }
         ]
       }

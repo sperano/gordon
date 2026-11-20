@@ -11,6 +11,7 @@ import (
 
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
@@ -46,7 +47,8 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	}
 	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("do it"))
 	r, err := s.RunToSubmit(ctx, runName)
-	if err != nil || r.InboxID != id || r.Variant != "claude-opus" || r.State != "submitting" || r.Submitted() ||
+	if err != nil || r.InboxID != id || r.Variant != "claude-opus" || r.Family != run.VikunjaFollowUp ||
+		r.State != "submitting" || r.Submitted() || r.Stopped() ||
 		r.Task == nil || r.Task.Spec.Prompt != "do it" || r.Task.Metadata.Labels["a"] != "b" {
 		t.Fatalf("RunToSubmit = %+v, %v", r, err)
 	}
@@ -66,21 +68,28 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	if state != "active" || uid != "uid-1" || phase != kelos.PhasePending || !exists {
 		t.Fatalf("submitted run state %s uid %s phase %s exists %v", state, uid, phase, exists)
 	}
-	if r, err = s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() {
-		t.Fatal("a created run still reads as unsubmitted")
+	if r, err = s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() || r.Stopped() {
+		t.Fatal("a created run reads as unsubmitted or stopped")
 	}
 }
 
+// TestRunSubmittedFinishedTask: a Task found already finished is left to
+// the observer, which sees it finish (and tells its hook) on its next pass.
 func TestRunSubmittedFinishedTask(t *testing.T) {
-	s, dbURL := storetest.Open(t)
+	s, _ := storetest.Open(t)
 	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
-	if err := s.RunSubmitted(ctx, runName, id, "u", kelos.PhaseSucceeded); err != nil {
+	if err := s.RunSubmitted(ctx, runName, id, "u", kelos.PhaseFailed); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	storetest.QueryRow(t, dbURL, `SELECT state FROM runs WHERE name = $1`, []any{runName}, &state)
-	if state != "finished" {
-		t.Fatalf("run found already succeeded is %s, want finished", state)
+	if r, err := s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() || r.Stopped() {
+		t.Fatalf("a recovered finished run: %+v (%v), want submitted, not stopped", r, err)
+	}
+	runs, err := s.ObservedRuns(ctx, 10)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("ObservedRuns = %+v, %v", runs, err)
+	}
+	if r := runs[0]; r.State != "active" || !r.Exists || r.Phase != "" {
+		t.Fatalf("observed %+v, want active, present, no phase yet", r)
 	}
 }
 
@@ -172,11 +181,12 @@ func TestRunSubmittedAfterTheObserver(t *testing.T) {
 	if err := s.ObserveRun(ctx, runName, id, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RunSubmitted(ctx, runName, id, "uid-2", kelos.PhaseRunning); err != nil {
+	if err := s.RunSubmitted(ctx, runName, id, "uid-2", kelos.PhaseSucceeded); err != nil {
 		t.Fatal(err)
 	}
-	if st, uid, phase, exists := row(); st != "finished" || uid != "uid-2" || phase != "" || exists {
-		t.Fatalf("finished run: %s %q %q %v, want finished uid-2, no phase, gone", st, uid, phase, exists)
+	// A run seen gone keeps its last observed phase (ObserveRun).
+	if st, uid, phase, exists := row(); st != "finished" || uid != "uid-2" || phase != kelos.PhaseRunning || exists {
+		t.Fatalf("finished run: %s %q %q %v, want finished uid-2, the last phase, gone", st, uid, phase, exists)
 	}
 	if err := s.RunSubmitted(ctx, runName, id+1, "uid-3", ""); err != nil {
 		t.Fatal(err)

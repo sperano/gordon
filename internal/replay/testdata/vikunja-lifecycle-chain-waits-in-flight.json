@@ -1,0 +1,120 @@
+{
+  "description": "A chain whose current subtask is in Review (its PR open) waits: nothing starts out of order.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4320,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "chain"
+            },
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4320,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4321,
+            "project_id": 3,
+            "done": false
+          },
+          {
+            "id": 4322,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4321,
+        "project_id": 3,
+        "done": false,
+        "labels": [
+          "pr open"
+        ],
+        "assignees": [
+          "claude-opus"
+        ],
+        "buckets": [
+          "Review"
+        ],
+        "index": 1
+      },
+      {
+        "id": 4322,
+        "project_id": 3,
+        "done": false,
+        "labels": [],
+        "assignees": [],
+        "buckets": [
+          "To-Do"
+        ],
+        "index": 2
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "vikunja/task.updated/4320/69dde1c5e0a52ebbdfe476b8781f213a",
+    "request_key": "vikunja/task/4320",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "in-progress"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "subtask-in-flight"
+      }
+    ]
+  }
+}

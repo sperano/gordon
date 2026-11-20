@@ -1,0 +1,104 @@
+{
+  "description": "A late delivery of the parent from before it entered Doing is decided on the fresh state: the subtask already started is in flight, so the chain waits.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4395,
+          "project_id": 3,
+          "done": false,
+          "labels": [],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4395,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "chain",
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "Doing"
+      ],
+      "relations": {
+        "subtasks": [
+          {
+            "id": 4396,
+            "project_id": 3,
+            "done": false
+          }
+        ]
+      }
+    },
+    "subtasks": [
+      {
+        "id": 4396,
+        "project_id": 3,
+        "done": false,
+        "labels": [
+          "in progress"
+        ],
+        "assignees": [
+          "claude-opus"
+        ],
+        "buckets": [
+          "Doing"
+        ],
+        "index": 1
+      }
+    ],
+    "comments": [
+      {
+        "id": 1,
+        "author": "gordon",
+        "body": "<p>NEXT UP IN THE CHAIN: <a href=\"https://vikunja.spe.quebec/tasks/4396\">#4396</a>. AGENT <code>claude-opus</code> TAKES IT FROM <code>Doing</code>.</p><!-- kelos:chain-started -->"
+      }
+    ]
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [],
+    "writes": []
+  },
+  "expect": {
+    "outcome": "stale",
+    "delivery_key": "vikunja/task.updated/4395/ea000a0e844472e460a619b1b374075f",
+    "request_key": "vikunja/task/4395",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "stale",
+        "reason": "in-progress"
+      },
+      {
+        "family": "vikunja-chain",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "subtask-in-flight"
+      }
+    ]
+  }
+}

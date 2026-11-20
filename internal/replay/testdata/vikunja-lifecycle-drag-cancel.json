@@ -1,0 +1,117 @@
+{
+  "description": "A card dragged back to To-Do while its implementation run is live: the run is cancelled, in progress removed, the stop notice posted.",
+  "delivery": {
+    "source": "vikunja",
+    "body": {
+      "event_name": "task.updated",
+      "time": "2026-11-20T08:00:00Z",
+      "data": {
+        "task": {
+          "id": 4120,
+          "project_id": 3,
+          "done": false,
+          "labels": [
+            {
+              "title": "in progress"
+            }
+          ],
+          "assignees": [
+            {
+              "username": "claude-opus"
+            }
+          ]
+        },
+        "doer": {
+          "username": "eric"
+        }
+      }
+    }
+  },
+  "state": {
+    "task": {
+      "id": 4120,
+      "project_id": 3,
+      "done": false,
+      "labels": [
+        "in progress"
+      ],
+      "assignees": [
+        "claude-opus"
+      ],
+      "buckets": [
+        "To-Do"
+      ]
+    }
+  },
+  "ledger": {
+    "runs": [
+      {
+        "name": "vikunja-hollingsworth-claude-opus-4120",
+        "active": true,
+        "exists": true,
+        "family": "vikunja-implement",
+        "task_id": 4120
+      },
+      {
+        "name": "vikunja-fu-hollingsworth-4120-c3",
+        "active": true,
+        "exists": true,
+        "family": "vikunja-followup",
+        "task_id": 4120
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": [],
+    "writes": [
+      "cancel-run:vikunja/task/4120",
+      "remove-label:vikunja/task/4120:in progress",
+      "post-notice:vikunja/task/4120:stop:vikunja-hollingsworth-claude-opus-4120"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "vikunja/task.updated/4120/14c8469747f3fe0a3f058dbb44def72b",
+    "request_key": "vikunja/task/4120",
+    "families": [
+      {
+        "family": "vikunja-implement",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "ignore",
+        "reason": "not-in-doing"
+      },
+      {
+        "family": "vikunja-drag-cancel",
+        "project": "hollingsworth",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "actions": [
+          {
+            "key": "cancel-run:vikunja/task/4120",
+            "kind": "cancel-run",
+            "target": "vikunja/task/4120",
+            "detail": "vikunja-hollingsworth-claude-opus-4120"
+          },
+          {
+            "key": "remove-label:vikunja/task/4120:in progress",
+            "kind": "remove-label",
+            "target": "vikunja/task/4120",
+            "value": "in progress",
+            "after": "cancel-run:vikunja/task/4120"
+          },
+          {
+            "key": "post-notice:vikunja/task/4120:stop:vikunja-hollingsworth-claude-opus-4120",
+            "kind": "post-notice",
+            "target": "vikunja/task/4120",
+            "value": "stop",
+            "detail": "vikunja-hollingsworth-claude-opus-4120",
+            "after": "remove-label:vikunja/task/4120:in progress"
+          }
+        ]
+      }
+    ]
+  }
+}

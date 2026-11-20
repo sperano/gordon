@@ -6,11 +6,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -436,5 +438,71 @@ func TestListFailsOverTheTotalCap(t *testing.T) {
 	defer mu.Unlock()
 	if want := pagesUnderCap + 1; served != want {
 		t.Fatalf("served %d pages, want %d: the first page past the cap ends the list", served, want)
+	}
+}
+
+// TestDeleteSendsBackgroundDeleteOptionsWithTheUID: the DELETE names the
+// Task, propagates in the background and, given a uid, preconditions it.
+func TestDeleteSendsBackgroundDeleteOptionsWithTheUID(t *testing.T) {
+	var method, path, body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body) //nolint:errcheck // test server
+		method, path, body = r.Method, r.URL.Path, string(data)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Success"}`)) //nolint:errcheck // test server
+	}))
+	defer srv.Close()
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	if err := c.Delete(context.Background(), "a", "uid-1"); err != nil {
+		t.Fatal(err)
+	}
+	wantPath := "/apis/" + kelos.Group + "/" + kelos.Version + "/namespaces/" + ns + "/tasks/a"
+	wantBody := `{"apiVersion":"v1","kind":"DeleteOptions","propagationPolicy":"Background","preconditions":{"uid":"uid-1"}}`
+	if method != http.MethodDelete || path != wantPath || body != wantBody {
+		t.Fatalf("sent %s %s %s, want DELETE %s %s", method, path, body, wantPath, wantBody)
+	}
+	if err := c.Delete(context.Background(), "a", ""); err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"apiVersion":"v1","kind":"DeleteOptions","propagationPolicy":"Background"}`; body != want {
+		t.Fatalf("sent %s without a uid, want %s", body, want)
+	}
+}
+
+// TestDeleteOutcomes: a Task gone is no error; a recreated Task (another
+// uid) and a server failure are, and each delete is observed.
+func TestDeleteOutcomes(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	c, o := client(t, srv)
+	ctx := context.Background()
+	srv.Put(task("a"))
+	stored, _ := srv.Task("a")
+	if err := c.Delete(ctx, "a", "uid-other"); err == nil || kelos.IsNotFound(err) || !strings.Contains(err.Error(), "Precondition failed") {
+		t.Fatalf("Delete of a recreated Task = %v, want the Conflict", err)
+	}
+	if _, ok := srv.Task("a"); !ok {
+		t.Fatal("a Task with another uid was deleted")
+	}
+	if err := c.Delete(ctx, "a", stored.Metadata.UID); err != nil {
+		t.Fatalf("Delete = %v", err)
+	}
+	if err := c.Delete(ctx, "a", stored.Metadata.UID); err != nil {
+		t.Fatalf("Delete of a gone Task = %v, want nil", err)
+	}
+	if got := srv.Deletes(); !slices.Equal(got, []string{"a"}) {
+		t.Fatalf("deleted %v, want a once", got)
+	}
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer failing.Close()
+	fc := &kelos.Client{BaseURL: failing.URL, Namespace: ns, HTTP: failing.Client()}
+	var kerr *kelos.Error
+	if err := fc.Delete(ctx, "a", ""); !errors.As(err, &kerr) || kerr.Status != http.StatusInternalServerError || kelos.IsNotFound(err) {
+		t.Fatalf("Delete on a 500 = %v, want the 500", err)
+	}
+	if want := "delete=error,delete=ok,delete=not_found"; o.list() != want {
+		t.Fatalf("observed %s, want %s", o.list(), want)
 	}
 }

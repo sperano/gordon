@@ -3,9 +3,11 @@ package store_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
@@ -117,8 +119,16 @@ func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 	if _, err := conn.Exec(ctx, "DELETE FROM requests"); !denied(err) {
 		t.Fatalf("worker DELETE = %v, want permission denied", err)
 	}
-	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key) VALUES ('vikunja', 'forged')`); !denied(err) {
-		t.Fatalf("worker inbox INSERT = %v, want permission denied", err)
+	// The worker queues its own synthetic deliveries, never a body digest
+	// (the receiver's duplicate check of signed GitHub bodies): a row the
+	// insert policy admits, so only the column grant refuses it.
+	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, request_key, kind, scope, headers, body, body_digest)
+		VALUES ('vikunja', 'forged', '', 'vikunja/task.updated', '', '{"`+store.SyntheticHeader+`": "requeue"}', '\x7b7d', '\x00')`); !denied(err) {
+		t.Fatalf("worker inbox INSERT of a body digest = %v, want permission denied", err)
+	}
+	if _, err := conn.Exec(ctx, `INSERT INTO inbox (source, delivery_key, request_key, kind, scope, headers, body)
+		VALUES ('vikunja', 'synthetic', '', 'vikunja/task.updated', '', '{"X-Gordon-Synthetic": "requeue"}', '\x7b7d')`); err != nil {
+		t.Fatalf("worker synthetic inbox INSERT = %v, want allowed", err)
 	}
 	if _, err := conn.Exec(ctx, `UPDATE inbox SET source = 'github'`); !denied(err) {
 		t.Fatalf("worker update of a delivery column = %v, want permission denied", err)
@@ -301,4 +311,197 @@ func TestGrantWorkerDispatchRights(t *testing.T) {
 	if _, err := ws.PruneTasks(ctx, 0); err != nil {
 		t.Fatalf("worker PruneTasks: %v", err)
 	}
+}
+
+// TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries: the row policy
+// refuses a worker insert of a GitHub delivery or of a Vikunja delivery
+// without the synthetic header; the receiver and the worker's own
+// synthetic deliveries are unaffected.
+func TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	receiver, worker := role(t, dbURL), role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Receiver: receiver, Worker: worker}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	syn, err := store.TaskUpdate(7, 3, event.Synthetic{Reconcile: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	github := syn
+	github.Source, github.DeliveryKey = event.SourceGitHub, "forged-github"
+	unmarked := syn
+	unmarked.DeliveryKey, unmarked.Headers = "forged-unmarked", map[string]string{"X-Test": "1"}
+	for name, d := range map[string]store.Delivery{"github": github, "no synthetic header": unmarked} {
+		if _, err := ws.Enqueue(ctx, []store.Delivery{d}); !denied(err) {
+			t.Errorf("worker insert of a %s delivery = %v, want permission denied", name, err)
+		}
+	}
+	if n, err := ws.Enqueue(ctx, []store.Delivery{syn}); err != nil || n != 1 {
+		t.Fatalf("worker synthetic Enqueue = %d, %v; want 1 stored", n, err)
+	}
+	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, receiver, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	if _, dup, err := rs.Accept(ctx, delivery("k")); err != nil || dup {
+		t.Fatalf("receiver Accept under the row policies = %v, %v; want a new row", dup, err)
+	}
+	if _, err := ws.Claim(ctx, "w", 2, testTTL); err != nil {
+		t.Fatalf("worker Claim under the row policies: %v", err)
+	}
+}
+
+// forgedDeliveries are a GitHub delivery and a Vikunja one without the
+// synthetic header, both of which the worker insert policy refuses.
+func forgedDeliveries(t *testing.T) map[string]store.Delivery {
+	t.Helper()
+	syn, err := store.TaskUpdate(7, 3, event.Synthetic{Reconcile: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	github := syn
+	github.Source, github.DeliveryKey = event.SourceGitHub, "forged-github"
+	unmarked := syn
+	unmarked.DeliveryKey, unmarked.Headers = "forged-unmarked", map[string]string{"X-Test": "1"}
+	return map[string]store.Delivery{"github": github, "no synthetic header": unmarked}
+}
+
+// assertWorkerRestricted fails unless every forged delivery the worker
+// role inserts is refused.
+func assertWorkerRestricted(t *testing.T, dbURL, worker string) {
+	t.Helper()
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	for name, d := range forgedDeliveries(t) {
+		if _, err := ws.Enqueue(ctx, []store.Delivery{d}); !denied(err) {
+			t.Errorf("worker %s insert of a %s delivery = %v, want permission denied", worker, name, err)
+		}
+	}
+}
+
+// TestGrantWithoutAWorkerKeepsTheInsertPolicy: a later Grant of only a
+// receiver (a migrate run without GORDON_WORKER_ROLE) or of nothing
+// leaves the worker's insert check in place.
+func TestGrantWithoutAWorkerKeepsTheInsertPolicy(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	worker, receiver := role(t, dbURL), role(t, dbURL)
+	for _, r := range []store.Roles{{Worker: worker}, {Receiver: receiver}, {}} {
+		if err := owner.Grant(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertWorkerRestricted(t, dbURL, worker)
+}
+
+// TestGrantNewWorkerKeepsTheFormerWorkerRestricted: a former worker keeps
+// its INSERT grant, so a Grant of another worker role restricts both.
+func TestGrantNewWorkerKeepsTheFormerWorkerRestricted(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	former, worker := role(t, dbURL), role(t, dbURL)
+	for _, w := range []string{former, worker} {
+		if err := owner.Grant(ctx, store.Roles{Worker: w}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertWorkerRestricted(t, dbURL, former)
+	assertWorkerRestricted(t, dbURL, worker)
+}
+
+// TestGrantWorkerRoleReusedAsReceiverAcceptsWebhooks: a worker role
+// granted the receiver mode leaves the insert policy, so it can store a
+// GitHub webhook, while the new worker stays restricted.
+func TestGrantWorkerRoleReusedAsReceiverAcceptsWebhooks(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	reused, worker := role(t, dbURL), role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Worker: reused}); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Grant(ctx, store.Roles{Receiver: reused, Worker: worker}); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, reused, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	webhook := delivery("k")
+	webhook.Source = event.SourceGitHub
+	if _, dup, err := rs.Accept(ctx, webhook); err != nil || dup {
+		t.Fatalf("former worker's receiver Accept of a GitHub webhook = %v, %v; want a new row", dup, err)
+	}
+	assertWorkerRestricted(t, dbURL, worker)
+}
+
+const (
+	// lockPollInterval and lockPollLimit bound the wait for the Grants
+	// to queue on the lock the test holds.
+	lockPollInterval = 10 * time.Millisecond
+	lockPollLimit    = 500
+	// concurrentGrants is the number of Grants racing on the policy.
+	concurrentGrants = 2
+)
+
+// TestConcurrentGrantsKeepEveryWorkerRestricted: two Grants of different
+// workers serialize on the migration lock, so the later one rebuilds the
+// insert policy from the set the earlier one wrote and both stay covered.
+func TestConcurrentGrantsKeepEveryWorkerRestricted(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	workers := []string{role(t, dbURL), role(t, dbURL)}
+	holder, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close(ctx)
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock($1)", store.MigrationLockKey); err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, len(workers))
+	for _, w := range workers {
+		go func() { errs <- owner.Grant(ctx, store.Roles{Worker: w}) }()
+	}
+	waitForLockWaiters(t, holder, errs)
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_unlock($1)", store.MigrationLockKey); err != nil {
+		t.Fatal(err)
+	}
+	for range workers {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent Grant: %v", err)
+		}
+	}
+	for _, w := range workers {
+		assertWorkerRestricted(t, dbURL, w)
+	}
+}
+
+// waitForLockWaiters returns once concurrentGrants sessions wait on the
+// migration lock, failing if a Grant returns first or none queue in time.
+func waitForLockWaiters(t *testing.T, conn *pgx.Conn, errs <-chan error) {
+	t.Helper()
+	const waiting = `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+		AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`
+	for range lockPollLimit {
+		select {
+		case err := <-errs:
+			t.Fatalf("Grant returned (%v) while the migration lock was held", err)
+		default:
+		}
+		var n int
+		if err := conn.QueryRow(ctx, waiting).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n == concurrentGrants {
+			return
+		}
+		time.Sleep(lockPollInterval)
+	}
+	t.Fatalf("Grants never queued on the migration lock")
 }

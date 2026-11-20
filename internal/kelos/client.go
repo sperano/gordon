@@ -193,6 +193,39 @@ func (c *Client) Get(ctx context.Context, name string) (Task, json.RawMessage, e
 	return t, raw, nil
 }
 
+// deleteOptions is the body of a Task delete.
+type deleteOptions struct {
+	APIVersion        string         `json:"apiVersion"`
+	Kind              string         `json:"kind"`
+	PropagationPolicy string         `json:"propagationPolicy"`
+	Preconditions     *preconditions `json:"preconditions,omitempty"`
+}
+
+type preconditions struct {
+	UID string `json:"uid"`
+}
+
+// Delete deletes the Task of that name with its Job and pods
+// (propagationPolicy Background); a Task already gone is not an error.
+// With a uid (the Task as listed), the API server deletes only that Task:
+// one recreated under the name since is refused with a Conflict, which is
+// returned.
+func (c *Client) Delete(ctx context.Context, name, uid string) error {
+	opts := deleteOptions{APIVersion: "v1", Kind: "DeleteOptions", PropagationPolicy: "Background"}
+	if uid != "" {
+		opts.Preconditions = &preconditions{UID: uid}
+	}
+	body, err := json.Marshal(opts)
+	if err != nil {
+		return &Error{Op: "delete", Err: err}
+	}
+	err = c.do(ctx, "delete", http.MethodDelete, c.collection()+"/"+url.PathEscape(name), nil, body, maxObjectBytes, &json.RawMessage{})
+	if IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 type taskList struct {
 	Metadata struct {
 		Continue string `json:"continue"`
@@ -348,7 +381,7 @@ const (
 var Results = []string{ResultOK, ResultNotFound, ResultRefused, ResultError, ResultTooLarge}
 
 // Ops lists every observed operation.
-var Ops = []string{"create", "get", "list"}
+var Ops = []string{"create", "get", "list", "delete"}
 
 func (c *Client) observe(op string, err error, d time.Duration) {
 	if c.Observe == nil {

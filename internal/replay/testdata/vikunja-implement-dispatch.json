@@ -98,6 +98,30 @@
             "key": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4101",
             "kind": "submit-task",
             "target": "kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4101"
+          },
+          {
+            "key": "add-label:vikunja/task/4101:in progress",
+            "kind": "add-label",
+            "target": "vikunja/task/4101",
+            "value": "in progress",
+            "detail": "claim",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4101"
+          },
+          {
+            "key": "move-bucket:vikunja/task/4101:Doing",
+            "kind": "move-bucket",
+            "target": "vikunja/task/4101",
+            "value": "Doing",
+            "detail": "claim",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4101"
+          },
+          {
+            "key": "post-notice:vikunja/task/4101:start:vikunja-hollingsworth-claude-opus-4101",
+            "kind": "post-notice",
+            "target": "vikunja/task/4101",
+            "value": "start",
+            "detail": "vikunja-hollingsworth-claude-opus-4101",
+            "after": "submit-task:kelos/kelos-agents/vikunja-hollingsworth-claude-opus-4101"
           }
         ]
       }

@@ -33,15 +33,17 @@ func newKelos(cfg config.Worker, m *metrics.Metrics) (*kelos.Client, error) {
 }
 
 // executors are the outbox executors of this release: Kelos Task
-// submission when Kelos is configured. The lifecycle stages register the
-// Vikunja and GitHub writers; until then their actions stay queued
-// (deferred), never dropped.
+// submission and run cancellation when Kelos is configured, and the
+// Vikunja writer with a write token. The GitHub writers arrive with
+// Gordon 08; until then their actions stay queued (deferred), never
+// dropped.
 func executors(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metrics, log *slog.Logger) map[action.Kind]worker.Executor {
 	out := map[action.Kind]worker.Executor{}
 	if k != nil {
 		out[action.SubmitTask] = &submit.Executor{Runs: s, Kelos: k, Limits: cfg.Kelos.Dispatch.Limits,
 			BusyDelay: cfg.Kelos.BusyDelay, Metrics: m, Log: log.With("executor", string(action.SubmitTask))}
 	}
+	lifecycleExecutors(out, cfg, s, k)
 	return out
 }
 
@@ -54,7 +56,8 @@ func passes(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metri
 	out := []worker.Pass{&submit.Shadow{Store: s, Kelos: k, Window: cfg.Kelos.ShadowWindow, Metrics: m,
 		Log: log.With("pass", "shadow")}}
 	if !cfg.Shadow {
-		out = append(out, &submit.Observer{Store: s, Kelos: k, Metrics: m, Log: log.With("pass", "observe")})
+		out = append(out, &submit.Observer{Store: s, Kelos: k, Finished: failureHook(cfg, s), Metrics: m,
+			Log: log.With("pass", "observe")})
 	}
 	return out
 }

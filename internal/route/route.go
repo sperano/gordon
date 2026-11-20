@@ -171,6 +171,10 @@ func isRequest(text, trigger string, html bool) bool {
 	return regexp.MustCompile(prefix + regexp.QuoteMeta(trigger) + end).MatchString(text)
 }
 
+// IsVikunjaRequest reports whether a Vikunja comment's HTML is an owner
+// command for trigger, as the router matches it.
+func IsVikunjaRequest(text, trigger string) bool { return isRequest(text, trigger, true) }
+
 // agents returns the task's assignees that are agent variants.
 func (r Router) agents(t event.Task) []string {
 	var out []string

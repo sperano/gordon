@@ -125,7 +125,10 @@ func policy() Policy {
 		ChainLabel: "chain", PROpenLabel: "pr open",
 		MergeCloseLabels: []string{"in progress", "pr open", "ready to merge", "round-limit-reached", "action-needed"},
 		CloseLabels:      []string{"pr open", "ready to merge", "round-limit-reached", "action-needed"},
-		DoingBucket:      "Doing", ReviewBucket: "Review",
+		DoingBucket:      "Doing", ReviewBucket: "Review", BacklogBucket: "To-Do",
+		AgentErrorLabel: "agent-error", ActionNeededLabel: "action-needed",
+		AutoMergeLabel: "auto-merge", AutoMergeLabelCreator: "eric",
+		VikunjaServiceUser: "gordon", VikunjaWebURL: "https://vikunja.spe.quebec", CancelReaction: "👎",
 		VariantLabelPrefix: "kelos:", DraftLabel: "kelos:follow-up",
 		FixSuggestionsLabel: "kelos:fix-suggestions", NoReviewLabel: "kelos:no-review",
 		ReviewBots: []Bot{
