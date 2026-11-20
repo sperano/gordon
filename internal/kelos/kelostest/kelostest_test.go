@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,27 +37,35 @@ func TestAdmissionRunsBeforeTheNameCheck(t *testing.T) {
 	}
 }
 
-// admitGuard ends a create whose admission deadlocks on the server.
+// admitGuard bounds Admit's read of the server: past it, the read is
+// taken for a deadlock on the server's lock and the test fails, while
+// Admit returns so the handler, and srv.Close, can finish.
 const admitGuard = 5 * time.Second
 
 // TestAdmitMayReadTheServer: Admit runs outside the server's lock.
 func TestAdmitMayReadTheServer(t *testing.T) {
 	srv := kelostest.New(ns)
 	defer srv.Close()
-	ran, existed := false, false
+	var ran, existed atomic.Bool
 	srv.Admit = func(kelos.Task) error {
-		ran = true
-		_, existed = srv.Task("a")
-		return nil
+		ran.Store(true)
+		read := make(chan bool, 1)
+		go func() { _, ok := srv.Task("a"); read <- ok }()
+		select {
+		case ok := <-read:
+			existed.Store(ok)
+			return nil
+		case <-time.After(admitGuard):
+			t.Error("Admit's read of the server deadlocked")
+			return errors.New("deadlock")
+		}
 	}
-	hc := srv.Client()
-	hc.Timeout = admitGuard
-	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: hc}
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
 	if _, err := c.Create(context.Background(), named("a")); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := srv.Task("a"); !ok || !ran || existed {
-		t.Fatalf("created %v, admission ran %v and saw the Task already %v", ok, ran, existed)
+	if _, ok := srv.Task("a"); !ok || !ran.Load() || existed.Load() {
+		t.Fatalf("created %v, admission ran %v and saw the Task already %v", ok, ran.Load(), existed.Load())
 	}
 }
 
@@ -181,12 +190,21 @@ func TestDropResponseCutsARefusedCreate(t *testing.T) {
 	srv := kelostest.New(ns)
 	defer srv.Close()
 	srv.Put(named("taken"))
+	// Admit is set before the first request and switched through refuse:
+	// writing srv.Admit after a dropped create races its handler's read.
+	var refuse atomic.Bool
+	srv.Admit = func(kelos.Task) error {
+		if refuse.Load() {
+			return errors.New("refused by policy")
+		}
+		return nil
+	}
 	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
 	srv.FailCreates(kelostest.DropResponse)
 	if _, err := c.Create(context.Background(), named("taken")); err == nil || kelos.IsAlreadyExists(err) || !kelos.IsAmbiguous(err) {
 		t.Fatalf("dropped create of a taken name = %v, want a lost response", err)
 	}
-	srv.Admit = func(kelos.Task) error { return errors.New("refused by policy") }
+	refuse.Store(true)
 	srv.FailCreates(kelostest.DropResponse)
 	if _, err := c.Create(context.Background(), named("new")); err == nil || kelos.IsRefused(err) || !kelos.IsAmbiguous(err) {
 		t.Fatalf("dropped refused create = %v, want a lost response", err)
@@ -257,5 +275,55 @@ func TestListRefusesInvalidContinueTokens(t *testing.T) {
 		if err != nil || resp.StatusCode != http.StatusBadRequest || st.Reason != "BadRequest" || st.Message != want {
 			t.Errorf("continue %q = %d %+v (%v), want 400 BadRequest %q", token, resp.StatusCode, st, err, want)
 		}
+	}
+}
+
+// TestCreateRefusesAnotherNamespace: as the API server, a create whose
+// body names another namespace than the request path answers 400 and
+// stores nothing; a body without a namespace is created.
+func TestCreateRefusesAnotherNamespace(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	u := srv.URL + "/apis/" + kelos.APIVersion + "/namespaces/" + ns + "/tasks"
+	post := func(body string) (int, string) {
+		resp, err := srv.Client().Post(u, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var st struct{ Message string }
+		_ = json.NewDecoder(resp.Body).Decode(&st) //nolint:errcheck // a 201 has no message
+		return resp.StatusCode, st.Message
+	}
+	code, msg := post(`{"metadata":{"name":"a","namespace":"other"},"spec":{"prompt":"p"}}`)
+	want := "the namespace of the provided object does not match the namespace sent on the request"
+	if _, stored := srv.Task("a"); code != http.StatusBadRequest || msg != want || stored || len(srv.Creates()) != 0 {
+		t.Fatalf("create in another namespace = %d %q (stored %v, creates %d), want 400 %q and nothing kept", code, msg, stored, len(srv.Creates()), want)
+	}
+	if code, msg := post(`{"metadata":{"name":"b"},"spec":{"prompt":"p"}}`); code != http.StatusCreated {
+		t.Fatalf("create without a namespace = %d %q, want 201", code, msg)
+	}
+	if got, _ := srv.Task("b"); got.Metadata.Namespace != ns {
+		t.Fatalf("stored namespace %q, want %q", got.Metadata.Namespace, ns)
+	}
+}
+
+// TestRepeatedSelectorKeysAllApply: k=a,k=b requires both values, so it
+// matches no Task, and k=a,k=a matches the Task labelled k=a.
+func TestRepeatedSelectorKeysAllApply(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	for name, v := range map[string]string{"ta": "a", "tb": "b"} {
+		task := named(name)
+		task.Metadata.Labels = map[string]string{"k": v}
+		srv.Put(task)
+	}
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	if got, err := c.List(context.Background(), "k=a,k=b"); err != nil || len(got) != 0 {
+		t.Fatalf("List(\"k=a,k=b\") = %+v, %v; want no Task", got, err)
+	}
+	got, err := c.List(context.Background(), "k=a,k=a")
+	if err != nil || len(got) != 1 || got[0].Metadata.Name != "ta" {
+		t.Fatalf("List(\"k=a,k=a\") = %+v, %v; want only ta", got, err)
 	}
 }

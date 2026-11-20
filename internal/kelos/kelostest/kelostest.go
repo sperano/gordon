@@ -119,7 +119,7 @@ func (s *Server) Raw(name string) json.RawMessage {
 }
 
 // Creates returns every well-formed create request body (a Task with a
-// name) that reached the server, accepted or not, in order.
+// name, in the server's namespace) that reached the server, accepted or not, in order.
 func (s *Server) Creates() []kelos.Task {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,6 +174,12 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil || t.Metadata.Name == "" {
 		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid Task")
+		return
+	}
+	if ns := t.Metadata.Namespace; ns != "" && ns != s.Namespace {
+		// As the API server does: the body may omit the namespace, not
+		// contradict the request path's.
+		writeStatus(w, http.StatusBadRequest, "BadRequest", "the namespace of the provided object does not match the namespace sent on the request")
 		return
 	}
 	s.mu.Lock()
@@ -324,13 +330,18 @@ func (s *Server) resume(token string) (items []json.RawMessage, snap, start int,
 	return items, snap, start, nil
 }
 
-type selector map[string]string
+// requirement is one k=v term of a label selector.
+type requirement struct{ key, value string }
+
+// selector is every requirement of a label selector, repeated keys
+// included: as in the API server, a Task must meet them all.
+type selector []requirement
 
 // parseSelector reads equality selectors (k=v,k2=v2), all the client
 // uses; any other syntax (k!=v, k==v, k in (...), a bare k) is an
 // error, so a test cannot pass on a selector the fake misread.
 func parseSelector(s string) (selector, error) {
-	out := selector{}
+	var out selector
 	if s == "" {
 		return out, nil
 	}
@@ -339,14 +350,14 @@ func parseSelector(s string) (selector, error) {
 		if !ok || k == "" || strings.ContainsAny(k, "!=() ") || strings.ContainsAny(v, "=!() ") {
 			return nil, fmt.Errorf("unsupported label selector %q", part)
 		}
-		out[k] = v
+		out = append(out, requirement{k, v})
 	}
 	return out, nil
 }
 
 func (s selector) matches(labels map[string]string) bool {
-	for k, v := range s {
-		if got, ok := labels[k]; !ok || got != v {
+	for _, r := range s {
+		if got, ok := labels[r.key]; !ok || got != r.value {
 			return false
 		}
 	}
