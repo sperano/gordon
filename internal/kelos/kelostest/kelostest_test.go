@@ -216,3 +216,46 @@ func TestEmptySelectorValueNeedsTheLabel(t *testing.T) {
 		t.Fatalf("List(\"k=\") = %+v, %v; want only the Task labelled k", got, err)
 	}
 }
+
+// TestCreateAssignsTheUID: as the API server, a create ignores a
+// client-supplied UID and stores one of its own.
+func TestCreateAssignsTheUID(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	sent := named("a")
+	sent.Metadata.UID = "client-uid"
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	got, err := c.Create(context.Background(), sent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := srv.Task("a")
+	if got.Metadata.UID != "uid-1" || stored.Metadata.UID != "uid-1" {
+		t.Fatalf("created UID %q, stored %q, want uid-1 from the server", got.Metadata.UID, stored.Metadata.UID)
+	}
+}
+
+// TestListRefusesInvalidContinueTokens: a continue token the server did
+// not hand out answers 400 instead of a page (or a panic).
+func TestListRefusesInvalidContinueTokens(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	srv.PageSize = 1
+	srv.Put(named("a"))
+	srv.Put(named("b"))
+	listPage(t, srv, "") // snapshot 0, two items
+	for _, token := range []string{"junk", "0", "0/-1", "0/3", "0/x", "1/0", "-1/0"} {
+		u := srv.URL + "/apis/" + kelos.APIVersion + "/namespaces/" + ns + "/tasks?continue=" + url.QueryEscape(token)
+		resp, err := srv.Client().Get(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var st struct{ Reason, Message string }
+		err = json.NewDecoder(resp.Body).Decode(&st)
+		resp.Body.Close()
+		want := "continue key \"" + token + "\" is not valid"
+		if err != nil || resp.StatusCode != http.StatusBadRequest || st.Reason != "BadRequest" || st.Message != want {
+			t.Errorf("continue %q = %d %+v (%v), want 400 BadRequest %q", token, resp.StatusCode, st, err, want)
+		}
+	}
+}

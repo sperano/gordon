@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -217,6 +218,8 @@ func (s *Server) apply(t kelos.Task) (code int, reason, msg string, raw json.Raw
 	if _, taken := s.tasks[t.Metadata.Name]; taken {
 		return http.StatusConflict, kelos.ReasonAlreadyExists, "tasks.kelos.dev \"" + t.Metadata.Name + "\" already exists", nil
 	}
+	// The API server assigns a create's UID, ignoring any the client sent.
+	t.Metadata.UID = ""
 	s.store(t)
 	return http.StatusCreated, "", "", s.tasks[t.Metadata.Name]
 }
@@ -262,7 +265,11 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		writeStatus(w, http.StatusBadRequest, "BadRequest", err.Error())
 		return
 	}
-	items, snap, start := s.page(r, sel)
+	items, snap, start, err := s.page(r, sel)
+	if err != nil {
+		writeStatus(w, http.StatusBadRequest, "BadRequest", err.Error())
+		return
+	}
 	end, next := len(items), ""
 	if s.PageSize > 0 && start+s.PageSize < len(items) {
 		end = start + s.PageSize
@@ -271,7 +278,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	page := struct {
 		Metadata map[string]string `json:"metadata"`
 		Items    []json.RawMessage `json:"items"`
-	}{Metadata: map[string]string{"continue": next}, Items: items[min(start, len(items)):end]}
+	}{Metadata: map[string]string{"continue": next}, Items: items[start:end]}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page) //nolint:errcheck // test server
 }
@@ -279,13 +286,14 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 // page returns the list a request pages through, its snapshot and the
 // offset of the page: the matching Tasks now on a first page, the snapshot its first
 // page took on a later one (a continue token "<snapshot>/<offset>"), as
-// the API server serves a list's pages from one resourceVersion.
-func (s *Server) page(r *http.Request, sel selector) (items []json.RawMessage, snap, start int) {
+// the API server serves a list's pages from one resourceVersion. A token
+// this server did not hand out is an error, as the API server refuses an
+// invalid continue key.
+func (s *Server) page(r *http.Request, sel selector) (items []json.RawMessage, snap, start int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := fmt.Sscanf(r.URL.Query().Get("continue"), "%d/%d", &snap, &start); err == nil &&
-		snap >= 0 && snap < len(s.snapshots) {
-		return s.snapshots[snap], snap, start
+	if token := r.URL.Query().Get("continue"); token != "" {
+		return s.resume(token)
 	}
 	for _, name := range s.order {
 		var t kelos.Task
@@ -294,7 +302,26 @@ func (s *Server) page(r *http.Request, sel selector) (items []json.RawMessage, s
 		}
 	}
 	s.snapshots = append(s.snapshots, items)
-	return items, len(s.snapshots) - 1, 0
+	return items, len(s.snapshots) - 1, 0, nil
+}
+
+// resume reads a continue token "<snapshot>/<offset>": the snapshot it
+// names and the offset of the page, which must lie inside that snapshot.
+// The caller holds s.mu.
+func (s *Server) resume(token string) (items []json.RawMessage, snap, start int, err error) {
+	bad := fmt.Errorf("continue key %q is not valid", token)
+	a, b, ok := strings.Cut(token, "/")
+	if !ok {
+		return nil, 0, 0, bad
+	}
+	if snap, err = strconv.Atoi(a); err != nil || snap < 0 || snap >= len(s.snapshots) {
+		return nil, 0, 0, bad
+	}
+	items = s.snapshots[snap]
+	if start, err = strconv.Atoi(b); err != nil || start < 0 || start > len(items) {
+		return nil, 0, 0, bad
+	}
+	return items, snap, start, nil
 }
 
 type selector map[string]string
