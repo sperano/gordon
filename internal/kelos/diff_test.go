@@ -178,3 +178,25 @@ func TestDiffDependentEnvInOrder(t *testing.T) {
 		t.Fatalf("Diff = %v, %v\nwant %v", diff, err, wantPaths)
 	}
 }
+
+// TestDiffEnvInOrderWhenOneSideReferences: a reference on either side
+// alone makes the env's order part of the comparison.
+func TestDiffEnvInOrderWhenOneSideReferences(t *testing.T) {
+	host, plain, ref := `{"name":"HOST","value":"db"}`, `{"name":"URL","value":"postgres://db"}`,
+		`{"name":"URL","value":"postgres://$(HOST)"}`
+	wantPaths := []string{"spec.worker.podOverrides.env[0].name", "spec.worker.podOverrides.env[0].value",
+		"spec.worker.podOverrides.env[1].name", "spec.worker.podOverrides.env[1].value"}
+	for name, tc := range map[string]struct{ want, got []json.RawMessage }{
+		"got references":  {[]json.RawMessage{json.RawMessage(host), json.RawMessage(plain)}, []json.RawMessage{json.RawMessage(ref), json.RawMessage(host)}},
+		"want references": {[]json.RawMessage{json.RawMessage(ref), json.RawMessage(host)}, []json.RawMessage{json.RawMessage(host), json.RawMessage(plain)}},
+	} {
+		want := kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{PodOverrides: &kelos.PodOverrides{Env: tc.want}}}}
+		got, err := json.Marshal(kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{PodOverrides: &kelos.PodOverrides{Env: tc.got}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff, err := kelos.Diff(want, got); err != nil || !slices.Equal(diff, wantPaths) {
+			t.Errorf("%s: Diff = %v, %v\nwant %v", name, diff, err, wantPaths)
+		}
+	}
+}

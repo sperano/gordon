@@ -109,3 +109,27 @@ func TestAdmissionWaitTimeoutDefersUncounted(t *testing.T) {
 			len(e.kelos.Creates()))
 	}
 }
+
+// timingOutLists has every List cut by its deadline, as an admission
+// list that ran out after the lock was taken.
+type timingOutLists struct{ TaskAPI }
+
+func (timingOutLists) List(context.Context, string) ([]kelos.Task, error) {
+	return nil, &kelos.Error{Op: "list", Sent: true, Err: context.DeadlineExceeded}
+}
+
+// TestDeadlineInsideTheLockIsNotDeferred: a deadline after the lock was
+// taken is a counted attempt, not a deferral; only a lock wait defers.
+func TestDeadlineInsideTheLockIsNotDeferred(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	e.exec.Kelos = timingOutLists{e.api}
+	name := e.implement(t, implementID, "claude-opus") // on its task's branch: admission lists
+	e.perform(t)
+	st, attempts, msg := e.action(t, name)
+	if st != store.ActionPending || attempts != 1 || msg != "kelos list: context deadline exceeded" ||
+		len(e.kelos.Creates()) != 0 || e.submissions(ResultAdmission) != 0 ||
+		testutil.ToFloat64(e.metrics.Deferred.WithLabelValues(store.QueueActions, LimitAdmission)) != 0 {
+		t.Fatalf("a list timing out under the lock: %s, %d attempts, %q, %d creates; want a counted retry",
+			st, attempts, msg, len(e.kelos.Creates()))
+	}
+}
