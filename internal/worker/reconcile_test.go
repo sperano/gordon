@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,5 +94,25 @@ func TestReconcilePrunesBuiltTasks(t *testing.T) {
 	}
 	if v := testutil.ToFloat64(e.metric.BodiesPruned); v != 1 {
 		t.Fatalf("pruned %v, want the one Task", v)
+	}
+}
+
+func TestReconcilePrunesTasksWhenBodyPruneFails(t *testing.T) {
+	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
+	e.tasks.tasks[implementTaskID] = eligible()
+	e.proc.Tasks = fixedTask{}
+	e.tick(t)
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET state = 'finished', updated_at = now() - interval '2 hours'`)
+	storetest.Exec(t, e.dbURL, `CREATE FUNCTION refuse_body_prune() RETURNS trigger LANGUAGE plpgsql AS
+		$$ BEGIN RAISE EXCEPTION 'body prune refused'; END $$`)
+	storetest.Exec(t, e.dbURL, `CREATE TRIGGER refuse_body_prune BEFORE UPDATE OF body ON inbox
+		FOR EACH STATEMENT EXECUTE FUNCTION refuse_body_prune()`)
+	r := &Reconciler{Store: e.store, BodyRetention: time.Hour, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
+	if err := r.Once(ctx); err == nil || !strings.Contains(err.Error(), "body prune refused") {
+		t.Fatalf("Once = %v, want the body prune's error", err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM runs WHERE task IS NULL`); n != 1 {
+		t.Fatal("a failed body prune kept the finished run's Task past retention")
 	}
 }

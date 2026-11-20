@@ -28,6 +28,7 @@ const (
 	taskID    = 1624
 	gordonID  = 147
 	puckdbID  = 6
+	mactestID = 137 // solitaire, a mactest project
 	commentID = 9001
 	prNumber  = 7
 	headSHA   = "0123456789abcdef0123456789abcdef01234567"
@@ -119,7 +120,11 @@ func freshPR() event.PullRequest {
 }
 
 func github(kind string, payload map[string]any) event.Delivery {
-	payload["repository"] = map[string]string{"full_name": "sperano/gordon"}
+	return githubIn(freshPR().Repository, kind, payload)
+}
+
+func githubIn(repo, kind string, payload map[string]any) event.Delivery {
+	payload["repository"] = map[string]string{"full_name": repo}
 	body, _ := json.Marshal(payload)
 	return event.Delivery{Source: event.SourceGitHub, Body: body, Headers: map[string]string{
 		event.GitHubEventHeader: kind, event.GitHubDeliveryHeader: "guid-" + kind}}
@@ -133,9 +138,13 @@ func prComment() sample {
 			"html_url": "https://github.com/sperano/gordon/pull/7#issuecomment-555"}}), route.State{PullRequest: &pr}}
 }
 
-func prOpened() sample {
+func prOpened() sample { return prOpenedIn(freshPR().Repository) }
+
+// prOpenedIn is prOpened in the repository repo.
+func prOpenedIn(repo string) sample {
 	pr := freshPR()
-	return sample{github("pull_request", map[string]any{"action": "opened", "sender": map[string]string{"login": pr.Author},
+	pr.Repository, pr.HeadRepo = repo, repo
+	return sample{githubIn(repo, "pull_request", map[string]any{"action": "opened", "sender": map[string]string{"login": pr.Author},
 		"pull_request": map[string]any{"number": prNumber, "title": pr.Title, "html_url": pr.URL, "state": "open",
 			"user": map[string]string{"login": pr.Author},
 			"head": map[string]any{"ref": pr.HeadRef, "sha": headSHA, "repo": map[string]string{"full_name": pr.HeadRepo}},
@@ -240,6 +249,9 @@ func TestPermissionModes(t *testing.T) {
 		{prOpened(), run.PRReview, "review", "pr-review", "gordon", false, ""},
 		{taskUpdated(vikunjaTask(puckdbID), "claude-opus"), run.VikunjaImplement, "puckdb", "image-build-submitter", "puckdb", false, "kelos/vikunja-1624"},
 		{taskUpdated(vikunjaTask(puckdbID, "discuss"), "claude-opus"), run.VikunjaDiscuss, "puckdb-discuss", "kelos-discuss", "puckdb-readonly", true, "kelos/vikunja-1624"},
+		{prOpenedIn("sperano/puckdb"), run.PRReview, "puckdb-review", "pr-review", "puckdb", false, ""},
+		{taskUpdated(vikunjaTask(mactestID), "claude-opus"), run.VikunjaImplement, "mactest", "", "solitaire", false, "kelos/vikunja-1624"},
+		{taskUpdated(vikunjaTask(mactestID, "discuss"), "claude-opus"), run.VikunjaDiscuss, "mactest-discuss", "", "solitaire-readonly", true, "kelos/vikunja-1624"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.family)+"/"+tc.profile, func(t *testing.T) {

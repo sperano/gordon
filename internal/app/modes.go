@@ -43,7 +43,8 @@ func start(g *group, log *slog.Logger, name, addr string, srv *http.Server, grac
 }
 
 // Receiver runs the public webhook receiver until ctx ends. It holds the
-// receiver database role (insert only) and the webhook keys; no API token
+// receiver database role (it inserts deliveries and reads only their keys
+// and the schema version) and the webhook keys; no API token
 // and no Kubernetes right.
 func Receiver(ctx context.Context, cfg config.Receiver, log *slog.Logger, onListen OnListen) error {
 	s, err := store.Open(ctx, cfg.DatabaseURL)

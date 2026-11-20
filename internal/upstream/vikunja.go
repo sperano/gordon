@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"github.com/sperano/gordon/internal/event"
 )
@@ -61,19 +62,53 @@ func (v Vikunja) Task(ctx context.Context, id int64) (event.Task, error) {
 	return t, nil
 }
 
-// Comments reads a task's comments as the API returns them (GET
-// /tasks/{id}/comments, a JSON array): the raw JSON a prompt quotes, as
-// the legacy spawners' contextSources did.
+// maxCommentPages bounds the comment pages one read follows: 1000
+// comments at Vikunja's 50 a page, far past what a prompt quotes
+// (dispatch.DefaultCommentsMaxBytes).
+const maxCommentPages = 20
+
+// Comments reads all of a task's comments, oldest first (GET
+// /tasks/{id}/comments, page after page until an empty one), as one JSON
+// array: the raw JSON a prompt quotes, as the legacy spawners'
+// contextSources did, but with every page, not only the first. A task
+// whose comments fit one page gets that page's array as the API returned it.
 func (v Vikunja) Comments(ctx context.Context, id int64) (json.RawMessage, error) {
 	if id <= 0 {
 		return nil, &Error{Provider: ProviderVikunja, Class: Invalid, Err: fmt.Errorf("task id %d", id)}
 	}
+	var first json.RawMessage
+	var all []json.RawMessage
+	for page := 1; page <= maxCommentPages; page++ {
+		raw, items, err := v.commentsPage(ctx, id, page)
+		if err != nil {
+			return nil, err
+		}
+		if page == 1 {
+			first = raw
+		}
+		if len(items) == 0 {
+			if page <= 2 {
+				return first, nil
+			}
+			return json.Marshal(all)
+		}
+		all = append(all, items...)
+	}
+	return nil, &Error{Provider: ProviderVikunja, Class: Invalid,
+		Err: fmt.Errorf("comments of task %d: more than %d pages", id, maxCommentPages)}
+}
+
+// commentsPage reads one page of a task's comments: the raw array and
+// its items.
+func (v Vikunja) commentsPage(ctx context.Context, id int64, page int) (json.RawMessage, []json.RawMessage, error) {
 	var raw json.RawMessage
-	err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d/comments", id), nil, &raw, func() error {
+	var items []json.RawMessage
+	query := url.Values{"page": {strconv.Itoa(page)}}
+	err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d/comments", id), query, &raw, func() error {
 		if b := bytes.TrimSpace(raw); len(b) == 0 || b[0] != '[' {
 			return fmt.Errorf("comments of task %d: not a JSON array", id)
 		}
-		return nil
+		return json.Unmarshal(raw, &items)
 	})
-	return raw, err
+	return raw, items, err
 }

@@ -2,6 +2,7 @@ package kelos_test
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/kelos/kelostest"
@@ -188,8 +190,10 @@ func TestOversizedAndUndecodableAnswers(t *testing.T) {
 	if _, _, err := c.Get(context.Background(), "big"); err == nil || !strings.Contains(err.Error(), "response over") {
 		t.Fatalf("Get big = %v, want the size cap", err)
 	}
-	if _, _, err := c.Get(context.Background(), "garbage"); err == nil {
-		t.Fatal("Get of a non-JSON answer succeeded")
+	_, _, err := c.Get(context.Background(), "garbage")
+	var e *kelos.Error
+	if !errors.As(err, &e) || e.Status != http.StatusOK || !e.Sent || e.Err == nil {
+		t.Fatalf("Get of a non-JSON answer = %v, want a decode failure of the 200 answer", err)
 	}
 }
 
@@ -222,5 +226,48 @@ func writePEM(t *testing.T, path string, srv *httptest.Server) {
 	block := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
 	if err := os.WriteFile(path, block, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// apiMessageCap is the client's cap on a kept API server message.
+const apiMessageCap = 512
+
+func TestErrorMessageCutOnARuneBoundary(t *testing.T) {
+	cases := map[string]struct{ message, want string }{
+		"short":           {"refused", "refused"},
+		"ascii":           {strings.Repeat("x", apiMessageCap+10), strings.Repeat("x", apiMessageCap) + "…"},
+		"rune across cap": {strings.Repeat("x", apiMessageCap-1) + "é tail", strings.Repeat("x", apiMessageCap-1) + "…"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_ = json.NewEncoder(w).Encode(map[string]string{"kind": "Status", "reason": "Invalid", "message": tc.message})
+			}))
+			defer srv.Close()
+			c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+			_, _, err := c.Get(context.Background(), "a")
+			var e *kelos.Error
+			if !errors.As(err, &e) || e.Message != tc.want || !utf8.ValidString(e.Message) {
+				t.Fatalf("Get = %v, want message %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsRefusedStatuses(t *testing.T) {
+	cases := map[int]bool{
+		http.StatusBadRequest: true, http.StatusUnauthorized: true, http.StatusForbidden: true,
+		http.StatusNotFound: true, http.StatusMethodNotAllowed: true, http.StatusUnprocessableEntity: true,
+		http.StatusRequestEntityTooLarge: true,
+		http.StatusConflict: false, http.StatusTooManyRequests: false, http.StatusInternalServerError: false,
+	}
+	for status, want := range cases {
+		if got := kelos.IsRefused(&kelos.Error{Status: status, Sent: true}); got != want {
+			t.Errorf("IsRefused(%d) = %v, want %v", status, got, want)
+		}
+	}
+	if kelos.IsRefused(errors.New("plain")) {
+		t.Error("IsRefused of a non-Kelos error")
 	}
 }

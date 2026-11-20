@@ -68,13 +68,18 @@ type ObservedRun struct {
 	SubmitState string
 }
 
-// ObservedRuns lists the runs the observer follows, at most limit, the
-// least recently updated first.
+// ObservedRuns takes the runs the observer follows, at most limit, the
+// least recently observed first, and marks them observed now: unchanged
+// runs go to the back, and concurrent observers take disjoint batches.
 func (s *Store) ObservedRuns(ctx context.Context, limit int) ([]ObservedRun, error) {
-	rows, err := s.pool.Query(ctx, `SELECT r.name, r.inbox_id, r.state, r.task_exists, r.phase,
+	rows, err := s.pool.Query(ctx, `WITH taken AS (
+			UPDATE runs SET observed_at = now()
+			WHERE name IN (SELECT name FROM runs WHERE state <> 'finished' OR task_exists
+				ORDER BY observed_at, name LIMIT $1 FOR UPDATE SKIP LOCKED)
+			RETURNING name, inbox_id, state, task_exists, phase)
+		SELECT r.name, r.inbox_id, r.state, r.task_exists, r.phase,
 			coalesce((SELECT a.state FROM actions a WHERE a.inbox_id = r.inbox_id AND a.key = $2 || r.name), '')
-		FROM runs r WHERE r.state <> 'finished' OR r.task_exists
-		ORDER BY r.updated_at, r.name LIMIT $1`, limit, submitKeyPrefix())
+		FROM taken r ORDER BY r.name`, limit, submitKeyPrefix())
 	if err != nil {
 		return nil, err
 	}
@@ -91,14 +96,18 @@ func submitKeyPrefix() string {
 }
 
 // ObserveRun records what Kelos reports about a run's generation: its
-// Task present with a phase, or gone (exists false: finished).
+// Task present with a phase, or gone (exists false: finished). A finished
+// run never goes back: an observation read before another replica's
+// (a Running phase, a Task since cleaned up) changes nothing.
 func (s *Store) ObserveRun(ctx context.Context, name string, inboxID int64, exists bool, phase string) error {
 	state := runFinished
 	if exists {
 		state = stateOf(phase)
 	}
 	_, err := s.pool.Exec(ctx, `UPDATE runs SET state = $3, task_exists = $4, phase = $5, updated_at = now()
-		WHERE name = $1 AND inbox_id = $2`, name, inboxID, state, exists, phase)
+		WHERE name = $1 AND inbox_id = $2
+			AND (state <> 'finished' OR ($3 = 'finished' AND (task_exists OR NOT $4)))`,
+		name, inboxID, state, exists, phase)
 	return err
 }
 

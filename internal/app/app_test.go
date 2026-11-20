@@ -153,6 +153,10 @@ func startService(t *testing.T, edits ...func(*config.Worker)) *service {
 	vikunja := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		svc.upstream.add(r)
 		if strings.HasSuffix(r.URL.Path, "/comments") {
+			if r.URL.Query().Get("page") != "1" {
+				fmt.Fprint(w, `[]`) // past the last page
+				return
+			}
 			fmt.Fprint(w, `[{"id":1,"comment":"<p>earlier</p>"}]`)
 			return
 		}

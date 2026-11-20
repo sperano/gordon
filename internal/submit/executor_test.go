@@ -375,15 +375,17 @@ func TestConcurrentSubmissionsRespectTheLimit(t *testing.T) {
 func TestHeldBranchKeepsSubmissionQueued(t *testing.T) {
 	e := newEnv(t, false, dispatch.Limits{})
 	// A follow-up on the task's branch in its Workspace holds Kelos's lock;
-	// the read-only copy and other branches do not.
-	e.kelos.Put(running("vikunja-fu-gordon-1624-c1", "claude-opus", "gordon", "kelos/vikunja-1624", kelos.PhaseRunning))
+	// the read-only copy and other branches do not. They are listed first,
+	// so a check that ignored the Workspace or the branch would name them.
 	e.kelos.Put(running("vikunja-discuss-x", "claude-opus", "gordon-readonly", "kelos/vikunja-1624", kelos.PhaseRunning))
 	e.kelos.Put(running("other-branch", "claude-opus", "gordon", "kelos/vikunja-9", kelos.PhaseRunning))
+	e.kelos.Put(running("vikunja-fu-gordon-1624-c1", "claude-opus", "gordon", "kelos/vikunja-1624", kelos.PhaseRunning))
 	name := e.implement(t, implementID, "claude-opus")
 	e.perform(t)
 	st, attempts, msg := e.action(t, name)
 	if st != store.ActionPending || attempts != 0 || msg != "branch kelos/vikunja-1624 held by vikunja-fu-gordon-1624-c1" ||
-		e.submissions(ResultBranch) != 1 {
+		e.submissions(ResultBranch) != 1 ||
+		testutil.ToFloat64(e.metrics.Deferred.WithLabelValues(store.QueueActions, LimitBranch)) != 1 {
 		t.Fatalf("on a held branch: %s, %d attempts, %q", st, attempts, msg)
 	}
 	var wait float64

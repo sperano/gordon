@@ -30,7 +30,7 @@ var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_
 var workerUpdates = map[string]string{
 	"requests": "outcome, executed",
 	"runs": "family, project, request_key, inbox_id, identity, profile, config_version, state, " +
-		"task_exists, generation, updated_at, task, task_uid, phase",
+		"task_exists, generation, updated_at, task, task_uid, phase, observed_at",
 	"actions": "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, last_error, finished_at",
 	// A shadow Task's identity and build are fixed; its comparison and
 	// the pruning of its prompt are not.

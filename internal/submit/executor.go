@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sperano/gordon/internal/action"
@@ -36,6 +35,7 @@ type Runs interface {
 	RunToSubmit(ctx context.Context, name string) (store.SubmitRun, error)
 	RunSubmitted(ctx context.Context, name string, inboxID int64, uid, phase string) error
 	ObserveRun(ctx context.Context, name string, inboxID int64, exists bool, phase string) error
+	WithAdmission(ctx context.Context, fn func(context.Context) error) error
 }
 
 // Submission results, the kelos_submissions_total result label.
@@ -81,12 +81,6 @@ type Executor struct {
 	BusyDelay time.Duration
 	Metrics   *metrics.Metrics
 	Log       *slog.Logger
-
-	// admission serializes the limit and branch check with the create
-	// that follows it, so concurrent submissions of this process never
-	// both pass a check one of them fills. Replicas each hold their own:
-	// across them a limit can be passed by as many Tasks as replicas.
-	admission sync.Mutex
 }
 
 // taskName is the Task name of a submit action's target,
@@ -110,13 +104,24 @@ func (e *Executor) Execute(ctx context.Context, a action.Action) error {
 		return err
 	}
 	// The limit and branch check and the create that follows hold the
-	// admission lock together.
-	e.admission.Lock()
-	defer e.admission.Unlock()
-	if err := e.admit(ctx, r); err != nil {
+	// database-wide admission lock together, so no two submissions, in
+	// any replica, both pass a check one of them fills.
+	var created kelos.Task
+	var createErr error
+	if err := e.Runs.WithAdmission(ctx, func(ctx context.Context) error {
+		if err := e.admit(ctx, r); err != nil {
+			return err
+		}
+		created, createErr = e.Kelos.Create(ctx, *r.Task)
+		return nil
+	}); err != nil {
 		return err
 	}
-	created, err := e.Kelos.Create(ctx, *r.Task)
+	return e.created(ctx, r, created, createErr)
+}
+
+// created records the outcome of the run's create.
+func (e *Executor) created(ctx context.Context, r store.SubmitRun, created kelos.Task, err error) error {
 	switch {
 	case err == nil:
 		e.count(ResultCreated)

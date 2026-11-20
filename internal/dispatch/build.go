@@ -18,6 +18,7 @@ import (
 const (
 	CodeNoTemplate       = "no-task-template"
 	CodeUnknownProject   = "unknown-project"
+	CodeUnknownVariant   = "unknown-variant"
 	CodeTemplate         = "task-template-invalid"
 	CodePod              = "pod-invalid"
 	CodeSecretNotGranted = "secret-not-granted"
@@ -55,12 +56,17 @@ func (b Builder) Build(in Input) (kelos.Task, error) {
 	if !ok {
 		return kelos.Task{}, refuse(CodeUnknownProject, "project %q", id.Project)
 	}
+	// A variant's entry may be empty, but it must be there: a missing one
+	// would build the Task without its variant's identity and pod pieces.
+	variant, ok := b.Config.Variants[id.Variant]
+	if !ok {
+		return kelos.Task{}, refuse(CodeUnknownVariant, "variant %q", id.Variant)
+	}
 	d := b.data(in, proj)
 	prompt, err := render("prompt", fam.Prompt, d)
 	if err != nil {
 		return kelos.Task{}, err
 	}
-	variant := b.Config.Variants[id.Variant]
 	configs, err := b.agentConfigs(fam, proj, variant, d)
 	if err != nil {
 		return kelos.Task{}, err

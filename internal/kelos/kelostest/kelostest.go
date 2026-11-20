@@ -108,8 +108,8 @@ func (s *Server) Raw(name string) json.RawMessage {
 	return s.tasks[name]
 }
 
-// Creates returns every create request body that reached the server,
-// accepted or not, in order.
+// Creates returns every well-formed create request body (a Task with a
+// name) that reached the server, accepted or not, in order.
 func (s *Server) Creates() []kelos.Task {
 	s.mu.Lock()
 	defer s.mu.Unlock()

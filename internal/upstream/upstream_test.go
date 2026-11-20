@@ -307,14 +307,42 @@ func TestVikunjaComments(t *testing.T) {
 		if r.URL.Path != "/tasks/42/comments" || r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("request %s auth %q", r.URL, r.Header.Get("Authorization"))
 		}
+		if r.URL.Query().Get("page") != "1" {
+			fmt.Fprint(w, `[]`)
+			return
+		}
 		fmt.Fprint(w, ` [{"id":1,"comment":"<p>hi</p>"}]`)
 	})
 	got, err := Vikunja{c}.Comments(ctx, 42)
 	if err != nil || string(got) != `[{"id":1,"comment":"<p>hi</p>"}]` {
 		t.Fatalf("Comments = %s, %v; want the raw array", got, err)
 	}
-	if !reflect.DeepEqual(o.results, []string{"vikunja/ok"}) {
-		t.Fatalf("observed %v", o.results)
+	if !reflect.DeepEqual(o.results, []string{"vikunja/ok", "vikunja/ok"}) {
+		t.Fatalf("observed %v, want the page and the empty page after it", o.results)
+	}
+}
+
+func TestVikunjaCommentsFollowsPages(t *testing.T) {
+	pages := map[string]string{"1": `[{"id":1},{"id":2}]`, "2": `[{"id":3}]`, "3": `[]`}
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, pages[r.URL.Query().Get("page")])
+	})
+	got, err := Vikunja{c}.Comments(ctx, 42)
+	if err != nil || string(got) != `[{"id":1},{"id":2},{"id":3}]` {
+		t.Fatalf("Comments = %s, %v; want every page's comments in order", got, err)
+	}
+	if len(o.results) != len(pages) {
+		t.Fatalf("observed %v, want one request per page", o.results)
+	}
+}
+
+func TestVikunjaCommentsPageCap(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[{"id":1}]`) // a server that ignores page
+	})
+	_, err := Vikunja{c}.Comments(ctx, 42)
+	if ClassOf(err) != Invalid || !strings.Contains(err.Error(), "more than 20 pages") || len(o.results) != maxCommentPages {
+		t.Fatalf("Comments = %v after %d requests, want invalid after %d pages", err, len(o.results), maxCommentPages)
 	}
 }
 

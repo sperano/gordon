@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/sperano/gordon/internal/kelos"
@@ -152,5 +153,72 @@ func TestPruneTasks(t *testing.T) {
 	}
 	if n := count(t, dbURL, `SELECT count(*) FROM runs WHERE task IS NULL AND name = $1`, runName); n != 1 {
 		t.Fatal("the pruned run lost its row or kept its Task")
+	}
+}
+
+// copyRun adds a run named name like runName's, in state state.
+func copyRun(t *testing.T, dbURL, name, state string) {
+	t.Helper()
+	storetest.Exec(t, dbURL, `INSERT INTO runs (name, family, inbox_id, identity, profile, state)
+		SELECT $2, family, inbox_id, identity, profile, $3 FROM runs WHERE name = $1`, runName, name, state)
+}
+
+func observedNames(t *testing.T, s *store.Store, limit int) []string {
+	t.Helper()
+	runs, err := s.ObservedRuns(ctx, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(runs))
+	for _, r := range runs {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
+func TestObservedRunsRotateUnchangedRuns(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
+	copyRun(t, dbURL, "run-a", "active")
+	copyRun(t, dbURL, "run-b", "active")
+	// Nothing observed changes, as for runs whose Task stays Running.
+	if got := observedNames(t, s, 2); !slices.Equal(got, []string{"run-a", "run-b"}) {
+		t.Fatalf("first batch %v, want the first two by name", got)
+	}
+	if got := observedNames(t, s, 2); !slices.Equal(got, []string{"run-a", runName}) {
+		t.Fatalf("second batch %v, want the run not yet observed, then the oldest observed", got)
+	}
+}
+
+func TestObserveRunNeverReopensAFinishedRun(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
+	if err := s.ObserveRun(ctx, runName, id, true, kelos.PhaseFailed); err != nil {
+		t.Fatal(err)
+	}
+	state := func() (st, phase string, exists bool) {
+		storetest.QueryRow(t, dbURL, `SELECT state, phase, task_exists FROM runs WHERE name = $1`,
+			[]any{runName}, &st, &phase, &exists)
+		return
+	}
+	if st, phase, exists := state(); st != "finished" || phase != kelos.PhaseFailed || !exists {
+		t.Fatalf("failed Task: %s %s %v, want finished Failed present", st, phase, exists)
+	}
+	// A replica that read the list before the Task finished.
+	if err := s.ObserveRun(ctx, runName, id, true, kelos.PhaseRunning); err != nil {
+		t.Fatal(err)
+	}
+	if st, phase, _ := state(); st != "finished" || phase != kelos.PhaseFailed {
+		t.Fatalf("stale Running observation reopened the run: %s %s", st, phase)
+	}
+	if err := s.ObserveRun(ctx, runName, id, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	// A replica that read the list before Kelos cleaned the Task up.
+	if err := s.ObserveRun(ctx, runName, id, true, kelos.PhaseFailed); err != nil {
+		t.Fatal(err)
+	}
+	if st, _, exists := state(); st != "finished" || exists {
+		t.Fatalf("stale observation brought a gone Task back: %s exists %v", st, exists)
 	}
 }

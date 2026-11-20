@@ -76,12 +76,10 @@ func (r *Reconciler) upkeep(ctx context.Context) error {
 	if r.BodyRetention <= 0 {
 		return nil
 	}
-	n, err := r.Store.PruneBodies(ctx, r.BodyRetention)
+	// Each prune runs whatever the other's outcome.
+	n, bodiesErr := r.Store.PruneBodies(ctx, r.BodyRetention)
 	r.Metrics.BodiesPruned.Add(float64(n))
-	if err != nil {
-		return err
-	}
-	n, err = r.Store.PruneTasks(ctx, r.BodyRetention)
+	n, tasksErr := r.Store.PruneTasks(ctx, r.BodyRetention)
 	r.Metrics.BodiesPruned.Add(float64(n))
-	return err
+	return errors.Join(bodiesErr, tasksErr)
 }

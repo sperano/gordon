@@ -4,10 +4,13 @@
 
 -- task is the built Kelos Task (its prompt quotes the task and comments;
 -- pruned after body retention once the run finished); task_uid and phase
--- are the submitted Task's uid and last observed phase.
-ALTER TABLE runs ADD COLUMN task     jsonb;
-ALTER TABLE runs ADD COLUMN task_uid text NOT NULL DEFAULT '';
-ALTER TABLE runs ADD COLUMN phase    text NOT NULL DEFAULT '';
+-- are the submitted Task's uid and last observed phase; observed_at is
+-- when the observer last read the run, its batch order, so runs whose Task
+-- does not change take their turn and do not hold the head of the batch.
+ALTER TABLE runs ADD COLUMN task        jsonb;
+ALTER TABLE runs ADD COLUMN task_uid    text        NOT NULL DEFAULT '';
+ALTER TABLE runs ADD COLUMN phase       text        NOT NULL DEFAULT '';
+ALTER TABLE runs ADD COLUMN observed_at timestamptz NOT NULL DEFAULT '-infinity';
 
 CREATE TABLE shadow_tasks (
     name        text        NOT NULL,
@@ -23,4 +26,4 @@ CREATE TABLE shadow_tasks (
 );
 
 CREATE INDEX shadow_tasks_pending ON shadow_tasks (created_at) WHERE result = 'pending';
-CREATE INDEX runs_observed ON runs (updated_at) WHERE state <> 'finished' OR task_exists;
+CREATE INDEX runs_observed ON runs (observed_at, name) WHERE state <> 'finished' OR task_exists;

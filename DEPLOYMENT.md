@@ -80,7 +80,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_POLL_INTERVAL` | `1s` | idle wait between claims |
 | `GORDON_MAX_ATTEMPTS` | `20` | inbox retries and attempted actions; then the row is dead-lettered (`failed`). A deferred action (no executor yet, a full limit, a held branch) counts no attempt and stays queued |
 | `GORDON_RETRY_BASE`, `GORDON_RETRY_MAX` | `5s`, `10m` | exponential backoff |
-| `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full limit |
+| `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full provider or project limit; a full Kelos variant limit or a held branch waits `GORDON_KELOS_BUSY_DELAY` |
 | `GORDON_RECONCILE_INTERVAL` | `30s` | lease expiry, queue gauges, body pruning |
 | `GORDON_BODY_RETENTION` | `168h` | stored bodies of finished rows, and the built Tasks (prompts) of finished runs and compared shadow Tasks, are dropped after this; keys, decisions, requests and runs stay |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight items on SIGTERM; past it their leases expire and another worker recovers them |
@@ -98,8 +98,9 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 `profile.Config`) already resolves each run's agent, image, model, effort,
 credentials, ServiceAccount and (read-only) Workspace. Hollingsworth's
 `helm/gordon` (Gordon 05) renders it from the same templates as the
-spawners; `internal/dispatch/testdata/hollingsworth.json` is one rendered
-from `helm/kelos` at `bf18aa5`, and the tests hold Gordon's Tasks equal to
+spawners; `internal/dispatch/testdata/hollingsworth.json` is made from the
+TaskSpawners rendered from `helm/kelos` at `bf18aa5`, with their variables
+substituted, and the tests hold Gordon's Tasks equal to
 the legacy ones.
 
 | Field | |
@@ -109,7 +110,7 @@ the legacy ones.
 | `comments`, `comments_max_bytes` | quote `GET /tasks/{id}/comments` as `Context.comments` (default cap 256 KiB; a failed or larger read is quoted empty, as the legacy `failurePolicy: Ignore`) |
 | `common_secrets` | Secrets every profile may reference (the admission policy's `commonSecrets`: runner credentials, the variants' Vikunja and Authentik identities, Gordon's own, the run-link token) |
 | `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
-| `workspaces`, `profiles`, `variants` | pod pieces per Workspace, per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`) |
+| `workspaces`, `profiles`, `variants` | pod pieces per Workspace, per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant needs a `variants` entry, `{}` at least: a run of a variant without one is rejected (`task-spec-unknown-variant`) |
 | `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded |
 
 Prompt, label and annotation values, agent config names and pod strings
@@ -130,8 +131,8 @@ order. A run that cannot be built, or whose Task references a Secret its
 profile does not grant, is a `reject` (`task-spec-<code>`) with nothing
 queued.
 
-Limits and the branch check are exact within one worker; replicas each
-count for themselves. A held branch (an unfinished Task on the same
+Limits and the branch check are exact across worker replicas: each
+check and the create it admits hold a Postgres advisory lock. A held branch (an unfinished Task on the same
 Workspace and `spec.branch`) keeps the submission in the outbox instead of
 a `Waiting` Task in Kelos. The database must be UTF-8 (built Tasks are
 `jsonb` with non-ASCII text).

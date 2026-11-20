@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -121,6 +122,13 @@ func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
 			f.Pod.Env = append(f.Pod.Env, json.RawMessage(`{"name":"X","value":"{{.nope}}"}`))
 			c.Families[run.PRReview] = f
 		}, prOpened(), "task-spec-task-template-invalid"},
+		"pod value not JSON": {func(c *dispatch.Config) {
+			f := c.Families[run.PRReview]
+			f.Pod.Env = append(f.Pod.Env, json.RawMessage(`{"name":"X","value":"{{.task}}`))
+			c.Families[run.PRReview] = f
+		}, prOpened(), "task-spec-pod-invalid"},
+		"variant not configured": {func(c *dispatch.Config) { delete(c.Variants, "claude-opus") },
+			taskUpdated(vikunjaTask(gordonID), "claude-opus"), "task-spec-unknown-variant"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -163,6 +171,26 @@ func TestPodTemplatesRendered(t *testing.T) {
 	}
 }
 
+// checkRequestIDs checks a PR follow-up Task names its request as the
+// legacy Task does: a review by its review annotation, a comment by its
+// comment annotation.
+func checkRequestIDs(t *testing.T, rn route.Run) {
+	t.Helper()
+	if rn.Identity.Family != run.PRFollowUp {
+		return
+	}
+	id := strconv.FormatInt(rn.Identity.CommentID, 10)
+	want := map[string]string{"vikunja.spe.quebec/comment": id, "vikunja.spe.quebec/review": ""}
+	if rn.Identity.CommentKind == string(rune(event.CommentKindReview)) {
+		want = map[string]string{"vikunja.spe.quebec/comment": "", "vikunja.spe.quebec/review": id}
+	}
+	for k, v := range want {
+		if got := rn.Task.Metadata.Annotations[k]; got != v {
+			t.Errorf("run %s (%s %s): %s = %q, want %q", rn.Name, rn.Identity.CommentKind, id, k, got, v)
+		}
+	}
+}
+
 // TestReplayFixturesBuild prepares every legacy replay fixture's decision:
 // each dispatched run gets a Task named as the legacy spawner's Task, and
 // the recorded decision is exactly the fixture's (the Task is not part
@@ -200,6 +228,7 @@ func TestReplayFixturesBuild(t *testing.T) {
 					if rn.Task == nil || rn.Task.Metadata.Name != rn.Name || !slices.Contains(f.Legacy.Tasks, rn.Name) {
 						t.Fatalf("run %s: Task %v, legacy Tasks %v", rn.Name, rn.Task, f.Legacy.Tasks)
 					}
+					checkRequestIDs(t, rn)
 					built++
 				}
 			}

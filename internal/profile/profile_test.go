@@ -70,8 +70,11 @@ func TestDefaultsProjects(t *testing.T) {
 			t.Errorf("PRProject(%s) = %+v", repo, p)
 		}
 	}
-	if p, ok := c.Project(48); !ok || p.Name != "portal" || p.Workspace != "hollingsworth" {
+	if p, ok := c.Project(48); !ok || p.Name != "portal" || p.Title != "Portal" || p.Workspace != "hollingsworth" {
 		t.Errorf("Project(48) = %+v", p)
+	}
+	if p, ok := c.Project(141); !ok || p.Name != "cocovm-3d" || p.Title != "CoCoVM 3D" {
+		t.Errorf("Project(141) = %+v", p)
 	}
 	if _, ok := c.Project(85); ok {
 		t.Error("project 85 has no spawner")
@@ -121,9 +124,29 @@ func TestResolveServiceAccountsByProjectAndMode(t *testing.T) {
 	if !maps.Equal(profiles, wantProfiles) {
 		t.Errorf("profiles %v, want %v", profiles, wantProfiles)
 	}
-	puck, _ := c.Resolve(Request{Project: "puckdb", Variant: "claude-opus", Mode: ModeImplement})
-	if !slices.Equal(puck.Capabilities, []Capability{GitHubWrite, GitHubReadOnly, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}) {
-		t.Errorf("puckdb capabilities %v", puck.Capabilities)
+}
+
+// TestResolveCapabilities pins the capability sets of Hollingsworth's
+// Gordon 02 admission table.
+func TestResolveCapabilities(t *testing.T) {
+	c := Defaults()
+	cases := []struct {
+		project string
+		mode    Mode
+		want    []Capability
+	}{
+		{"puckdb", ModeImplement, []Capability{GitHubWrite, GitHubReadOnly, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}},
+		{"puckdb", ModeReview, []Capability{GitHubWrite, GitHubReadOnly, PostgresTest, PuckDBProdReadOnly}},
+		{"vigie", ModeImplement, []Capability{GitHubWrite, GitHubReadOnly}},
+		{"vigie", ModeReview, []Capability{GitHubWrite, GitHubReadOnly}},
+		{"solitaire", ModeImplement, []Capability{GitHubWrite, GitHubReadOnly, Mactest}},
+		{"solitaire", ModeDiscuss, []Capability{GitHubReadOnly, Mactest}},
+	}
+	for _, x := range cases {
+		got, err := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
+		if err != nil || !slices.Equal(got.Capabilities, x.want) {
+			t.Errorf("%s/%s capabilities %v (%v), want %v", x.project, x.mode, got.Capabilities, err, x.want)
+		}
 	}
 }
 
@@ -197,7 +220,7 @@ func TestCapabilityWrites(t *testing.T) {
 	cases := map[Capability][2]bool{
 		GitHubWrite: {true, true}, ImageBuildSubmit: {true, true},
 		GitHubReadOnly: {false, true}, ClusterRead: {false, true}, PostgresTest: {false, true},
-		PuckDBProdReadOnly: {false, true}, "vault-admin": {false, false},
+		PuckDBProdReadOnly: {false, true}, Mactest: {false, true}, "vault-admin": {false, false},
 	}
 	for c, want := range cases {
 		if writing, known := c.Writes(); writing != want[0] || known != want[1] {

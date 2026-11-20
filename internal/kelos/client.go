@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // In-cluster defaults: the API server's Service and the pod's projected
@@ -284,11 +285,17 @@ func dialError(err error) bool {
 	return errors.As(err, &op) && op.Op == "dial"
 }
 
+// truncate caps s at maxMessageBytes, cut on a rune boundary so the
+// message stays valid UTF-8.
 func truncate(s string) string {
 	if len(s) <= maxMessageBytes {
 		return s
 	}
-	return s[:maxMessageBytes] + "…"
+	end := maxMessageBytes
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + "…"
 }
 
 // Results of an observed request.

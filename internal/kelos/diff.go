@@ -18,7 +18,8 @@ const kelosLabelPrefix = "kelos.dev/"
 // Diff lists the paths where got (a Task as the API returns it) differs
 // from want, over the metadata labels and annotations and the whole spec.
 // Labels Kelos adds (kelos.dev/...) and the ignored metadata keys of want
-// are no difference. Paths are sorted, at most maxDiffPaths of them.
+// are no difference. Paths are sorted, at most maxDiffPaths of them,
+// followed by a "…" entry when more were cut.
 func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
 	w, err := comparable(want)
 	if err != nil {
@@ -136,8 +137,8 @@ func walk(path string, a, b any, out *[]string) {
 	}
 }
 
-// byName indexes a list of objects by their "name"; nil unless every
-// item is an object with a distinct string name.
+// byName indexes a list of objects by their "name"; nil for an empty
+// list, and unless every item is an object with a distinct string name.
 func byName(list []any) map[string]any {
 	if len(list) == 0 {
 		return nil
