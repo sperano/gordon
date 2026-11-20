@@ -21,6 +21,7 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -81,7 +82,7 @@ func roles(t *testing.T) (receiverURL, workerURL, ownerURL string) {
 		ReceiverRole: recv, WorkerRole: work}, logging.New(&logs, slog.LevelInfo)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	if !strings.Contains(logs.String(), `"applied":1`) {
+	if want := fmt.Sprintf(`"applied":%d`, store.LatestVersion()); !strings.Contains(logs.String(), want) {
 		t.Fatalf("migrate log %s", logs.String())
 	}
 	return storetest.WithUser(t, ownerURL, recv, rolePassword), storetest.WithUser(t, ownerURL, work, rolePassword), ownerURL
@@ -141,7 +142,9 @@ type service struct {
 	done     chan error
 }
 
-func startService(t *testing.T) *service {
+// startService starts both modes; each edit adjusts the worker's
+// configuration first.
+func startService(t *testing.T, edits ...func(*config.Worker)) *service {
 	t.Helper()
 	receiverURL, workerURL, ownerURL := roles(t)
 	dir := t.TempDir()
@@ -149,7 +152,11 @@ func startService(t *testing.T) *service {
 		done: make(chan error, 2)}
 	vikunja := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		svc.upstream.add(r)
-		fmt.Fprint(w, `{"id":4101,"project_id":3,"labels":[{"title":"feature"}],
+		if strings.HasSuffix(r.URL.Path, "/comments") {
+			fmt.Fprint(w, `[{"id":1,"comment":"<p>earlier</p>"}]`)
+			return
+		}
+		fmt.Fprint(w, `{"id":4101,"project_id":3,"title":"Ship it","description":"<p>now</p>","labels":[{"title":"feature"}],
 			"assignees":[{"username":"claude-opus"}],"buckets":[{"title":"Doing"}]}`)
 	}))
 	t.Cleanup(vikunja.Close)
@@ -167,6 +174,9 @@ func startService(t *testing.T) *service {
 		PollInterval: pollEvery, MaxAttempts: 3, ProjectLimit: 1, DeferDelay: time.Second,
 		ReconcileInterval: pollEvery, BodyRetention: time.Hour, UpstreamTimeout: 5 * time.Second, ShutdownGrace: testGrace,
 		Routing: profile.Defaults(), Backoff: worker.Backoff{Base: time.Second, Max: time.Minute}}
+	for _, edit := range edits {
+		edit(&wcfg)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	svc.cancel = cancel
 	t.Cleanup(cancel)

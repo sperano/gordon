@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -64,6 +66,9 @@ func TestWorkerDefaults(t *testing.T) {
 	if c.Routing.Version != profile.Defaults().Version || len(c.Ownership.Rules) != 0 {
 		t.Fatal("routing defaults or empty ownership not applied")
 	}
+	if c.Kelos != nil {
+		t.Fatalf("Kelos configured without a dispatch configuration: %+v", c.Kelos)
+	}
 	if strings.Contains(c.String(), "pw") || strings.Contains(c.String(), "token") {
 		t.Fatalf("String() leaks a secret: %s", c)
 	}
@@ -79,9 +84,23 @@ func TestWorkerOverrides(t *testing.T) {
 	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"version":"custom-1"}`)
 	env["GORDON_OWNERSHIP_FILE"] = file(t, "own.json",
 		`{"rules":[{"project":"*","family":"pr-review","owner":"shadow","evidence":["replay-parity"]}]}`)
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "dispatch.json", `{"version":"d-1","namespace":"kelos-agents"}`)
+	env["GORDON_KELOS_API_URL"] = "https://k8s.example:6443/"
+	env["GORDON_KELOS_TOKEN_FILE"] = "/run/token"
+	env["GORDON_KELOS_CA_FILE"] = "/run/ca.crt"
+	env["GORDON_KELOS_BUSY_DELAY"] = "7s"
+	env["GORDON_SHADOW_WINDOW"] = "1h"
 	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
+	}
+	want := Kelos{Dispatch: dispatch.Config{Version: "d-1", Namespace: "kelos-agents"}, APIURL: "https://k8s.example:6443",
+		TokenFile: "/run/token", CAFile: "/run/ca.crt", BusyDelay: 7 * time.Second, ShadowWindow: time.Hour}
+	if c.Kelos == nil || !reflect.DeepEqual(*c.Kelos, want) {
+		t.Fatalf("kelos %+v, want %+v", c.Kelos, want)
+	}
+	if !strings.Contains(c.String(), "dispatch=d-1 kelos=https://k8s.example:6443") {
+		t.Fatalf("String() %s lacks the dispatch version and Kelos URL", c)
 	}
 	if c.Shadow || c.UpstreamLimit["github"] != 9 || c.UpstreamLimit["vikunja"] != 1 ||
 		c.Backoff.Base != time.Second || c.Backoff.Max != 3*time.Second || c.LogLevel != slog.LevelDebug ||
@@ -121,6 +140,13 @@ func TestWorkerRefusals(t *testing.T) {
 		"no vikunja url":   {map[string]string{"GORDON_VIKUNJA_URL": ""}, "GORDON_VIKUNJA_URL is required"},
 		"unknown field":    {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "ROUTING"}, "unknown field"},
 		"ungated owner":    {map[string]string{"GORDON_OWNERSHIP_FILE": "OWNERSHIP"}, "lacks gate"},
+		"execute, no dispatch": {map[string]string{"GORDON_SHADOW": "false"},
+			"GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE"},
+		"dispatch namespace": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_NS"},
+			`namespace "default", want "kelos-agents"`},
+		"dispatch unknown field": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_FIELD"}, `unknown field "namespaec"`},
+		"bad kelos url": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH", "GORDON_KELOS_API_URL": "k8s"},
+			`GORDON_KELOS_API_URL="k8s"`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -135,6 +161,12 @@ func TestWorkerRefusals(t *testing.T) {
 					v = file(t, "o.json", `{"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				case "NULL":
 					v = file(t, "n.json", " null\n")
+				case "DISPATCH":
+					v = file(t, "d.json", `{"namespace":"kelos-agents"}`)
+				case "DISPATCH_NS":
+					v = file(t, "d.json", `{"namespace":"default"}`)
+				case "DISPATCH_FIELD":
+					v = file(t, "d.json", `{"namespaec":"kelos-agents"}`)
 				case "TRAILING":
 					v = file(t, "t.json", `{"rules":[]} {"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				}
@@ -207,5 +239,19 @@ func TestMigrate(t *testing.T) {
 	c, err := LoadMigrate(envOf(env))
 	if err != nil || c.ReceiverRole != "gordon_receiver" || c.WorkerRole != "gordon_worker" || c.DatabaseURL != "postgres://owner@db/g" {
 		t.Fatalf("LoadMigrate = %+v, %v", c, err)
+	}
+}
+
+func TestWorkerKelosDefaults(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"namespace":"kelos-agents"}`)
+	c, err := LoadWorker(envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Kelos == nil || c.Kelos.APIURL != kelos.InClusterURL || c.Kelos.TokenFile != kelos.InClusterTokenFile ||
+		c.Kelos.CAFile != kelos.InClusterCAFile || c.Kelos.BusyDelay != DefaultBusyDelay ||
+		c.Kelos.ShadowWindow != DefaultShadowWindow || !c.Shadow {
+		t.Fatalf("kelos defaults %+v, shadow %v", c.Kelos, c.Shadow)
 	}
 }

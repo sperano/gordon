@@ -52,6 +52,8 @@ func safeRepository(repo string) bool {
 
 type githubPR struct {
 	Number       int    `json:"number"`
+	Title        string `json:"title"`
+	HTMLURL      string `json:"html_url"`
 	ChangedFiles int    `json:"changed_files"`
 	State        string `json:"state"`
 	Draft        bool   `json:"draft"`
@@ -92,7 +94,8 @@ func (g GitHub) PullRequest(ctx context.Context, repo string, number int, withFi
 	if err != nil {
 		return event.PullRequest{}, err
 	}
-	pr := event.PullRequest{Repository: repo, Number: raw.Number, State: raw.State, Draft: raw.Draft,
+	pr := event.PullRequest{Repository: repo, Number: raw.Number, Title: raw.Title, URL: raw.HTMLURL,
+		State: raw.State, Draft: raw.Draft,
 		Merged: raw.Merged, Author: raw.User.Login, HeadRef: raw.Head.Ref, HeadSHA: raw.Head.SHA,
 		BaseRef: raw.Base.Ref}
 	if raw.Head.Repo != nil {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/config"
+	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/intake"
 	"github.com/sperano/gordon/internal/metrics"
@@ -80,11 +81,6 @@ func Receiver(ctx context.Context, cfg config.Receiver, log *slog.Logger, onList
 	return g.Wait()
 }
 
-// executors are the outbox executors of this release: none yet. The
-// dispatch (Kelos Task submission) and lifecycle stages register theirs;
-// until then a queued action stays queued (deferred), never dropped.
-func executors() map[action.Kind]worker.Executor { return map[action.Kind]worker.Executor{} }
-
 // Worker runs the inbox processor, the outbox (unless shadow) and the
 // periodic reconciler until ctx ends.
 func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen OnListen) error {
@@ -98,6 +94,10 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	// One project limiter for the inbox and the outbox: the per-project
 	// cap bounds all of a project's work in this process.
 	projects := &worker.Limiter{Default: cfg.ProjectLimit}
+	k, err := newKelos(cfg, m)
+	if err != nil {
+		return err
+	}
 	proc := processor(cfg, s, m, log, projects)
 	g := newGroup(ctx)
 	if err := start(g, log, ServerAdmin, cfg.AdminAddr, adminServer(admin.Handler()), cfg.ShutdownGrace, onListen); err != nil {
@@ -114,13 +114,14 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		return nil
 	})
 	if !cfg.Shadow {
-		out := outbox(cfg, s, m, log, projects)
+		out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, m, log))
 		g.Go(func(ctx context.Context) error {
 			worker.Loop(ctx, store.QueueActions, cfg.ShutdownGrace, cfg.PollInterval, log, out.Tick)
 			return nil
 		})
 	}
-	rec := &worker.Reconciler{Store: s, BodyRetention: cfg.BodyRetention, Metrics: m, Log: log}
+	rec := &worker.Reconciler{Store: s, BodyRetention: cfg.BodyRetention, Passes: passes(cfg, s, k, m, log),
+		Metrics: m, Log: log}
 	g.Go(func(ctx context.Context) error {
 		worker.Every(ctx, cfg.ReconcileInterval, func(ctx context.Context) { rec.Once(ctx) }) //nolint:errcheck // logged and counted
 		return nil
@@ -135,25 +136,32 @@ func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.
 		m.Upstream.WithLabelValues(provider, result).Inc()
 		m.UpstreamDuration.WithLabelValues(provider).Observe(d.Seconds())
 	}
-	vikunja := &upstream.Client{Provider: upstream.ProviderVikunja, BaseURL: cfg.VikunjaURL,
+	vikunja := upstream.Vikunja{Client: &upstream.Client{Provider: upstream.ProviderVikunja, BaseURL: cfg.VikunjaURL,
 		Authorization: "Bearer " + cfg.VikunjaToken, HTTP: hc,
-		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: observe}
+		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: observe}}
 	github := &upstream.Client{Provider: upstream.ProviderGitHub, BaseURL: cfg.GitHubAPIURL,
 		Authorization: "Bearer " + cfg.GitHubToken, Headers: upstream.GitHubHeaders, HTTP: hc,
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: observe}
-	return &worker.Processor{
+	p := &worker.Processor{
 		Store: s, Router: route.Router{Config: cfg.Routing, Ownership: cfg.Ownership},
-		State:  worker.StateReader{Config: cfg.Routing, Tasks: upstream.Vikunja{Client: vikunja}, PRs: upstream.GitHub{Client: github}},
+		State:  worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: upstream.GitHub{Client: github}},
 		Shadow: cfg.Shadow, Owner: cfg.ID, Concurrency: cfg.Concurrency, LeaseTTL: cfg.LeaseTTL,
 		MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff, Projects: projects,
 		DeferDelay: cfg.DeferDelay, Metrics: m, Log: log,
 	}
+	if cfg.Kelos != nil {
+		// The task comments a prompt quotes are one more Vikunja read.
+		p.Tasks = dispatch.Preparer{Builder: dispatch.Builder{Routing: cfg.Routing, Config: cfg.Kelos.Dispatch},
+			Comments: vikunja}
+	}
+	return p
 }
 
 // outbox builds the action loop. Its provider limiter bounds writes; the
 // upstream clients' limits bound reads, separately.
-func outbox(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter) *worker.Outbox {
-	return &worker.Outbox{Store: s, Executors: executors(), Owner: cfg.ID, Concurrency: cfg.Concurrency,
+func outbox(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter,
+	executors map[action.Kind]worker.Executor) *worker.Outbox {
+	return &worker.Outbox{Store: s, Executors: executors, Owner: cfg.ID, Concurrency: cfg.Concurrency,
 		LeaseTTL: cfg.LeaseTTL, MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff,
 		Providers: actionProviders(cfg), Projects: projects,
 		DeferDelay: cfg.DeferDelay, NoExecutorDelay: cfg.Backoff.Max, Metrics: m, Log: log}

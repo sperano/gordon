@@ -2,6 +2,7 @@ package profile
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 )
@@ -10,9 +11,9 @@ import (
 // LegacyVersion), written out so the test does not read the defaults'
 // own constants.
 const (
-	legacyClaudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261119-055920-d9bba7f"
-	legacyCodexImage    = "ericsperano/kelos-codex:0.64.0-20261119-055920-d9bba7f"
-	legacyOpenCodeImage = "ericsperano/kelos-opencode:0.64.0-20261119-055920-d9bba7f"
+	legacyClaudeImage   = "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61"
+	legacyCodexImage    = "ericsperano/kelos-codex:0.64.0-20261120-031945-6f37b61"
+	legacyOpenCodeImage = "ericsperano/kelos-opencode:0.64.0-20261120-031945-6f37b61"
 )
 
 // legacyRunner is what a variant resolves to: agent, model, effort, and
@@ -93,6 +94,9 @@ func TestResolveServiceAccountsByProjectAndMode(t *testing.T) {
 		{"vigie", ModeAnswer, "", "vigie", false},
 		{"vigie", ModeDiscuss, "", "vigie-readonly", true},
 		{"vigie", ModeReview, "pr-review", "vigie", false},
+		{"puckdb", ModeReview, "pr-review", "puckdb", false},
+		{"solitaire", ModeImplement, "", "solitaire", false},
+		{"solitaire", ModeDiscuss, "", "solitaire-readonly", true},
 	}
 	for _, x := range cases {
 		got, err := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
@@ -104,8 +108,21 @@ func TestResolveServiceAccountsByProjectAndMode(t *testing.T) {
 			t.Errorf("%s/%s: %+v", x.project, x.mode, got)
 		}
 	}
+	profiles := map[string]string{}
+	for _, x := range []struct {
+		project string
+		mode    Mode
+	}{{"puckdb", ModeReview}, {"solitaire", ModeImplement}, {"solitaire", ModeDiscuss}, {"vigie", ModeFollowUp}} {
+		got, _ := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
+		profiles[x.project+"/"+string(x.mode)] = got.Profile
+	}
+	wantProfiles := map[string]string{"puckdb/review": ProfilePuckDBReview, "solitaire/implement": ProfileMactest,
+		"solitaire/discuss": ProfileMactestDiscuss, "vigie/followup": ProfileDefault}
+	if !maps.Equal(profiles, wantProfiles) {
+		t.Errorf("profiles %v, want %v", profiles, wantProfiles)
+	}
 	puck, _ := c.Resolve(Request{Project: "puckdb", Variant: "claude-opus", Mode: ModeImplement})
-	if !slices.Equal(puck.Capabilities, []Capability{GitHubWrite, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}) {
+	if !slices.Equal(puck.Capabilities, []Capability{GitHubWrite, GitHubReadOnly, ImageBuildSubmit, ClusterRead, PostgresTest, PuckDBProdReadOnly}) {
 		t.Errorf("puckdb capabilities %v", puck.Capabilities)
 	}
 }

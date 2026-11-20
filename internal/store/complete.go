@@ -11,11 +11,12 @@ import (
 	"github.com/sperano/gordon/internal/route"
 )
 
-// Run states. Gordon 04's Kelos observer moves a run to active and
-// finished and keeps task_exists current; until then a submitted run
-// stays submitting, which the router treats as active.
+// Run states: submitting until its Task is created, active while the
+// Task has not finished, finished once it has (or is gone). The Kelos
+// observer (internal/submit) keeps state and task_exists current.
 const (
 	runSubmitting = "submitting"
+	runActive     = "active"
 	runFinished   = "finished"
 )
 
@@ -34,7 +35,9 @@ var requestKinds = map[event.Kind]bool{
 // (owner gordon, valid table, shadow false) that has runs or actions, its
 // runs and its actions in the outbox (an unanswered owner request's
 // reaction and notice included); and the handled request. With shadow,
-// nothing is queued for execution and no run is recorded.
+// nothing is queued for execution and no run is recorded; the Task each
+// run not executed would have submitted is kept for the shadow
+// comparison instead.
 //
 // The owner request is claimed first: when another delivery of it was
 // recorded since the router read the ledger, this one queues nothing and
@@ -59,7 +62,13 @@ func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shado
 		executed := false
 		for i := range dec.Families {
 			fd := &dec.Families[i]
-			if shadow || !fd.Execute || (len(fd.Runs) == 0 && len(fd.Actions) == 0) {
+			if shadow || !fd.Execute {
+				if err := recordShadow(ctx, tx, l.ID, fd); err != nil {
+					return err
+				}
+				continue
+			}
+			if len(fd.Runs) == 0 && len(fd.Actions) == 0 {
 				continue
 			}
 			if err := recordFamily(ctx, tx, l.ID, requestKey, fd); err != nil {
@@ -194,17 +203,18 @@ func recordRun(ctx context.Context, tx pgx.Tx, inboxID int64, requestKey string,
 	}
 	var name string
 	err = tx.QueryRow(ctx, `INSERT INTO runs
-			(name, family, project, request_key, inbox_id, identity, profile, config_version, state)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			(name, family, project, request_key, inbox_id, identity, profile, config_version, state, task)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (name) DO UPDATE SET family = EXCLUDED.family, project = EXCLUDED.project,
 			request_key = EXCLUDED.request_key, inbox_id = EXCLUDED.inbox_id,
 			identity = EXCLUDED.identity, profile = EXCLUDED.profile,
-			config_version = EXCLUDED.config_version, state = EXCLUDED.state,
+			config_version = EXCLUDED.config_version, state = EXCLUDED.state, task = EXCLUDED.task,
+			task_uid = '', phase = '',
 			task_exists = false, generation = runs.generation + 1, updated_at = now()
 		WHERE runs.state = 'finished' AND NOT runs.task_exists
 		RETURNING name`,
 		rn.Name, string(rn.Identity.Family), rn.Identity.Project, requestKey, inboxID,
-		rn.Identity, rn.Profile, rn.Profile.ConfigVersion, runSubmitting).Scan(&name)
+		rn.Identity, rn.Profile, rn.Profile.ConfigVersion, runSubmitting, rn.Task).Scan(&name)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Another transaction inserted the run after our read.
 		return true, route.ReasonRunActive, nil

@@ -245,9 +245,54 @@ func TestGrantWorkerUpdatesOnlyMutableColumns(t *testing.T) {
 		`UPDATE actions SET target = 'github/x'`,
 		`UPDATE runs SET name = 'other'`,
 		`UPDATE requests SET inbox_id = inbox_id`,
+		`UPDATE shadow_tasks SET name = 'other'`,
+		`DELETE FROM shadow_tasks`,
+		`DELETE FROM runs`,
 	} {
 		if _, err := conn.Exec(ctx, q); !denied(err) {
 			t.Errorf("worker %s = %v, want permission denied", q, err)
 		}
+	}
+}
+
+func TestGrantWorkerDispatchRights(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	worker := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Worker: worker}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	id := acceptRequest(t, owner, "k1", "vikunja/comment/1")
+	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, withTask("p"), false); err != nil {
+		t.Fatalf("worker Complete with a Task: %v", err)
+	}
+	if _, err := ws.RunToSubmit(ctx, runName); err != nil {
+		t.Fatalf("worker RunToSubmit: %v", err)
+	}
+	if err := ws.RunSubmitted(ctx, runName, id, "u", "Running"); err != nil {
+		t.Fatalf("worker RunSubmitted: %v", err)
+	}
+	if _, err := ws.ObservedRuns(ctx, 1); err != nil {
+		t.Fatalf("worker ObservedRuns: %v", err)
+	}
+	if err := ws.ObserveRun(ctx, runName, id, false, ""); err != nil {
+		t.Fatalf("worker ObserveRun: %v", err)
+	}
+	id2 := accept(t, owner, "k2")
+	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, withTask("p"), true); err != nil {
+		t.Fatalf("worker shadow Complete: %v", err)
+	}
+	if _, err := ws.PendingShadow(ctx, 1); err != nil {
+		t.Fatalf("worker PendingShadow: %v", err)
+	}
+	if err := ws.ShadowCompared(ctx, runName, id2, store.ShadowMatch, nil); err != nil {
+		t.Fatalf("worker ShadowCompared: %v", err)
+	}
+	if _, err := ws.PruneTasks(ctx, 0); err != nil {
+		t.Fatalf("worker PruneTasks: %v", err)
 	}
 }

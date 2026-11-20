@@ -103,6 +103,10 @@ type Worker struct {
 	BodyRetention     time.Duration
 	UpstreamTimeout   time.Duration
 	ShutdownGrace     time.Duration
+
+	// Kelos is nil without a dispatch configuration: runs then carry no
+	// Task and the worker can only shadow.
+	Kelos *Kelos
 }
 
 // Worker defaults.
@@ -155,6 +159,10 @@ func LoadWorker(env Getenv) (Worker, error) {
 		r.fail("GORDON_LEASE_TTL %s must exceed GORDON_UPSTREAM_TIMEOUT %s", c.LeaseTTL, c.UpstreamTimeout)
 	}
 	r.jsonFile("GORDON_ROUTING_CONFIG_FILE", &c.Routing)
+	c.Kelos = r.kelos()
+	if !c.Shadow && c.Kelos == nil {
+		r.fail("GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE: nothing could be submitted")
+	}
 	if r.jsonFile("GORDON_OWNERSHIP_FILE", &c.Ownership) {
 		if err := c.Ownership.Validate(); err != nil {
 			r.fail("GORDON_OWNERSHIP_FILE: %v", err)
@@ -207,8 +215,12 @@ func LoadMigrate(env Getenv) (Migrate, error) {
 
 // String names the mode's settings without any secret, for the start log.
 func (c Worker) String() string {
+	dispatchVersion, kelosURL := "none", ""
+	if c.Kelos != nil {
+		dispatchVersion, kelosURL = c.Kelos.Dispatch.Version, c.Kelos.APIURL
+	}
 	return fmt.Sprintf("shadow=%v id=%s concurrency=%d lease=%s poll=%s attempts=%d backoff=%s..%s project_limit=%d "+
-		"upstream=%v reconcile=%s retention=%s config=%s rules=%d", c.Shadow, c.ID, c.Concurrency, c.LeaseTTL,
-		c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
-		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules))
+		"upstream=%v reconcile=%s retention=%s config=%s rules=%d dispatch=%s kelos=%s", c.Shadow, c.ID, c.Concurrency,
+		c.LeaseTTL, c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
+		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL)
 }

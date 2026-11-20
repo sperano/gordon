@@ -46,6 +46,12 @@ type Metrics struct {
 	Upstream         *prometheus.CounterVec
 	UpstreamDuration *prometheus.HistogramVec
 
+	Kelos             *prometheus.CounterVec
+	KelosDuration     *prometheus.HistogramVec
+	Submissions       *prometheus.CounterVec
+	ShadowComparisons *prometheus.CounterVec
+	RunObservations   *prometheus.CounterVec
+
 	Reconciles           *prometheus.CounterVec
 	ReconcileDuration    prometheus.Histogram
 	ReconcileLastSuccess prometheus.Gauge
@@ -82,19 +88,27 @@ func New() *Metrics {
 			"provider", "result"),
 		UpstreamDuration: histogram("upstream_request_duration_seconds", "Duration of one upstream request.",
 			callBuckets, "provider"),
-		Reconciles: counter("reconcile_runs_total", "Periodic reconciliation runs by result.", "result"),
+		Kelos: counter("kelos_requests_total", "Kelos Task API requests by operation and result.", "op", "result"),
+		KelosDuration: histogram("kelos_request_duration_seconds", "Duration of one Kelos Task API request.",
+			callBuckets, "op"),
+		Submissions: counter("kelos_submissions_total", "Task submissions by result.", "result"),
+		ShadowComparisons: counter("shadow_comparisons_total",
+			"Shadow Tasks compared with the legacy Task of the same name, by family and result.", "family", "result"),
+		RunObservations: counter("run_observations_total", "Run states recorded from Kelos, by state.", "state"),
+		Reconciles:      counter("reconcile_runs_total", "Periodic reconciliation runs by result.", "result"),
 		ReconcileDuration: prometheus.NewHistogram(prometheus.HistogramOpts{Namespace: namespace,
 			Name: "reconcile_duration_seconds", Help: "Duration of one reconciliation run.", Buckets: callBuckets}),
 		ReconcileLastSuccess: prometheus.NewGauge(prometheus.GaugeOpts{Namespace: namespace,
 			Name: "reconcile_last_success_timestamp_seconds", Help: "Unix time of the last successful reconciliation."}),
 		LeasesExpired: counter("leases_expired_total", "Leases of stalled or crashed workers released.", "queue"),
 		BodiesPruned: prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
-			Name: "bodies_pruned_total", Help: "Stored delivery bodies dropped after their retention."}),
+			Name: "bodies_pruned_total", Help: "Stored delivery bodies and built Task prompts dropped after their retention."}),
 	}
 	m.Registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		m.Intake, m.Decisions, m.DecisionLatency, m.InboxRetries, m.InboxFailures, m.Deferred,
 		m.QueueDepth, m.QueueOldest, m.ActionResults, m.ActionDuration, m.ActionQueueLatency,
-		m.Upstream, m.UpstreamDuration, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
+		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions, m.ShadowComparisons,
+		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
 		m.LeasesExpired, m.BodiesPruned)
 	return m
 }

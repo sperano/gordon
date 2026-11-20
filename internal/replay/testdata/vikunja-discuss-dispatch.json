@@ -72,12 +72,12 @@
               "task_id": 4201
             },
             "profile": {
-              "config_version": "hollingsworth-4a50f33",
+              "config_version": "hollingsworth-bf18aa5",
               "variant": "gpt-astra",
               "agent": "codex",
               "model": "gpt-6-astra",
               "effort": "medium",
-              "image": "ericsperano/kelos-codex:0.64.0-20261119-055920-d9bba7f",
+              "image": "ericsperano/kelos-codex:0.64.0-20261120-031945-6f37b61",
               "credential_type": "oauth",
               "credential_secret": "codex-oauth",
               "mode": "discuss",

@@ -46,11 +46,11 @@ func TestVikunjaTask(t *testing.T) {
 			r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("request %s %s auth %q", r.Method, r.URL, r.Header.Get("Authorization"))
 		}
-		fmt.Fprint(w, `{"id":42,"project_id":7,"done":false,"labels":[{"title":"in progress"}],
+		fmt.Fprint(w, `{"id":42,"project_id":7,"title":"T","description":"<p>D</p>","done":false,"labels":[{"title":"in progress"}],
 			"assignees":[{"username":"claude-opus"},{"username":"eric"}],"buckets":[{"title":"Doing"}]}`)
 	})
 	got, err := Vikunja{c}.Task(ctx, 42)
-	want := event.Task{ID: 42, ProjectID: 7, Labels: []string{"in progress"},
+	want := event.Task{ID: 42, ProjectID: 7, Title: "T", Description: "<p>D</p>", Labels: []string{"in progress"},
 		Assignees: []string{"claude-opus", "eric"}, Buckets: []string{"Doing"}}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Task = %+v, %v; want %+v", got, err, want)
@@ -194,7 +194,7 @@ func TestGitHubPullRequestWithFiles(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/repos/sperano/gordon/pulls/7":
-			fmt.Fprint(w, `{"number":7,"state":"open","draft":true,"merged":false,"user":{"login":"bot"},
+			fmt.Fprint(w, `{"number":7,"title":"Fix","html_url":"https://github.com/sperano/gordon/pull/7","state":"open","draft":true,"merged":false,"user":{"login":"bot"},
 				"head":{"ref":"kelos/vikunja-5","sha":"abc","repo":{"full_name":"sperano/gordon"}},
 				"base":{"ref":"main"},"labels":[{"name":"kelos:claude-opus"}]}`)
 		case r.URL.Query().Get("page") == "1":
@@ -212,7 +212,8 @@ func TestGitHubPullRequestWithFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Repository != "sperano/gordon" || pr.Number != 7 || pr.State != "open" || !pr.Draft || pr.Author != "bot" ||
+	if pr.Repository != "sperano/gordon" || pr.Number != 7 || pr.Title != "Fix" || pr.URL != "https://github.com/sperano/gordon/pull/7" ||
+		pr.State != "open" || !pr.Draft || pr.Author != "bot" ||
 		pr.HeadRef != "kelos/vikunja-5" || pr.HeadSHA != "abc" || pr.HeadRepo != "sperano/gordon" ||
 		pr.BaseRef != "main" || !reflect.DeepEqual(pr.Labels, []string{"kelos:claude-opus"}) {
 		t.Fatalf("pull request = %+v", pr)
@@ -298,5 +299,33 @@ func TestGitHubRefusesUnsafeRepository(t *testing.T) {
 	}
 	if _, err := (GitHub{c}).PullRequest(ctx, "a/b", 0, false); ClassOf(err) != Invalid {
 		t.Errorf("PullRequest(#0) = %v, want invalid", err)
+	}
+}
+
+func TestVikunjaComments(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tasks/42/comments" || r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("request %s auth %q", r.URL, r.Header.Get("Authorization"))
+		}
+		fmt.Fprint(w, ` [{"id":1,"comment":"<p>hi</p>"}]`)
+	})
+	got, err := Vikunja{c}.Comments(ctx, 42)
+	if err != nil || string(got) != `[{"id":1,"comment":"<p>hi</p>"}]` {
+		t.Fatalf("Comments = %s, %v; want the raw array", got, err)
+	}
+	if !reflect.DeepEqual(o.results, []string{"vikunja/ok"}) {
+		t.Fatalf("observed %v", o.results)
+	}
+}
+
+func TestVikunjaCommentsRefusals(t *testing.T) {
+	c, o := client(t, ProviderVikunja, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"message":"not a list"}`)
+	})
+	if _, err := (Vikunja{c}).Comments(ctx, 42); ClassOf(err) != Invalid {
+		t.Fatalf("object answer = %v, want invalid", err)
+	}
+	if _, err := (Vikunja{c}).Comments(ctx, 0); ClassOf(err) != Invalid || len(o.results) != 1 {
+		t.Fatalf("Comments(0) = %v after %d requests, want invalid without a request", err, len(o.results))
 	}
 }
