@@ -2,10 +2,10 @@ package store_test
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
@@ -29,7 +29,14 @@ func role(t *testing.T, dbURL string) string {
 	return name
 }
 
-func denied(err error) bool { return err != nil && strings.Contains(err.Error(), "permission denied") }
+// insufficientPrivilege is the SQLSTATE of a refused privilege, the same
+// whatever the server's message language.
+const insufficientPrivilege = "42501"
+
+func denied(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == insufficientPrivilege
+}
 
 func TestGrantReceiverInsertsOnly(t *testing.T) {
 	owner, dbURL := storetest.Open(t)
@@ -149,5 +156,53 @@ func TestGrantRefusesOneRoleForBoth(t *testing.T) {
 	shared := role(t, dbURL)
 	if err := owner.Grant(ctx, store.Roles{Receiver: shared, Worker: shared}); !errors.Is(err, store.ErrSameRole) {
 		t.Fatalf("Grant with one role for both = %v, want ErrSameRole", err)
+	}
+}
+
+func TestGrantReusedWorkerRoleAsReceiverKeepsNoWorkerRight(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	reused := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Worker: reused}); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Grant(ctx, store.Roles{Receiver: reused}); err != nil {
+		t.Fatal(err)
+	}
+	accept(t, owner, "k")
+	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, reused, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	if _, dup, err := rs.Accept(ctx, delivery("new")); err != nil || dup {
+		t.Fatalf("receiver Accept = %v, %v; want a new row", dup, err)
+	}
+	if _, err := rs.Claim(ctx, "receiver", 1, testTTL); !denied(err) {
+		t.Fatalf("former worker's inbox Claim = %v, want permission denied", err)
+	}
+	if _, err := rs.ClaimActions(ctx, "receiver", 1, testTTL); !denied(err) {
+		t.Fatalf("former worker's ClaimActions = %v, want permission denied", err)
+	}
+	if led := rs.Ledger(ctx); led.HandledRequest("x") || !denied(led.Err) {
+		t.Fatalf("former worker's ledger read = %v, want permission denied", led.Err)
+	}
+}
+
+func TestGrantReusedReceiverRoleAsWorkerCannotInsertDeliveries(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	reused := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Receiver: reused}); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Grant(ctx, store.Roles{Worker: reused}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, reused, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	if _, _, err := ws.Accept(ctx, delivery("forged")); !denied(err) {
+		t.Fatalf("former receiver's Accept = %v, want permission denied", err)
 	}
 }

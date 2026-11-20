@@ -71,6 +71,13 @@ const ReasonNoExecutor = "no executor for this action kind"
 // ambiguous: an operator checks the provider before replaying it.
 const OutcomeUnknown = "outcome unknown, the write may have applied"
 
+// attemptShareOfLease is the part of the lease (1/attemptShareOfLease)
+// one attempt (recovery and write together) may take, so a hung provider
+// call is cut while this worker still holds the lease: another worker
+// never starts a second write while the first is in flight, and the rest
+// of the lease is left for recording the outcome.
+const attemptShareOfLease = 2
+
 // LimitProvider is the deferred_total limit label of a full provider.
 const LimitProvider = "provider"
 
@@ -149,8 +156,14 @@ func (o *Outbox) Perform(ctx context.Context, c store.ClaimedAction) {
 }
 
 // attempt recovers (when needed) and executes; it returns the result
-// label and, unless done or recovered, the error.
+// label and, unless done or recovered, the error. A write cut by the
+// attempt deadline is ambiguous, as any timeout after sending is.
 func (o *Outbox) attempt(ctx context.Context, ex Executor, c store.ClaimedAction) (string, error) {
+	if o.LeaseTTL > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, o.LeaseTTL/attemptShareOfLease)
+		defer cancel()
+	}
 	if c.Recover {
 		applied, err := ex.Recover(ctx, c.Action)
 		switch {
@@ -169,6 +182,9 @@ func (o *Outbox) attempt(ctx context.Context, ex Executor, c store.ClaimedAction
 		return ResultFailed, err
 	case isAmbiguous(err):
 		return ResultAmbiguous, err
+	case ctx.Err() != nil:
+		// Cut mid-call: the request may have reached the provider.
+		return ResultAmbiguous, Ambiguous(err)
 	default:
 		return ResultRetry, err
 	}

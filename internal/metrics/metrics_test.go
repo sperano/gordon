@@ -52,6 +52,9 @@ func TestSetQueuesZeroesEmptyStates(t *testing.T) {
 	if v := testutil.ToFloat64(m.QueueDepth.WithLabelValues("inbox", Other)); v != 0 {
 		t.Fatalf("other depth = %v once the unknown states are gone, want 0", v)
 	}
+	if v := testutil.ToFloat64(m.QueueOldest.WithLabelValues("inbox", Other)); v != 0 {
+		t.Fatalf("other age = %v once the unknown states are gone, want 0", v)
+	}
 }
 
 // depthTotal sums the queue depth over every fixed series.

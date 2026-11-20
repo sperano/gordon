@@ -24,6 +24,10 @@ func TestPeerBehindTrustedProxies(t *testing.T) {
 		{"only trusted hops", "10.42.1.5:5000", []string{"10.42.3.3"}, "10.42.3.3"},
 		{"unparsable hop", "10.42.1.5:5000", []string{"203.0.113.9, junk"}, "10.42.1.5"},
 		{"IPv4-mapped proxy", "[::ffff:10.42.1.5]:5000", []string{"203.0.113.9"}, "203.0.113.9"},
+		{"only trusted hops, mapped spelling", "10.42.1.5:5000", []string{"::ffff:10.42.3.3"}, "10.42.3.3"},
+		{"direct client, mapped spelling", "[::ffff:198.51.100.1]:5000", nil, "198.51.100.1"},
+		{"trusted proxy without header, mapped spelling", "[::ffff:10.42.1.5]:5000", nil, "10.42.1.5"},
+		{"unparsable hop after a mapped trusted hop", "10.42.1.5:5000", []string{"203.0.113.9, junk, ::ffff:10.42.3.3"}, "10.42.3.3"},
 		{"IPv4 proxy in a mapped CIDR", "10.43.1.5:5000", []string{"203.0.113.9"}, "203.0.113.9"},
 	}
 	for _, tc := range cases {

@@ -37,7 +37,11 @@ func (p Proxies) Peer(r *http.Request) string {
 		host = r.RemoteAddr
 	}
 	addr, err := netip.ParseAddr(host)
-	if err != nil || !p.trusts(addr.Unmap()) {
+	if err != nil {
+		return host
+	}
+	host = addr.Unmap().String()
+	if !p.trusts(addr.Unmap()) {
 		return host
 	}
 	hops := forwarded(r)
@@ -49,7 +53,7 @@ func (p Proxies) Peer(r *http.Request) string {
 		if !p.trusts(a.Unmap()) {
 			return a.Unmap().String()
 		}
-		host = hops[i]
+		host = a.Unmap().String()
 	}
 	return host
 }

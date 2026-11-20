@@ -160,8 +160,8 @@ func (r *reader) jsonFile(name string, out any) bool {
 	return true
 }
 
-// baseURL reads an http(s) base URL without its trailing slash; required
-// when def is "".
+// baseURL reads an http(s) base URL without its trailing slash, query or
+// fragment; required when def is "".
 func (r *reader) baseURL(name, def string) string {
 	var v string
 	if def == "" {
@@ -176,6 +176,10 @@ func (r *reader) baseURL(name, def string) string {
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		r.fail("%s=%q: want an http or https URL with a host", name, v)
+	} else if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(v, "#") {
+		// Endpoint paths are appended to the base: a query or fragment
+		// would swallow them.
+		r.fail("%s=%q: want a base URL without a query or fragment", name, v)
 	}
 	return v
 }

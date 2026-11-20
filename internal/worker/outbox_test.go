@@ -324,3 +324,68 @@ func TestErrorClassification(t *testing.T) {
 		t.Fatal("provider of target")
 	}
 }
+
+// hangingExecutor blocks every call until its context ends, as a provider
+// that never answers, and records each call's deadline.
+type hangingExecutor struct {
+	executes  int
+	deadlines []time.Time
+}
+
+func (h *hangingExecutor) wait(ctx context.Context) error {
+	d, ok := ctx.Deadline()
+	if !ok {
+		return errors.New("attempt has no deadline")
+	}
+	h.deadlines = append(h.deadlines, d)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (h *hangingExecutor) Execute(ctx context.Context, _ action.Action) error {
+	h.executes++
+	return h.wait(ctx)
+}
+
+func (h *hangingExecutor) Recover(ctx context.Context, _ action.Action) (bool, error) {
+	return false, h.wait(ctx)
+}
+
+// attemptTTL is a lease short enough for a hung call to be cut quickly.
+const attemptTTL = 40 * time.Millisecond
+
+func TestHungWriteIsCutWithinTheLeaseAsAmbiguous(t *testing.T) {
+	h := &hangingExecutor{}
+	o := &Outbox{LeaseTTL: attemptTTL}
+	start := time.Now()
+	result, err := o.attempt(ctx, h, store.ClaimedAction{})
+	if result != ResultAmbiguous || !isAmbiguous(err) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("hung write = %s, %v; want ambiguous wrapping the deadline", result, err)
+	}
+	if len(h.deadlines) != 1 || !h.deadlines[0].Before(start.Add(attemptTTL)) {
+		t.Fatalf("write deadlines %v, want one before the lease ends at %v", h.deadlines, start.Add(attemptTTL))
+	}
+}
+
+func TestHungRecoveryIsCutWithinTheLeaseAndNeverWrites(t *testing.T) {
+	h := &hangingExecutor{}
+	o := &Outbox{LeaseTTL: attemptTTL}
+	start := time.Now()
+	result, err := o.attempt(ctx, h, store.ClaimedAction{Recover: true})
+	if result != ResultAmbiguous || !errors.Is(err, context.DeadlineExceeded) || h.executes != 0 {
+		t.Fatalf("hung recovery = %s, %v after %d writes; want ambiguous, no write", result, err, h.executes)
+	}
+	if len(h.deadlines) != 1 || !h.deadlines[0].Before(start.Add(attemptTTL)) {
+		t.Fatalf("recovery deadlines %v, want one before the lease ends at %v", h.deadlines, start.Add(attemptTTL))
+	}
+}
+
+func TestRefusedWriteBeforeTheDeadlineRetries(t *testing.T) {
+	p := newProvider()
+	refused := errors.New("rate limited")
+	p.execute = func(action.Action) error { return refused }
+	o := &Outbox{LeaseTTL: testTTL}
+	if result, err := o.attempt(ctx, p, store.ClaimedAction{}); result != ResultRetry || !errors.Is(err, refused) || isAmbiguous(err) {
+		t.Fatalf("refused write = %s, %v; want a plain retry", result, err)
+	}
+}

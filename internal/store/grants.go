@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -21,6 +22,10 @@ type Roles struct {
 // the worker cannot insert a delivery, and it updates only the queue
 // bookkeeping and the body (pruning).
 var workerTables = []string{"decisions", "requests", "runs", "actions"}
+
+// gordonTables are every table the schema has: a role's grants on them
+// are revoked before its mode's are applied.
+var gordonTables = append([]string{"schema_migrations", "inbox"}, workerTables...)
 
 // workerInboxColumns are the inbox columns the worker may update.
 const workerInboxColumns = "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, " +
@@ -40,7 +45,9 @@ const receiverColumns = "source, delivery_key, request_key, kind, scope, headers
 // else: it cannot read a stored body, a decision or the outbox. GRANT is
 // idempotent, so every migrate run re-applies it; a new table or a new
 // receiver column is granted only once it is added to workerTables or
-// receiverColumns.
+// receiverColumns. Each role first loses every right on the schema's
+// tables (column rights included), so a role reused for the other mode
+// keeps nothing from the one it had.
 func (s *Store) Grant(ctx context.Context, r Roles) error {
 	if r.Receiver != "" && r.Receiver == r.Worker {
 		return ErrSameRole
@@ -50,10 +57,12 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 		return err
 	}
 	usage := "GRANT USAGE ON SCHEMA " + pgx.Identifier{schema}.Sanitize() + " TO "
+	revoke := "REVOKE ALL ON " + strings.Join(gordonTables, ", ") + " FROM "
 	var stmts []string
 	if r.Receiver != "" {
 		role := pgx.Identifier{r.Receiver}.Sanitize()
 		stmts = append(stmts,
+			revoke+role,
 			usage+role,
 			"GRANT SELECT ON schema_migrations TO "+role,
 			"GRANT INSERT ("+receiverColumns+") ON inbox TO "+role,
@@ -62,7 +71,7 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 	}
 	if r.Worker != "" {
 		role := pgx.Identifier{r.Worker}.Sanitize()
-		stmts = append(stmts, usage+role,
+		stmts = append(stmts, revoke+role, usage+role,
 			"GRANT SELECT ON schema_migrations TO "+role,
 			"GRANT SELECT, UPDATE ("+workerInboxColumns+") ON inbox TO "+role)
 		for _, t := range workerTables {

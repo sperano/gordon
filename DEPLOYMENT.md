@@ -13,7 +13,8 @@ first argument. Nothing here is deployed by this repository.
 | `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT, UPDATE` on `decisions`, `requests`, `runs` and `actions`; on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | none in this stage; Gordon 04 adds `create/get/list/delete` on `kelos.dev` Tasks in `kelos-agents` |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
-`GORDON_WORKER_ROLE`) at every run. A new table or receiver column is
+`GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
+from one mode to the other keeps nothing of the old one. A new table or receiver column is
 granted only once `internal/store/grants.go` lists it: change that list in
 the release that adds the migration. The roles themselves (logins and passwords) are
 provisioned outside Gordon (shared Postgres, `tofu/kelos`). Migrations run
@@ -71,13 +72,13 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_GITHUB_TOKEN_FILE` | required | read-only token for pull requests and their files |
 | `GORDON_ROUTING_CONFIG_FILE` | `profile.Defaults()` | JSON `profile.Config` (unknown fields refused) |
 | `GORDON_OWNERSHIP_FILE` | empty (all legacy) | JSON `rollout.Table`; refused when invalid or ungated |
-| `GORDON_WORKER_CONCURRENCY` | `4` | items decided (and actions performed) at once |
+| `GORDON_WORKER_CONCURRENCY` | `4` | per queue: inbox items decided at once, and separately outbox actions performed at once (up to twice this in flight per process outside shadow mode) |
 | `GORDON_PROJECT_LIMIT` | `2` | per project or repository (the delivery's Vikunja project or GitHub repository), inbox and outbox together; `0` is unbounded |
 | `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | per provider: reads in flight, and separately outbox actions in flight; each provider at most once. Kelos submissions take the default, 4 |
-| `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT` |
+| `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT`; an item's fresh-state reads, and each outbox attempt (recovery and write), are cut at half of it, the write then being ambiguous |
 | `GORDON_UPSTREAM_TIMEOUT` | `10s` | one upstream request |
 | `GORDON_POLL_INTERVAL` | `1s` | idle wait between claims |
-| `GORDON_MAX_ATTEMPTS` | `20` | then the row is dead-lettered (`failed`) |
+| `GORDON_MAX_ATTEMPTS` | `20` | inbox retries and attempted actions; then the row is dead-lettered (`failed`). A deferred action (no executor yet, or a full limit) counts no attempt and stays queued |
 | `GORDON_RETRY_BASE`, `GORDON_RETRY_MAX` | `5s`, `10m` | exponential backoff |
 | `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full limit |
 | `GORDON_RECONCILE_INTERVAL` | `30s` | lease expiry, queue gauges, body pruning |
