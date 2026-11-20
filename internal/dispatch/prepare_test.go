@@ -179,6 +179,21 @@ func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
 		"in-tree volume secret not granted": withReviewPod(func(p *dispatch.Pod) {
 			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","rbd":{"image":"i","secretRef":{"name":"vault-root"}}}`))
 		}, "task-spec-secret-not-granted"),
+		"cephfs secret not granted":     inTreeVolume(`cephfs`, `{"monitors":["m"],"secretRef":{"name":"vault-root"}}`),
+		"iscsi secret not granted":      inTreeVolume(`iscsi`, `{"targetPortal":"t","iqn":"q","lun":0,"secretRef":{"name":"vault-root"}}`),
+		"cinder secret not granted":     inTreeVolume(`cinder`, `{"volumeID":"v","secretRef":{"name":"vault-root"}}`),
+		"flexVolume secret not granted": inTreeVolume(`flexVolume`, `{"driver":"d","secretRef":{"name":"vault-root"}}`),
+		"scaleIO secret not granted":    inTreeVolume(`scaleIO`, `{"gateway":"g","system":"s","secretRef":{"name":"vault-root"}}`),
+		"storageos secret not granted":  inTreeVolume(`storageos`, `{"volumeName":"v","secretRef":{"name":"vault-root"}}`),
+		"null env": withReviewPod(func(p *dispatch.Pod) {
+			p.Env = append(p.Env, json.RawMessage(`null`))
+		}, "task-spec-pod-invalid"),
+		"null volume": withReviewPod(func(p *dispatch.Pod) {
+			p.Volumes = append(p.Volumes, json.RawMessage(`null`))
+		}, "task-spec-pod-invalid"),
+		"null init container": withReviewPod(func(p *dispatch.Pod) {
+			p.ExtraInitContainers = append(p.ExtraInitContainers, json.RawMessage(`null`))
+		}, "task-spec-pod-invalid"),
 		"azure file secret not granted": withReviewPod(func(p *dispatch.Pod) {
 			p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","azureFile":{"shareName":"s","secretName":"vault-root"}}`))
 		}, "task-spec-secret-not-granted"),
@@ -196,6 +211,14 @@ func TestUnbuildableTaskRejectsTheFamily(t *testing.T) {
 			}
 		})
 	}
+}
+
+// inTreeVolume adds to the review pod an in-tree volume of that type
+// whose source is src.
+func inTreeVolume(kind, src string) unbuildable {
+	return withReviewPod(func(p *dispatch.Pod) {
+		p.Volumes = append(p.Volumes, json.RawMessage(`{"name":"v","`+kind+`":`+src+`}`))
+	}, "task-spec-secret-not-granted")
 }
 
 func TestBuildRefusals(t *testing.T) {

@@ -53,7 +53,7 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	if err := s.RunSubmitted(ctx, runName, id+1, "uid-other", kelos.PhaseRunning); err != nil {
 		t.Fatal(err)
 	}
-	if r, _ = s.RunToSubmit(ctx, runName); r.Submitted() {
+	if r, err = s.RunToSubmit(ctx, runName); err != nil || r.Submitted() {
 		t.Fatal("another generation's RunSubmitted changed this run")
 	}
 	if err := s.RunSubmitted(ctx, runName, id, "uid-1", kelos.PhasePending); err != nil {
@@ -66,7 +66,7 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	if state != "active" || uid != "uid-1" || phase != kelos.PhasePending || !exists {
 		t.Fatalf("submitted run state %s uid %s phase %s exists %v", state, uid, phase, exists)
 	}
-	if r, _ = s.RunToSubmit(ctx, runName); !r.Submitted() {
+	if r, err = s.RunToSubmit(ctx, runName); err != nil || !r.Submitted() {
 		t.Fatal("a created run still reads as unsubmitted")
 	}
 }
@@ -97,20 +97,20 @@ func TestObservedRunsAndObserveRun(t *testing.T) {
 	if err := s.ObserveRun(ctx, runName, id, true, kelos.PhaseSucceeded); err != nil {
 		t.Fatal(err)
 	}
-	if runs, _ = s.ObservedRuns(ctx, 10); len(runs) != 1 || runs[0].State != "finished" || !runs[0].Exists ||
+	if runs, err = s.ObservedRuns(ctx, 10); err != nil || len(runs) != 1 || runs[0].State != "finished" || !runs[0].Exists ||
 		runs[0].Phase != kelos.PhaseSucceeded {
 		t.Fatalf("a finished run whose Task exists is still followed: %+v", runs)
 	}
 	if err := s.ObserveRun(ctx, runName, id+1, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if runs, _ = s.ObservedRuns(ctx, 10); len(runs) != 1 {
+	if runs, err = s.ObservedRuns(ctx, 10); err != nil || len(runs) != 1 {
 		t.Fatal("another generation's observation changed this run")
 	}
 	if err := s.ObserveRun(ctx, runName, id, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if runs, _ = s.ObservedRuns(ctx, 10); len(runs) != 0 {
+	if runs, err = s.ObservedRuns(ctx, 10); err != nil || len(runs) != 0 {
 		t.Fatalf("a finished run whose Task is gone is still followed: %+v", runs)
 	}
 	if rec, ok := s.Ledger(ctx).Run(runName); !ok || rec.Active || rec.Exists {

@@ -1,7 +1,9 @@
 package dispatch
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"slices"
 	"sort"
 
@@ -95,21 +97,21 @@ func referencedSecrets(t kelos.Task) ([]string, error) {
 	}
 	for _, raw := range p.Env {
 		var e envVar
-		if err := json.Unmarshal(raw, &e); err != nil {
+		if err := decodeObject(raw, &e); err != nil {
 			return nil, refuse(CodePod, "env entry: %v", err)
 		}
 		out = appendEnvSecret(out, e)
 	}
 	for _, raw := range p.Volumes {
 		var v volume
-		if err := json.Unmarshal(raw, &v); err != nil {
+		if err := decodeObject(raw, &v); err != nil {
 			return nil, refuse(CodePod, "volume: %v", err)
 		}
 		out = append(out, volumeSecrets(v)...)
 	}
 	for _, raw := range p.ExtraInitContainers {
 		var c container
-		if err := json.Unmarshal(raw, &c); err != nil {
+		if err := decodeObject(raw, &c); err != nil {
 			return nil, refuse(CodePod, "init container: %v", err)
 		}
 		for _, e := range c.Env {
@@ -122,6 +124,18 @@ func referencedSecrets(t kelos.Task) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// errNotObject is a pod entry that is no JSON object (null included,
+// which json.Unmarshal would take as an empty entry).
+var errNotObject = errors.New("not a JSON object")
+
+// decodeObject decodes raw into v, refusing anything but an object.
+func decodeObject(raw json.RawMessage, v any) error {
+	if t := bytes.TrimSpace(raw); len(t) == 0 || t[0] != '{' {
+		return errNotObject
+	}
+	return json.Unmarshal(raw, v)
 }
 
 func volumeSecrets(v volume) []string {
