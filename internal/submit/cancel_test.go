@@ -2,6 +2,8 @@ package submit
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/kelos"
+	"github.com/sperano/gordon/internal/kelos/kelostest"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 	"github.com/sperano/gordon/internal/worker"
@@ -94,7 +97,9 @@ func TestCancelNeverDeletesATaskRecreatedSinceTheList(t *testing.T) {
 	e.kelos.Put(tk)
 	c := &Canceller{Store: e.store, Kelos: recreateOnList{Deleter: e.api, srv: e.kelos, task: tk}}
 	err := c.Execute(ctx, cancelOf("7"))
-	if err == nil || worker.IsPermanent(err) {
+	var ke *kelos.Error
+	if !errors.As(err, &ke) || ke.Status != http.StatusConflict || ke.Reason != kelostest.ReasonConflict ||
+		worker.IsPermanent(err) {
 		t.Fatalf("Execute = %v, want a retried Conflict", err)
 	}
 	if got := e.kelos.Deletes(); len(got) != 0 {

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/notice"
@@ -60,14 +61,16 @@ func TestAmbiguousNoticeIsRecovered(t *testing.T) {
 	}
 }
 
-// heldLock is a Locker recording whether it is held and whether fn ran
-// under a deadline.
+// heldLock is a Locker recording whether it is held and the deadline fn
+// ran under.
 type heldLock struct {
-	held, bounded bool
+	held     bool
+	deadline time.Time
+	bounded  bool
 }
 
 func (l *heldLock) WithTargetLock(ctx context.Context, _ string, fn func(context.Context) error) error {
-	_, l.bounded = ctx.Deadline()
+	l.deadline, l.bounded = ctx.Deadline()
 	l.held = true
 	defer func() { l.held = false }()
 	return fn(ctx)
@@ -95,11 +98,17 @@ func TestNoticeReadsRunsOutsideTheLock(t *testing.T) {
 	lock := &heldLock{}
 	ex := executor(f, nil)
 	ex.Runs, ex.Lock = lockFreeRuns{runs: startRun(), lock: lock}, lock
+	before := time.Now()
 	if err := ex.Execute(ctx, action.Notice(action.VikunjaTask(5), notice.Start, runName)); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.comments[5]) != 1 || !lock.bounded {
-		t.Fatalf("%d comments, lock bounded %v; want one notice posted under a deadline", len(f.comments[5]), lock.bounded)
+	after := time.Now()
+	if len(f.comments[5]) != 1 {
+		t.Fatalf("%d comments, want one notice", len(f.comments[5]))
+	}
+	// The deadline is set between before and after (monotonic readings).
+	if !lock.bounded || lock.deadline.Before(before.Add(noticeLockTimeout)) || lock.deadline.After(after.Add(noticeLockTimeout)) {
+		t.Fatalf("lock deadline %v (set %v), want %v after the post started", lock.deadline, lock.bounded, noticeLockTimeout)
 	}
 }
 

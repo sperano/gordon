@@ -354,15 +354,75 @@ func TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries(t *testing.T) {
 	}
 }
 
-// TestGrantWorkerRoleReusedAsReceiverLosesTheInsertPolicy: the restrictive
-// policy follows the worker role, so a former worker receives anything.
-func TestGrantWorkerRoleReusedAsReceiverLosesTheInsertPolicy(t *testing.T) {
+// forgedDeliveries are a GitHub delivery and a Vikunja one without the
+// synthetic header, both of which the worker insert policy refuses.
+func forgedDeliveries(t *testing.T) map[string]store.Delivery {
+	t.Helper()
+	syn, err := store.TaskUpdate(7, 3, event.Synthetic{Reconcile: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	github := syn
+	github.Source, github.DeliveryKey = event.SourceGitHub, "forged-github"
+	unmarked := syn
+	unmarked.DeliveryKey, unmarked.Headers = "forged-unmarked", map[string]string{"X-Test": "1"}
+	return map[string]store.Delivery{"github": github, "no synthetic header": unmarked}
+}
+
+// assertWorkerRestricted fails unless every forged delivery the worker
+// role inserts is refused.
+func assertWorkerRestricted(t *testing.T, dbURL, worker string) {
+	t.Helper()
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	for name, d := range forgedDeliveries(t) {
+		if _, err := ws.Enqueue(ctx, []store.Delivery{d}); !denied(err) {
+			t.Errorf("worker %s insert of a %s delivery = %v, want permission denied", worker, name, err)
+		}
+	}
+}
+
+// TestGrantWithoutAWorkerKeepsTheInsertPolicy: a later Grant of only a
+// receiver (a migrate run without GORDON_WORKER_ROLE) or of nothing
+// leaves the worker's insert check in place.
+func TestGrantWithoutAWorkerKeepsTheInsertPolicy(t *testing.T) {
 	owner, dbURL := storetest.Open(t)
-	reused := role(t, dbURL)
+	worker, receiver := role(t, dbURL), role(t, dbURL)
+	for _, r := range []store.Roles{{Worker: worker}, {Receiver: receiver}, {}} {
+		if err := owner.Grant(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertWorkerRestricted(t, dbURL, worker)
+}
+
+// TestGrantNewWorkerKeepsTheFormerWorkerRestricted: a former worker keeps
+// its INSERT grant, so a Grant of another worker role restricts both.
+func TestGrantNewWorkerKeepsTheFormerWorkerRestricted(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	former, worker := role(t, dbURL), role(t, dbURL)
+	for _, w := range []string{former, worker} {
+		if err := owner.Grant(ctx, store.Roles{Worker: w}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertWorkerRestricted(t, dbURL, former)
+	assertWorkerRestricted(t, dbURL, worker)
+}
+
+// TestGrantWorkerRoleReusedAsReceiverAcceptsWebhooks: a worker role
+// granted the receiver mode leaves the insert policy, so it can store a
+// GitHub webhook, while the new worker stays restricted.
+func TestGrantWorkerRoleReusedAsReceiverAcceptsWebhooks(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	reused, worker := role(t, dbURL), role(t, dbURL)
 	if err := owner.Grant(ctx, store.Roles{Worker: reused}); err != nil {
 		t.Fatal(err)
 	}
-	if err := owner.Grant(ctx, store.Roles{Receiver: reused}); err != nil {
+	if err := owner.Grant(ctx, store.Roles{Receiver: reused, Worker: worker}); err != nil {
 		t.Fatal(err)
 	}
 	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, reused, rolePassword))
@@ -370,7 +430,10 @@ func TestGrantWorkerRoleReusedAsReceiverLosesTheInsertPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rs.Close()
-	if _, dup, err := rs.Accept(ctx, delivery("k")); err != nil || dup {
-		t.Fatalf("former worker's receiver Accept = %v, %v; want a new row", dup, err)
+	webhook := delivery("k")
+	webhook.Source = event.SourceGitHub
+	if _, dup, err := rs.Accept(ctx, webhook); err != nil || dup {
+		t.Fatalf("former worker's receiver Accept of a GitHub webhook = %v, %v; want a new row", dup, err)
 	}
+	assertWorkerRestricted(t, dbURL, worker)
 }

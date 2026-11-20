@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -60,19 +61,52 @@ const (
 
 // inboxPolicies (re)creates the inbox's row policies: the permissive one
 // for every role (a table owner, the migrator, bypasses them anyway) and,
-// for the worker (none when worker is ""), the restrictive insert check.
-func inboxPolicies(worker string) []string {
+// for the restricted roles (none when empty), the restrictive insert check.
+func inboxPolicies(restricted []string) []string {
 	stmts := []string{
 		"ALTER TABLE inbox ENABLE ROW LEVEL SECURITY",
 		"DROP POLICY IF EXISTS " + inboxAnyRowPolicy + " ON inbox",
 		"CREATE POLICY " + inboxAnyRowPolicy + " ON inbox USING (true) WITH CHECK (true)",
 		"DROP POLICY IF EXISTS " + workerInsertPolicy + " ON inbox",
 	}
-	if worker != "" {
-		stmts = append(stmts, "CREATE POLICY "+workerInsertPolicy+" ON inbox AS RESTRICTIVE FOR INSERT TO "+worker+
-			" WITH CHECK ("+workerInsertCondition+")")
+	if len(restricted) == 0 {
+		return stmts
 	}
-	return stmts
+	roles := make([]string, len(restricted))
+	for i, r := range restricted {
+		roles[i] = pgx.Identifier{r}.Sanitize()
+	}
+	return append(stmts, "CREATE POLICY "+workerInsertPolicy+" ON inbox AS RESTRICTIVE FOR INSERT TO "+
+		strings.Join(roles, ", ")+" WITH CHECK ("+workerInsertCondition+")")
+}
+
+// restrictedRoles are the roles the worker insert policy covers after r
+// is granted: every role it covered (a former worker keeps its INSERT
+// grant until it is granted another mode), plus r's worker, minus r's
+// receiver (a role reused as the receiver must insert webhooks). A Grant
+// without a worker role thus never lifts the check from a worker.
+func restrictedRoles(current []string, r Roles) []string {
+	out := slices.DeleteFunc(slices.Clone(current), func(role string) bool {
+		return role == r.Receiver || role == r.Worker
+	})
+	if r.Worker != "" {
+		out = append(out, r.Worker)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// policyRoles reads the roles the worker insert policy covers now (none
+// before it exists).
+func policyRoles(ctx context.Context, tx pgx.Tx) ([]string, error) {
+	var roles []string
+	err := tx.QueryRow(ctx, `SELECT roles::text[] FROM pg_policies
+		WHERE schemaname = current_schema() AND tablename = 'inbox' AND policyname = $1`,
+		workerInsertPolicy).Scan(&roles)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return roles, err
 }
 
 // workerInboxColumns are the inbox columns the worker may update.
@@ -100,49 +134,62 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 	if r.Receiver != "" && r.Receiver == r.Worker {
 		return ErrSameRole
 	}
+	if r.Receiver == "" && r.Worker == "" {
+		return nil
+	}
 	var schema string
 	if err := s.pool.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
 		return err
 	}
 	usage := "GRANT USAGE ON SCHEMA " + pgx.Identifier{schema}.Sanitize() + " TO "
 	revoke := "REVOKE ALL ON " + strings.Join(gordonTables, ", ") + " FROM "
-	var stmts []string
-	if r.Receiver != "" {
-		role := pgx.Identifier{r.Receiver}.Sanitize()
-		stmts = append(stmts,
-			revoke+role,
-			usage+role,
-			"GRANT SELECT ON schema_migrations TO "+role,
-			"GRANT INSERT ("+receiverColumns+") ON inbox TO "+role,
-			"GRANT SELECT (id, delivery_key) ON inbox TO "+role,
-		)
-	}
-	if r.Worker != "" {
-		role := pgx.Identifier{r.Worker}.Sanitize()
-		stmts = append(stmts, revoke+role, usage+role,
-			"GRANT SELECT ON schema_migrations TO "+role,
-			"GRANT SELECT, UPDATE ("+workerInboxColumns+") ON inbox TO "+role,
-			"GRANT INSERT ("+workerInboxInsert+") ON inbox TO "+role)
-		for _, t := range workerTables {
-			stmts = append(stmts, fmt.Sprintf("GRANT SELECT, INSERT ON %s TO %s", t, role))
-			if cols, ok := workerUpdates[t]; ok {
-				stmts = append(stmts, fmt.Sprintf("GRANT UPDATE (%s) ON %s TO %s", cols, t, role))
-			}
-		}
-	}
-	if len(stmts) > 0 {
-		worker := ""
-		if r.Worker != "" {
-			worker = pgx.Identifier{r.Worker}.Sanitize()
-		}
-		stmts = append(stmts, inboxPolicies(worker)...)
-	}
+	stmts := append(receiverGrants(r.Receiver, revoke, usage), workerGrants(r.Worker, revoke, usage)...)
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		for _, q := range stmts {
+		current, err := policyRoles(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, q := range append(stmts, inboxPolicies(restrictedRoles(current, r))...) {
 			if _, err := tx.Exec(ctx, q); err != nil {
 				return fmt.Errorf("%s: %w", q, err)
 			}
 		}
 		return nil
 	})
+}
+
+// receiverGrants are the statements granting name (none when "") the
+// receiver's rights, after revoking every other.
+func receiverGrants(name, revoke, usage string) []string {
+	if name == "" {
+		return nil
+	}
+	role := pgx.Identifier{name}.Sanitize()
+	return []string{
+		revoke + role,
+		usage + role,
+		"GRANT SELECT ON schema_migrations TO " + role,
+		"GRANT INSERT (" + receiverColumns + ") ON inbox TO " + role,
+		"GRANT SELECT (id, delivery_key) ON inbox TO " + role,
+	}
+}
+
+// workerGrants are the statements granting name (none when "") the
+// worker's rights, after revoking every other.
+func workerGrants(name, revoke, usage string) []string {
+	if name == "" {
+		return nil
+	}
+	role := pgx.Identifier{name}.Sanitize()
+	stmts := []string{revoke + role, usage + role,
+		"GRANT SELECT ON schema_migrations TO " + role,
+		"GRANT SELECT, UPDATE (" + workerInboxColumns + ") ON inbox TO " + role,
+		"GRANT INSERT (" + workerInboxInsert + ") ON inbox TO " + role}
+	for _, t := range workerTables {
+		stmts = append(stmts, fmt.Sprintf("GRANT SELECT, INSERT ON %s TO %s", t, role))
+		if cols, ok := workerUpdates[t]; ok {
+			stmts = append(stmts, fmt.Sprintf("GRANT UPDATE (%s) ON %s TO %s", cols, t, role))
+		}
+	}
+	return stmts
 }
