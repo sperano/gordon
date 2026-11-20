@@ -96,17 +96,17 @@ func deleteMeta(m map[string]any, key string) {
 	}
 }
 
-// unorderedLists are the fields whose lists of named objects are compared
-// by name, so their order is no difference: env and volumes (Kubernetes
-// merges them by name) and volumeMounts (merged by mountPath; a list
-// with a name twice, one volume mounted twice, falls back to the order).
-// An env where a value references another variable ($(NAME), expanded
-// from the variables defined before it) is compared in order, as is any
-// other list (agentConfigRefs, extraInitContainers).
-var unorderedLists = map[string]bool{"env": true, "volumes": true, "volumeMounts": true}
+// unorderedLists are the fields whose lists of objects are compared by
+// the key Kubernetes merges them on, so their order is no difference:
+// env and volumes by name, volumeMounts by mountPath (one volume can be
+// mounted twice). A list with a key missing or twice falls back to the
+// order. An env where a value references another variable ($(NAME),
+// expanded from the variables defined before it) is compared in order,
+// as is any other list (agentConfigRefs, extraInitContainers).
+var unorderedLists = map[string]string{"env": "name", "volumes": "name", "volumeMounts": "mountPath"}
 
 // walk appends the paths where a and b differ: into objects key by key,
-// into the unorderedLists name by name, into other arrays of equal
+// into the unorderedLists by their merge key, into other arrays of equal
 // length index by index, else the whole value.
 func walk(path string, a, b any, out *[]string) {
 	am, aok := a.(map[string]any)
@@ -125,9 +125,10 @@ func walk(path string, a, b any, out *[]string) {
 	}
 	al, aok := a.([]any)
 	bl, bok := b.([]any)
-	unordered := aok && bok && unorderedLists[field(path)] && !(field(path) == "env" && (references(al) || references(bl)))
-	if am, bm := byName(al), byName(bl); unordered && am != nil && bm != nil {
-		// Env, volumes and volume mounts: by name, not position.
+	key, keyed := unorderedLists[field(path)]
+	unordered := aok && bok && keyed && !(field(path) == "env" && (references(al) || references(bl)))
+	if am, bm := byKey(al, key), byKey(bl, key); unordered && am != nil && bm != nil {
+		// Env, volumes and volume mounts: by merge key, not position.
 		keys := slices.Collect(maps.Keys(am))
 		for k := range bm {
 			if _, ok := am[k]; !ok {
@@ -135,7 +136,7 @@ func walk(path string, a, b any, out *[]string) {
 			}
 		}
 		for _, k := range keys {
-			walk(fmt.Sprintf("%s[name=%s]", path, k), am[k], bm[k], out)
+			walk(fmt.Sprintf("%s[%s=%s]", path, key, k), am[k], bm[k], out)
 		}
 		return
 	}
@@ -166,16 +167,16 @@ func references(env []any) bool {
 	return false
 }
 
-// byName indexes a list of objects by their "name"; nil for an empty
-// list, and unless every item is an object with a distinct string name.
-func byName(list []any) map[string]any {
+// byKey indexes a list of objects by their field key; nil for an empty
+// list, and unless every item is an object with a distinct string key.
+func byKey(list []any, key string) map[string]any {
 	if len(list) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(list))
 	for _, item := range list {
 		m, ok := item.(map[string]any)
-		name, named := m["name"].(string)
+		name, named := m[key].(string)
 		if !ok || !named {
 			return nil
 		}

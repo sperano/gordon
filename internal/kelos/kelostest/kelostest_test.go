@@ -148,3 +148,71 @@ func TestListRefusesUnsupportedSelectors(t *testing.T) {
 		t.Fatalf("List(\"\") = %d Tasks, %v; want the one Task", len(got), err)
 	}
 }
+
+// TestInjectedFailuresCarryTheAPIServerReason: an injected 409 is
+// AlreadyExists and a 422 Invalid, so reason-based checks see them as
+// they see the API server's.
+func TestInjectedFailuresCarryTheAPIServerReason(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	for code, want := range map[int]string{
+		http.StatusConflict:            kelos.ReasonAlreadyExists,
+		http.StatusUnprocessableEntity: "Invalid",
+		http.StatusInternalServerError: "InternalError",
+	} {
+		srv.FailCreates(code)
+		_, err := c.Create(context.Background(), named("a"))
+		var e *kelos.Error
+		if !errors.As(err, &e) || e.Status != code || e.Reason != want {
+			t.Errorf("injected %d = %v, want reason %s", code, err, want)
+		}
+	}
+	srv.FailCreates(http.StatusConflict)
+	if _, err := c.Create(context.Background(), named("a")); !kelos.IsAlreadyExists(err) {
+		t.Fatalf("injected 409 = %v, want AlreadyExists", err)
+	}
+}
+
+// TestDropResponseCutsARefusedCreate: a queued DropResponse drops the
+// connection of the next create even when admission or the name check
+// refuses it, and is used up by it.
+func TestDropResponseCutsARefusedCreate(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	srv.Put(named("taken"))
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	srv.FailCreates(kelostest.DropResponse)
+	if _, err := c.Create(context.Background(), named("taken")); err == nil || kelos.IsAlreadyExists(err) || !kelos.IsAmbiguous(err) {
+		t.Fatalf("dropped create of a taken name = %v, want a lost response", err)
+	}
+	srv.Admit = func(kelos.Task) error { return errors.New("refused by policy") }
+	srv.FailCreates(kelostest.DropResponse)
+	if _, err := c.Create(context.Background(), named("new")); err == nil || kelos.IsRefused(err) || !kelos.IsAmbiguous(err) {
+		t.Fatalf("dropped refused create = %v, want a lost response", err)
+	}
+	if _, ok := srv.Task("new"); ok {
+		t.Fatal("a refused create was stored")
+	}
+	_, err := c.Create(context.Background(), named("new"))
+	var e *kelos.Error
+	if !errors.As(err, &e) || e.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("create after the drop = %v, want the 422 answered", err)
+	}
+}
+
+// TestEmptySelectorValueNeedsTheLabel: k= matches a Task whose label k
+// is empty, not one without the label.
+func TestEmptySelectorValueNeedsTheLabel(t *testing.T) {
+	srv := kelostest.New(ns)
+	defer srv.Close()
+	with := named("with")
+	with.Metadata.Labels = map[string]string{"k": ""}
+	srv.Put(with)
+	srv.Put(named("without"))
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	got, err := c.List(context.Background(), "k=")
+	if err != nil || len(got) != 1 || got[0].Metadata.Name != "with" {
+		t.Fatalf("List(\"k=\") = %+v, %v; want only the Task labelled k", got, err)
+	}
+}

@@ -80,7 +80,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_POLL_INTERVAL` | `1s` | idle wait between claims |
 | `GORDON_MAX_ATTEMPTS` | `20` | inbox retries and attempted actions; then the row is dead-lettered (`failed`). A deferred action (no executor yet, a full limit, a held branch) counts no attempt and stays queued |
 | `GORDON_RETRY_BASE`, `GORDON_RETRY_MAX` | `5s`, `10m` | exponential backoff |
-| `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full provider or project limit; a full Kelos variant limit or a held branch waits `GORDON_KELOS_BUSY_DELAY` |
+| `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full provider or project limit; a full Kelos variant limit, a held branch or a timed-out admission lock wait waits `GORDON_KELOS_BUSY_DELAY` |
 | `GORDON_RECONCILE_INTERVAL` | `30s` | lease expiry, queue gauges, body pruning |
 | `GORDON_BODY_RETENTION` | `168h` | stored bodies of finished rows, and the built Tasks (prompts) of finished runs and compared shadow Tasks, are dropped after this; keys, decisions, requests and runs stay |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight items on SIGTERM; past it their leases expire and another worker recovers them |
@@ -88,7 +88,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_KELOS_API_URL` | `https://kubernetes.default.svc` | Kubernetes API base |
 | `GORDON_KELOS_TOKEN_FILE` | the pod's ServiceAccount token | re-read per request (projected tokens rotate) |
 | `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
-| `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit or a held branch |
+| `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit, a held branch or a timed-out wait for the admission lock |
 | `GORDON_SHADOW_WINDOW` | `15m` | how long a shadow Task waits for the legacy Task of its name before it is recorded `missing` |
 
 ## Dispatch configuration

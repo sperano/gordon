@@ -103,7 +103,8 @@ func submitKeyPrefix() string {
 }
 
 // ObserveRun records what Kelos reports about a run's generation: its
-// Task present with a phase, or gone (exists false: finished). A finished
+// Task present with a phase, or gone (exists false: finished, the last
+// observed phase kept; phase is then ignored). A finished
 // run never goes back: an observation read before another replica's
 // (a Running phase, a Task since cleaned up) changes nothing.
 func (s *Store) ObserveRun(ctx context.Context, name string, inboxID int64, exists bool, phase string) error {
@@ -111,7 +112,8 @@ func (s *Store) ObserveRun(ctx context.Context, name string, inboxID int64, exis
 	if exists {
 		state = stateOf(phase)
 	}
-	_, err := s.pool.Exec(ctx, `UPDATE runs SET state = $3, task_exists = $4, phase = $5, updated_at = now()
+	_, err := s.pool.Exec(ctx, `UPDATE runs SET state = $3, task_exists = $4,
+		phase = CASE WHEN $4 THEN $5 ELSE phase END, updated_at = now()
 		WHERE name = $1 AND inbox_id = $2
 			AND (state <> 'finished' OR ($3 = 'finished' AND (task_exists OR NOT $4)))`,
 		name, inboxID, state, exists, phase)

@@ -185,8 +185,9 @@ func (r *reader) baseURL(name, def string) string {
 		r.fail("%s: want an http or https URL with a host", quotedURL(name, v))
 	} else if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(v, "#") {
 		// Endpoint paths are appended to the base: a query or fragment
-		// would swallow them.
-		r.fail("%s: want a base URL without a query or fragment", quotedURL(name, v))
+		// would swallow them. The name alone: either can carry a
+		// credential under a key the log scrubber does not know.
+		r.fail("%s: want a base URL without a query or fragment", name)
 	}
 	return v
 }

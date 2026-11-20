@@ -60,7 +60,8 @@ func TestServiceSubmitsToKelos(t *testing.T) {
 		!strings.Contains(task.Spec.Prompt, `<p>earlier</p>`) || !strings.Contains(task.Spec.Prompt, "in project Hollingsworth: Ship it") {
 		t.Fatalf("submitted Task %+v\n%s", task.Metadata, task.Spec.Prompt)
 	}
-	// The whole submitted Task is the one decided: the dispatch tests
+	// The submitted Task's labels, annotations and spec are the decided
+	// one's (kelos.Diff leaves kelos.dev/ labels out): the dispatch tests
 	// check that Task against the legacy spawners'.
 	var decided kelos.Task
 	storetest.QueryRow(t, svc.ownerURL, `SELECT task FROM runs WHERE name = $1`, []any{name}, &decided)

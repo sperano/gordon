@@ -167,10 +167,16 @@ func (e *Executor) created(ctx context.Context, r store.SubmitRun, created kelos
 }
 
 // Recover reports whether the run's Task already exists: created by an
-// earlier attempt of this generation, or taken by another submitter.
+// earlier attempt of this generation, or taken by another submitter. A
+// run that can never be submitted (none, or no built Task) is not
+// applied: Execute then fails it at once instead of the outbox retrying
+// it as ambiguous until it dead-letters.
 func (e *Executor) Recover(ctx context.Context, a action.Action) (bool, error) {
 	r, err := e.run(ctx, a)
-	if err != nil || r.Submitted() {
+	switch {
+	case worker.IsPermanent(err):
+		return false, nil
+	case err != nil || r.Submitted():
 		return err == nil, err
 	}
 	return e.existing(ctx, r)

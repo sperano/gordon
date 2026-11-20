@@ -401,6 +401,23 @@ func TestHeldBranchKeepsSubmissionQueued(t *testing.T) {
 	}
 }
 
+func TestRecoveringARunWithoutABuiltTaskFailsAtOnce(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	name := e.implement(t, implementID, "claude-opus")
+	e.kelos.FailCreates(kelostest.DropResponse)
+	e.perform(t)
+	if st, _, _ := e.action(t, name); st != store.ActionAmbiguous {
+		t.Fatalf("after a lost response: %s, want ambiguous", st)
+	}
+	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = NULL`)
+	e.due(t)
+	e.perform(t)
+	if st, attempts, msg := e.action(t, name); st != store.ActionFailed || attempts != 2 ||
+		msg != "permanent: "+name+": run has no built Task" {
+		t.Fatalf("state %s after %d attempts (%s), want failed at once for the missing Task", st, attempts, msg)
+	}
+}
+
 func TestSubmitWithoutABuiltTaskIsPermanent(t *testing.T) {
 	e := newEnv(t, false, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")

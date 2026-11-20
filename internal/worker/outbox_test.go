@@ -311,13 +311,13 @@ func TestAmbiguousAtMaxAttemptsIsDeadLetteredAsUnknown(t *testing.T) {
 
 func TestErrorClassification(t *testing.T) {
 	base := errors.New("x")
-	if !isAmbiguous(Ambiguous(base)) || isPermanent(Ambiguous(base)) || !errors.Is(Ambiguous(base), base) {
+	if !isAmbiguous(Ambiguous(base)) || IsPermanent(Ambiguous(base)) || !errors.Is(Ambiguous(base), base) {
 		t.Fatal("Ambiguous misclassified or does not unwrap")
 	}
-	if !isPermanent(Permanent(base)) || isAmbiguous(Permanent(base)) || !errors.Is(Permanent(base), base) {
+	if !IsPermanent(Permanent(base)) || isAmbiguous(Permanent(base)) || !errors.Is(Permanent(base), base) {
 		t.Fatal("Permanent misclassified or does not unwrap")
 	}
-	if isAmbiguous(base) || isPermanent(base) {
+	if isAmbiguous(base) || IsPermanent(base) {
 		t.Fatal("plain error classified")
 	}
 	if provider(action.KelosTask("ns", "n")) != "kelos" || provider(action.VikunjaTask(1)) != "vikunja" {

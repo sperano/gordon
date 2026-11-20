@@ -74,7 +74,9 @@ func Ambiguous(err error) error { return ambiguousError{err} }
 func Permanent(err error) error { return permanentError{err} }
 
 func isAmbiguous(err error) bool { return errors.As(err, new(ambiguousError)) }
-func isPermanent(err error) bool { return errors.As(err, new(permanentError)) }
+
+// IsPermanent reports whether err, or an error it wraps, is Permanent.
+func IsPermanent(err error) bool { return errors.As(err, new(permanentError)) }
 
 // Action results, the action_attempts_total result label.
 const (
@@ -211,7 +213,7 @@ func (o *Outbox) attempt(ctx context.Context, ex Executor, c store.ClaimedAction
 		return ResultDone, nil
 	case errors.As(err, new(deferredError)):
 		return ResultDeferred, err
-	case isPermanent(err):
+	case IsPermanent(err):
 		return ResultFailed, err
 	case isAmbiguous(err):
 		return ResultAmbiguous, err

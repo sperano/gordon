@@ -95,23 +95,45 @@ func TestDiffKelosLabelsLeftOutOnBothSides(t *testing.T) {
 
 func TestDiffVolumesByName(t *testing.T) {
 	want := kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{Type: "claude-code", PodOverrides: &kelos.PodOverrides{
-		Volumes:      []json.RawMessage{json.RawMessage(`{"name":"a"}`), json.RawMessage(`{"name":"b"}`)},
-		VolumeMounts: []json.RawMessage{json.RawMessage(`{"name":"a"}`), json.RawMessage(`{"name":"b"}`)}}}}}
+		Volumes: []json.RawMessage{json.RawMessage(`{"name":"a"}`), json.RawMessage(`{"name":"b"}`)}}}}}
 	reversed := []any{map[string]any{"name": "b"}, map[string]any{"name": "a"}}
 	got := raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
-		"podOverrides": map[string]any{"volumes": reversed, "volumeMounts": reversed}}}})
+		"podOverrides": map[string]any{"volumes": reversed}}}})
 	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
-		t.Fatalf("Diff = %v, %v; want volumes and mounts in another order to be the same", diff, err)
+		t.Fatalf("Diff = %v, %v; want volumes in another order to be the same", diff, err)
 	}
 	changed := []any{map[string]any{"name": "a", "readOnly": true}}
 	got = raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
-		"podOverrides": map[string]any{"volumes": changed, "volumeMounts": changed}}}})
+		"podOverrides": map[string]any{"volumes": changed}}}})
 	diff, err := kelos.Diff(want, got)
-	wantPaths := []string{"spec.worker.podOverrides.volumeMounts[name=a].readOnly",
-		"spec.worker.podOverrides.volumeMounts[name=b]", "spec.worker.podOverrides.volumes[name=a].readOnly",
-		"spec.worker.podOverrides.volumes[name=b]"}
+	wantPaths := []string{"spec.worker.podOverrides.volumes[name=a].readOnly", "spec.worker.podOverrides.volumes[name=b]"}
 	if err != nil || !slices.Equal(diff, wantPaths) {
-		t.Fatalf("Diff = %v, %v\nwant %v: a changed or dropped volume or mount is a difference", diff, err, wantPaths)
+		t.Fatalf("Diff = %v, %v\nwant %v: a changed or dropped volume is a difference", diff, err, wantPaths)
+	}
+}
+
+// TestDiffVolumeMountsByMountPath: mounts merge by mountPath, so one
+// volume mounted twice still compares regardless of order.
+func TestDiffVolumeMountsByMountPath(t *testing.T) {
+	want := kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{Type: "claude-code", PodOverrides: &kelos.PodOverrides{
+		VolumeMounts: []json.RawMessage{json.RawMessage(`{"name":"a","mountPath":"/x"}`),
+			json.RawMessage(`{"name":"a","mountPath":"/y"}`), json.RawMessage(`{"name":"b","mountPath":"/z"}`)}}}}}
+	reversed := []any{map[string]any{"name": "b", "mountPath": "/z"}, map[string]any{"name": "a", "mountPath": "/y"},
+		map[string]any{"name": "a", "mountPath": "/x"}}
+	got := raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
+		"podOverrides": map[string]any{"volumeMounts": reversed}}}})
+	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+		t.Fatalf("Diff = %v, %v; want mounts in another order to be the same", diff, err)
+	}
+	changed := []any{map[string]any{"name": "a", "mountPath": "/x", "readOnly": true},
+		map[string]any{"name": "a", "mountPath": "/y"}}
+	got = raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
+		"podOverrides": map[string]any{"volumeMounts": changed}}}})
+	diff, err := kelos.Diff(want, got)
+	wantPaths := []string{"spec.worker.podOverrides.volumeMounts[mountPath=/x].readOnly",
+		"spec.worker.podOverrides.volumeMounts[mountPath=/z]"}
+	if err != nil || !slices.Equal(diff, wantPaths) {
+		t.Fatalf("Diff = %v, %v\nwant %v: a changed or dropped mount is a difference", diff, err, wantPaths)
 	}
 }
 

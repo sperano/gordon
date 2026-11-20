@@ -85,7 +85,7 @@ func TestRunSubmittedFinishedTask(t *testing.T) {
 }
 
 func TestObservedRunsAndObserveRun(t *testing.T) {
-	s, _ := storetest.Open(t)
+	s, dbURL := storetest.Open(t)
 	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
 	runs, err := s.ObservedRuns(ctx, 10)
 	if err != nil || len(runs) != 1 {
@@ -115,6 +115,11 @@ func TestObservedRunsAndObserveRun(t *testing.T) {
 	}
 	if rec, ok := s.Ledger(ctx).Run(runName); !ok || rec.Active || rec.Exists {
 		t.Fatalf("ledger run %+v, want finished and gone: a new request may run again", rec)
+	}
+	var phase string
+	storetest.QueryRow(t, dbURL, `SELECT phase FROM runs WHERE name = $1`, []any{runName}, &phase)
+	if phase != kelos.PhaseSucceeded {
+		t.Fatalf("phase after the Task is gone = %q, want the last observed %q", phase, kelos.PhaseSucceeded)
 	}
 }
 

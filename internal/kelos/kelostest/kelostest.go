@@ -47,8 +47,9 @@ type Server struct {
 	snapshots [][]json.RawMessage
 }
 
-// DropResponse in FailCreates applies the create and then cuts the
-// connection: the response-loss case.
+// DropResponse in FailCreates runs the create (admission, the name
+// check, the store) and then cuts the connection whatever its outcome:
+// the response-loss case.
 const DropResponse = 0
 
 // New starts a fake API for namespace.
@@ -180,36 +181,67 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	if injected {
 		fail, s.failCreates = s.failCreates[0], s.failCreates[1:]
 	}
-	admit := s.Admit
 	s.mu.Unlock()
 	if injected && fail != DropResponse {
-		writeStatus(w, fail, "InternalError", "injected failure")
+		writeStatus(w, fail, reasonFor(fail), "injected failure")
 		return
 	}
+	code, reason, msg, raw := s.apply(t)
+	switch {
+	case injected: // DropResponse: whatever the outcome, the client never hears it
+		hijack(w)
+	case code != http.StatusCreated:
+		writeStatus(w, code, reason, msg)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write(raw) //nolint:errcheck // test server
+	}
+}
+
+// apply runs admission and the storage create of t: the status code, and
+// the reason and message of a refusal or the stored Task of a create.
+func (s *Server) apply(t kelos.Task) (code int, reason, msg string, raw json.RawMessage) {
+	s.mu.Lock()
+	admit := s.Admit
+	s.mu.Unlock()
 	// Validating admission runs before the storage create, as in the API
 	// server, and outside the lock: Admit may read the server.
 	if admit != nil {
 		if err := admit(t); err != nil {
-			writeStatus(w, http.StatusUnprocessableEntity, "Invalid", err.Error())
-			return
+			return http.StatusUnprocessableEntity, reasonFor(http.StatusUnprocessableEntity), err.Error(), nil
 		}
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, taken := s.tasks[t.Metadata.Name]; taken {
-		s.mu.Unlock()
-		writeStatus(w, http.StatusConflict, kelos.ReasonAlreadyExists, "tasks.kelos.dev \""+t.Metadata.Name+"\" already exists")
-		return
+		return http.StatusConflict, kelos.ReasonAlreadyExists, "tasks.kelos.dev \"" + t.Metadata.Name + "\" already exists", nil
 	}
 	s.store(t)
-	raw := s.tasks[t.Metadata.Name]
-	s.mu.Unlock()
-	if injected { // DropResponse: applied, but the client never hears it
-		hijack(w)
-		return
+	return http.StatusCreated, "", "", s.tasks[t.Metadata.Name]
+}
+
+// reasons are the Status reasons the API server gives a create's
+// failures, by code.
+var reasons = map[int]string{
+	http.StatusBadRequest:          "BadRequest",
+	http.StatusUnauthorized:        "Unauthorized",
+	http.StatusForbidden:           "Forbidden",
+	http.StatusNotFound:            kelos.ReasonNotFound,
+	http.StatusConflict:            kelos.ReasonAlreadyExists,
+	http.StatusUnprocessableEntity: "Invalid",
+	http.StatusTooManyRequests:     "TooManyRequests",
+	http.StatusServiceUnavailable:  "ServiceUnavailable",
+	http.StatusGatewayTimeout:      "Timeout",
+}
+
+// reasonFor is the reason of a failure of code: an injected 409 is
+// AlreadyExists and a 422 Invalid, as the API server answers them.
+func reasonFor(code int) string {
+	if r, ok := reasons[code]; ok {
+		return r
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	w.Write(raw) //nolint:errcheck // test server
+	return "InternalError"
 }
 
 func (s *Server) get(w http.ResponseWriter, name string) {
@@ -287,7 +319,7 @@ func parseSelector(s string) (selector, error) {
 
 func (s selector) matches(labels map[string]string) bool {
 	for k, v := range s {
-		if labels[k] != v {
+		if got, ok := labels[k]; !ok || got != v {
 			return false
 		}
 	}
