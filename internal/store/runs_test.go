@@ -124,6 +124,9 @@ func TestRerunReplacesTaskAndClearsObservation(t *testing.T) {
 	if err := s.RunSubmitted(ctx, runName, id, "uid-1", kelos.PhaseRunning); err != nil {
 		t.Fatal(err)
 	}
+	if got := observedNames(t, s, 1); !slices.Equal(got, []string{runName}) {
+		t.Fatalf("observed %v, want the run", got)
+	}
 	if err := s.ObserveRun(ctx, runName, id, false, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +139,45 @@ func TestRerunReplacesTaskAndClearsObservation(t *testing.T) {
 	storetest.QueryRow(t, dbURL, `SELECT task_uid, phase FROM runs WHERE name = $1`, []any{runName}, &uid, &phase)
 	if uid != "" || phase != "" {
 		t.Fatalf("rerun kept the old Task's uid %q phase %q", uid, phase)
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM runs WHERE name = $1 AND observed_at = '-infinity'`, runName); n != 1 {
+		t.Fatal("rerun kept the old generation's observed_at: it would wait behind runs never observed")
+	}
+}
+
+// TestRunSubmittedAfterTheObserver: a run the observer already followed
+// keeps the state it saw, and still gets its Task's uid.
+func TestRunSubmittedAfterTheObserver(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := recorded(t, s, "k1", "vikunja/comment/1", withTask("p"))
+	row := func() (state, uid, phase string, exists bool) {
+		storetest.QueryRow(t, dbURL, `SELECT state, task_uid, phase, task_exists FROM runs WHERE name = $1`,
+			[]any{runName}, &state, &uid, &phase, &exists)
+		return
+	}
+	if err := s.ObserveRun(ctx, runName, id, true, kelos.PhaseRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RunSubmitted(ctx, runName, id, "uid-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if st, uid, phase, exists := row(); st != "active" || uid != "uid-1" || phase != kelos.PhaseRunning || !exists {
+		t.Fatalf("active run: %s %q %q %v, want active uid-1 Running present", st, uid, phase, exists)
+	}
+	if err := s.ObserveRun(ctx, runName, id, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RunSubmitted(ctx, runName, id, "uid-2", kelos.PhaseRunning); err != nil {
+		t.Fatal(err)
+	}
+	if st, uid, phase, exists := row(); st != "finished" || uid != "uid-2" || phase != "" || exists {
+		t.Fatalf("finished run: %s %q %q %v, want finished uid-2, no phase, gone", st, uid, phase, exists)
+	}
+	if err := s.RunSubmitted(ctx, runName, id+1, "uid-3", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, uid, _, _ := row(); uid != "uid-2" {
+		t.Fatalf("another generation's submission set uid %q", uid)
 	}
 }
 

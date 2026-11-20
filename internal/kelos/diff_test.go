@@ -77,3 +77,29 @@ func TestDiffListsAndCap(t *testing.T) {
 		t.Fatal("a non-object Task compared")
 	}
 }
+
+func TestDiffKelosLabelsLeftOutOnBothSides(t *testing.T) {
+	want := kelos.Task{Metadata: kelos.Metadata{Labels: map[string]string{"kelos.dev/taskspawner": "mine", "role": "x"}}}
+	got := raw(t, map[string]any{"metadata": map[string]any{"labels": map[string]any{"role": "x"}},
+		"spec": map[string]any{"prompt": ""}})
+	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+		t.Fatalf("Diff = %v, %v; want a kelos.dev/ label of want left out", diff, err)
+	}
+}
+
+func TestDiffOrderedNamedLists(t *testing.T) {
+	want := kelos.Task{Spec: kelos.Spec{Worker: &kelos.Worker{Type: "claude-code",
+		AgentConfigRefs: []kelos.Ref{{Name: "a"}, {Name: "b"}},
+		PodOverrides: &kelos.PodOverrides{ExtraInitContainers: []json.RawMessage{
+			json.RawMessage(`{"name":"x"}`), json.RawMessage(`{"name":"y"}`)}}}}}
+	got := raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
+		"agentConfigRefs": []any{map[string]any{"name": "b"}, map[string]any{"name": "a"}},
+		"podOverrides": map[string]any{"extraInitContainers": []any{map[string]any{"name": "y"},
+			map[string]any{"name": "x"}}}}}})
+	diff, err := kelos.Diff(want, got)
+	wantPaths := []string{"spec.worker.agentConfigRefs[0].name", "spec.worker.agentConfigRefs[1].name",
+		"spec.worker.podOverrides.extraInitContainers[0].name", "spec.worker.podOverrides.extraInitContainers[1].name"}
+	if err != nil || !slices.Equal(diff, wantPaths) {
+		t.Fatalf("Diff = %v, %v\nwant %v", diff, err, wantPaths)
+	}
+}

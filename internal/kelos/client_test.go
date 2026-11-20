@@ -189,7 +189,7 @@ func TestOversizedAndUndecodableAnswers(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
-	if _, _, err := c.Get(context.Background(), "big"); err == nil || !strings.Contains(err.Error(), "response over") {
+	if _, _, err := c.Get(context.Background(), "big"); err == nil || !strings.Contains(err.Error(), "response too large") {
 		t.Fatalf("Get big = %v, want the size cap", err)
 	}
 	_, _, err := c.Get(context.Background(), "garbage")
@@ -312,5 +312,58 @@ func TestNewHTTPClientCustomDefaultTransport(t *testing.T) {
 	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("x") })
 	if _, err := kelos.NewHTTPClient("", time.Second); err == nil || !strings.Contains(err.Error(), "not an *http.Transport") {
 		t.Fatalf("NewHTTPClient = %v, want a configuration error", err)
+	}
+}
+
+// listCapBytes is the client's list page cap (maxListBytes).
+const listCapBytes = 32 << 20
+
+// oversizedLists answers a list asking more than fits with a page over
+// the cap, and records every limit asked.
+func oversizedLists(t *testing.T, fits int) (*httptest.Server, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var limits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := r.URL.Query().Get("limit")
+		mu.Lock()
+		limits = append(limits, limit)
+		mu.Unlock()
+		var n int
+		fmt.Sscan(limit, &n) //nolint:errcheck // 0 is over any fit
+		if n > fits {
+			fmt.Fprintf(w, `{"items":[{"spec":{"prompt":"%s"}}]}`, strings.Repeat("x", listCapBytes))
+			return
+		}
+		fmt.Fprintf(w, `{"items":[{"metadata":{"name":"page-of-%d"}}]}`, n)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), limits...)
+	}
+}
+
+func TestListShrinksAPageOverTheCap(t *testing.T) {
+	srv, limits := oversizedLists(t, 40)
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	got, err := c.List(context.Background(), "")
+	if err != nil || len(got) != 1 || got[0].Metadata.Name != "page-of-31" {
+		t.Fatalf("List = %+v, %v; want the page read at limit 31", got, err)
+	}
+	if l := strings.Join(limits(), ","); l != "250,125,62,31" {
+		t.Fatalf("limits asked %s, want halved until the page fits", l)
+	}
+}
+
+func TestListFailsWhenTheSmallestPageIsOverTheCap(t *testing.T) {
+	srv, limits := oversizedLists(t, 0)
+	c := &kelos.Client{BaseURL: srv.URL, Namespace: ns, HTTP: srv.Client()}
+	if _, err := c.List(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("List = %v, want the size cap", err)
+	}
+	if l := strings.Join(limits(), ","); l != "250,125,62,31,15,8" {
+		t.Fatalf("limits asked %s, want halved down to 8 (a page sure to fit), then given up", l)
 	}
 }

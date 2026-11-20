@@ -39,11 +39,16 @@ func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error)
 }
 
 // RunSubmitted records the Task of this generation (inboxID) as created;
-// a newer generation's row is left alone.
+// a newer generation's row is left alone. Its uid is recorded whatever
+// the state; its state and phase only while the run is still
+// submitting: an observer that already followed the Task knows better.
 func (s *Store) RunSubmitted(ctx context.Context, name string, inboxID int64, uid, phase string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE runs SET state = $3, task_exists = true, task_uid = $4, phase = $5,
+	_, err := s.pool.Exec(ctx, `UPDATE runs SET task_uid = $4,
+			state = CASE WHEN state = 'submitting' THEN $3 ELSE state END,
+			task_exists = task_exists OR state = 'submitting',
+			phase = CASE WHEN state = 'submitting' THEN $5 ELSE phase END,
 			updated_at = now()
-		WHERE name = $1 AND inbox_id = $2 AND state = 'submitting'`,
+		WHERE name = $1 AND inbox_id = $2`,
 		name, inboxID, stateOf(phase), uid, phase)
 	return err
 }

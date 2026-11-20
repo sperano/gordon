@@ -177,22 +177,10 @@ func (b Builder) pod(fam Family, proj profile.Project, prof profile.Resolved, v 
 	out := &kelos.PodOverrides{ServiceAccountName: prof.ServiceAccount}
 	pieces := []Pod{fam.Pod, b.Config.Workspaces[proj.Workspace], b.Config.Profiles[prof.Profile].Pod, v.Pod}
 	for _, p := range pieces {
-		if len(p.Labels) > 0 {
-			if out.Labels == nil {
-				out.Labels = map[string]string{}
-			}
-			maps.Copy(out.Labels, p.Labels)
-		}
-		if p.Resources != nil {
-			out.Resources = p.Resources
-		}
-		if p.Affinity != nil {
-			out.Affinity = p.Affinity
-		}
-		out.Env = append(out.Env, p.Env...)
-		out.ExtraInitContainers = append(out.ExtraInitContainers, p.ExtraInitContainers...)
-		out.Volumes = append(out.Volumes, p.Volumes...)
-		out.VolumeMounts = append(out.VolumeMounts, p.VolumeMounts...)
+		addPiece(out, p)
+	}
+	for _, p := range pieces {
+		out.ExtraInitContainers = append(out.ExtraInitContainers, p.LastInitContainers...)
 	}
 	if err := expandPod(out, d); err != nil {
 		return nil, err
@@ -201,6 +189,26 @@ func (b Builder) pod(fam Family, proj profile.Project, prof profile.Resolved, v 
 		return nil, nil
 	}
 	return out, nil
+}
+
+// addPiece adds a pod piece, its last init containers aside, to out.
+func addPiece(out *kelos.PodOverrides, p Pod) {
+	if len(p.Labels) > 0 {
+		if out.Labels == nil {
+			out.Labels = map[string]string{}
+		}
+		maps.Copy(out.Labels, p.Labels)
+	}
+	if p.Resources != nil {
+		out.Resources = p.Resources
+	}
+	if p.Affinity != nil {
+		out.Affinity = p.Affinity
+	}
+	out.Env = append(out.Env, p.Env...)
+	out.ExtraInitContainers = append(out.ExtraInitContainers, p.ExtraInitContainers...)
+	out.Volumes = append(out.Volumes, p.Volumes...)
+	out.VolumeMounts = append(out.VolumeMounts, p.VolumeMounts...)
 }
 
 func podEmpty(p *kelos.PodOverrides) bool {

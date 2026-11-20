@@ -116,7 +116,10 @@ func TestResolveServiceAccountsByProjectAndMode(t *testing.T) {
 		project string
 		mode    Mode
 	}{{"puckdb", ModeReview}, {"solitaire", ModeImplement}, {"solitaire", ModeDiscuss}, {"vigie", ModeFollowUp}} {
-		got, _ := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
+		got, err := c.Resolve(Request{Project: x.project, Variant: "claude-opus", Mode: x.mode})
+		if err != nil {
+			t.Fatalf("%s/%s: %v", x.project, x.mode, err)
+		}
 		profiles[x.project+"/"+string(x.mode)] = got.Profile
 	}
 	wantProfiles := map[string]string{"puckdb/review": ProfilePuckDBReview, "solitaire/implement": ProfileMactest,

@@ -17,11 +17,11 @@ const kelosLabelPrefix = "kelos.dev/"
 
 // Diff lists the paths where got (a Task as the API returns it) differs
 // from want, over the metadata labels and annotations and the whole spec.
-// Labels Kelos adds (kelos.dev/...) and the ignored metadata keys of want
-// are no difference. Paths are sorted, at most maxDiffPaths of them,
+// Labels under kelos.dev/ (Kelos adds them to a spawner's Task) and the
+// ignored metadata keys are left out on both sides. Paths are sorted, at most maxDiffPaths of them,
 // followed by a "…" entry when more were cut.
 func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
-	w, err := comparable(want)
+	w, err := taskMap(want)
 	if err != nil {
 		return nil, err
 	}
@@ -34,8 +34,10 @@ func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
 		deleteMeta(w, k)
 		deleteMeta(g, k)
 	}
-	if labels, ok := dig(g, "metadata", "labels").(map[string]any); ok {
-		maps.DeleteFunc(labels, func(k string, _ any) bool { return strings.HasPrefix(k, kelosLabelPrefix) })
+	for _, m := range []map[string]any{w, g} {
+		if labels, ok := dig(m, "metadata", "labels").(map[string]any); ok {
+			maps.DeleteFunc(labels, func(k string, _ any) bool { return strings.HasPrefix(k, kelosLabelPrefix) })
+		}
 	}
 	var out []string
 	walk("", w, g, &out)
@@ -46,8 +48,8 @@ func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
 	return out, nil
 }
 
-// comparable is t as generic JSON, limited to what Diff compares.
-func comparable(t Task) (map[string]any, error) {
+// taskMap is t as generic JSON, limited to what Diff compares.
+func taskMap(t Task) (map[string]any, error) {
 	b, err := json.Marshal(t)
 	if err != nil {
 		return nil, err
@@ -94,8 +96,13 @@ func deleteMeta(m map[string]any, key string) {
 	}
 }
 
+// unorderedLists are the fields whose lists of named objects Kubernetes
+// merges by name, so their order is no difference. Any other list
+// (agentConfigRefs, extraInitContainers) is compared in order.
+var unorderedLists = map[string]bool{"env": true, "volumes": true, "volumeMounts": true}
+
 // walk appends the paths where a and b differ: into objects key by key,
-// into lists of named objects name by name, into other arrays of equal
+// into the unorderedLists name by name, into other arrays of equal
 // length index by index, else the whole value.
 func walk(path string, a, b any, out *[]string) {
 	am, aok := a.(map[string]any)
@@ -114,7 +121,7 @@ func walk(path string, a, b any, out *[]string) {
 	}
 	al, aok := a.([]any)
 	bl, bok := b.([]any)
-	if am, bm, ok := byName(al), byName(bl), aok && bok; ok && am != nil && bm != nil {
+	if am, bm, ok := byName(al), byName(bl), aok && bok && unorderedLists[field(path)]; ok && am != nil && bm != nil {
 		// Env, volumes, mounts and containers: by name, not position.
 		keys := slices.Collect(maps.Keys(am))
 		for k := range bm {
@@ -157,6 +164,11 @@ func byName(list []any) map[string]any {
 		out[name] = m
 	}
 	return out
+}
+
+// field is the last key of path.
+func field(path string) string {
+	return path[strings.LastIndexByte(path, '.')+1:]
 }
 
 func join(path, key string) string {

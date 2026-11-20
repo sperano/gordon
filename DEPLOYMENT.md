@@ -111,6 +111,7 @@ the legacy ones.
 | `common_secrets` | Secrets every profile may reference (the admission policy's `commonSecrets`: runner credentials, the variants' Vikunja and Authentik identities, Gordon's own, the run-link token) |
 | `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
 | `workspaces`, `profiles`, `variants` | pod pieces per Workspace (keyed by the project's writing Workspace; they apply to its read-only copy too), per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant and profile needs an entry, `{}` at least: a run without one is rejected (`task-spec-unknown-variant`, `task-spec-unknown-profile`) |
+| `pod` (each piece) | `labels` (profiles only), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`. Lists concatenate family, Workspace, profile, variant; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
 | `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded |
 
 Prompt, label and annotation values, agent config names and pod strings
@@ -164,8 +165,9 @@ Suggested alerts: `gordon_queue_oldest_age_seconds{state="pending"}` above
 the retry cap, any `gordon_queue_depth{state="failed"}` or
 `{queue="actions",state="ambiguous"}`, reconciliation not successful for
 several intervals, `gordon_intake_requests_total{result="unavailable"}`,
-`gordon_kelos_submissions_total{result="refused"}` (admission refused a
-Task Gordon built), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
+`gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
+a submission's request: the lookup before the create, through RBAC or
+authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
 
 ## Logs
 

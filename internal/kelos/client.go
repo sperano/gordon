@@ -33,6 +33,9 @@ const (
 	maxListBytes   = 32 << 20
 	// listPageSize bounds one list page; continue tokens fetch the rest.
 	listPageSize = 250
+	// minListPageSize is the largest page sure to fit maxListBytes: a
+	// page over the cap is asked again at half the size, down to it.
+	minListPageSize = maxListBytes / maxObjectBytes
 	// maxListPages stops a list that never ends (a misbehaving server).
 	maxListPages = 400
 	// maxMessageBytes caps the API server message an error keeps.
@@ -193,12 +196,16 @@ type taskList struct {
 	Items []Task `json:"items"`
 }
 
+// errTooLarge is a response over its byte cap.
+var errTooLarge = errors.New("response too large")
+
 // List returns every Task matching selector ("" for all), page by page.
+// A page over maxListBytes (large Tasks) is read again in smaller pages.
 func (c *Client) List(ctx context.Context, selector string) ([]Task, error) {
 	var out []Task
-	token := ""
+	token, size := "", listPageSize
 	for range maxListPages {
-		q := url.Values{"limit": {fmt.Sprint(listPageSize)}}
+		q := url.Values{"limit": {fmt.Sprint(size)}}
 		if selector != "" {
 			q.Set("labelSelector", selector)
 		}
@@ -206,7 +213,12 @@ func (c *Client) List(ctx context.Context, selector string) ([]Task, error) {
 			q.Set("continue", token)
 		}
 		var page taskList
-		if err := c.do(ctx, "list", http.MethodGet, c.collection(), q, nil, maxListBytes, &page); err != nil {
+		err := c.do(ctx, "list", http.MethodGet, c.collection(), q, nil, maxListBytes, &page)
+		if errors.Is(err, errTooLarge) && size > minListPageSize {
+			size = max(size/2, minListPageSize)
+			continue
+		}
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, page.Items...)
@@ -263,7 +275,7 @@ func (c *Client) send(ctx context.Context, op, method, u string, q url.Values, b
 		return &Error{Op: op, Status: resp.StatusCode, Reason: st.Reason, Message: truncate(st.Message), Sent: true}
 	}
 	if int64(len(data)) > limit {
-		return &Error{Op: op, Status: resp.StatusCode, Sent: true, Err: fmt.Errorf("response over %d bytes", limit)}
+		return &Error{Op: op, Status: resp.StatusCode, Sent: true, Err: fmt.Errorf("%w: over %d bytes", errTooLarge, limit)}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return &Error{Op: op, Status: resp.StatusCode, Sent: true, Err: err}

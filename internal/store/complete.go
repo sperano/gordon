@@ -210,7 +210,8 @@ func recordRun(ctx context.Context, tx pgx.Tx, inboxID int64, requestKey string,
 			identity = EXCLUDED.identity, profile = EXCLUDED.profile,
 			config_version = EXCLUDED.config_version, state = EXCLUDED.state, task = EXCLUDED.task,
 			task_uid = '', phase = '',
-			task_exists = false, generation = runs.generation + 1, updated_at = now()
+			task_exists = false, generation = runs.generation + 1, observed_at = '-infinity',
+			updated_at = now()
 		WHERE runs.state = 'finished' AND NOT runs.task_exists
 		RETURNING name`,
 		rn.Name, string(rn.Identity.Family), rn.Identity.Project, requestKey, inboxID,

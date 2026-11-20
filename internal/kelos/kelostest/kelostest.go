@@ -176,22 +176,25 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	if injected {
 		fail, s.failCreates = s.failCreates[0], s.failCreates[1:]
 	}
+	admit := s.Admit
+	s.mu.Unlock()
 	if injected && fail != DropResponse {
-		s.mu.Unlock()
 		writeStatus(w, fail, "InternalError", "injected failure")
 		return
 	}
+	// Validating admission runs before the storage create, as in the API
+	// server, and outside the lock: Admit may read the server.
+	if admit != nil {
+		if err := admit(t); err != nil {
+			writeStatus(w, http.StatusUnprocessableEntity, "Invalid", err.Error())
+			return
+		}
+	}
+	s.mu.Lock()
 	if _, taken := s.tasks[t.Metadata.Name]; taken {
 		s.mu.Unlock()
 		writeStatus(w, http.StatusConflict, kelos.ReasonAlreadyExists, "tasks.kelos.dev \""+t.Metadata.Name+"\" already exists")
 		return
-	}
-	if s.Admit != nil {
-		if err := s.Admit(t); err != nil {
-			s.mu.Unlock()
-			writeStatus(w, http.StatusUnprocessableEntity, "Invalid", err.Error())
-			return
-		}
 	}
 	s.store(t)
 	raw := s.tasks[t.Metadata.Name]

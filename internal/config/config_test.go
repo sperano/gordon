@@ -147,6 +147,10 @@ func TestWorkerRefusals(t *testing.T) {
 		"dispatch unknown field": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_FIELD"}, `unknown field "namespaec"`},
 		"bad kelos url": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH", "GORDON_KELOS_API_URL": "k8s"},
 			`GORDON_KELOS_API_URL="k8s"`},
+		"kelos url userinfo": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH",
+			"GORDON_KELOS_API_URL": "https://admin:hunter2@k8s:6443"}, "GORDON_KELOS_API_URL: want a URL without user information"},
+		"vikunja url userinfo": {map[string]string{"GORDON_VIKUNJA_URL": "https://bot@v/api/v1"},
+			"GORDON_VIKUNJA_URL: want a URL without user information"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -175,6 +179,9 @@ func TestWorkerRefusals(t *testing.T) {
 			_, err := LoadWorker(envOf(env))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("LoadWorker = %v, want an error containing %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "hunter2") {
+				t.Fatalf("LoadWorker = %v: the URL's password reached the error", err)
 			}
 		})
 	}

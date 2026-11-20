@@ -119,12 +119,17 @@ type VariantSpec struct {
 // family's, then its Workspace's, its profile's and its variant's
 // pieces, lists concatenated in that order; the last piece that sets
 // resources or affinity wins. Only a profile's piece may set labels.
+// Init containers start in order: every piece's ExtraInitContainers
+// come first, then every piece's LastInitContainers, so a family's
+// pr-opener still starts after a profile's test-postgres, as in the
+// legacy spawners.
 type Pod struct {
 	Labels              map[string]string `json:"labels,omitempty"`
 	Resources           json.RawMessage   `json:"resources,omitempty"`
 	Affinity            json.RawMessage   `json:"affinity,omitempty"`
 	Env                 []json.RawMessage `json:"env,omitempty"`
 	ExtraInitContainers []json.RawMessage `json:"extraInitContainers,omitempty"`
+	LastInitContainers  []json.RawMessage `json:"lastInitContainers,omitempty"`
 	Volumes             []json.RawMessage `json:"volumes,omitempty"`
 	VolumeMounts        []json.RawMessage `json:"volumeMounts,omitempty"`
 }

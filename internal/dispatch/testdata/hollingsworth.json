@@ -1716,7 +1716,111 @@
                 "name": "vikunja-attachments"
               }
             ]
+          }
+        ],
+        "resources": {
+          "limits": {
+            "memory": "8Gi"
           },
+          "requests": {
+            "cpu": "3",
+            "memory": "4Gi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/workspace/attachments",
+            "name": "vikunja-attachments"
+          },
+          {
+            "mountPath": "/opt/wiki",
+            "name": "wiki-gql",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/opt/kelos-tools",
+            "name": "agent-tools",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/kelos/agent-lifecycle",
+            "name": "agent-lifecycle"
+          }
+        ],
+        "volumes": [
+          {
+            "configMap": {
+              "name": "wait-for-blockers"
+            },
+            "name": "wait-for-blockers"
+          },
+          {
+            "name": "run-link-token",
+            "secret": {
+              "items": [
+                {
+                  "key": "token",
+                  "path": "token"
+                },
+                {
+                  "key": "ca.crt",
+                  "path": "ca.crt"
+                }
+              ],
+              "optional": true,
+              "secretName": "kelos-run-link-token"
+            }
+          },
+          {
+            "emptyDir": {},
+            "name": "vikunja-attachments"
+          },
+          {
+            "configMap": {
+              "name": "wiki-gql",
+              "optional": true
+            },
+            "name": "wiki-gql"
+          },
+          {
+            "configMap": {
+              "name": "agent-tools",
+              "optional": true
+            },
+            "name": "agent-tools"
+          },
+          {
+            "name": "pr-opener-token",
+            "secret": {
+              "defaultMode": 288,
+              "items": [
+                {
+                  "key": "GITHUB_TOKEN",
+                  "path": "token"
+                }
+              ],
+              "secretName": "github-token"
+            }
+          },
+          {
+            "configMap": {
+              "name": "pr-opener"
+            },
+            "name": "pr-opener"
+          },
+          {
+            "emptyDir": {},
+            "name": "agent-lifecycle"
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "sidecar-guard"
+            },
+            "name": "sidecar-guard"
+          }
+        ],
+        "lastInitContainers": [
           {
             "command": [
               "/opt/sidecar-guard/sidecar_guard.sh",
@@ -1825,108 +1929,6 @@
                 "readOnly": true
               }
             ]
-          }
-        ],
-        "resources": {
-          "limits": {
-            "memory": "8Gi"
-          },
-          "requests": {
-            "cpu": "3",
-            "memory": "4Gi"
-          }
-        },
-        "volumeMounts": [
-          {
-            "mountPath": "/workspace/attachments",
-            "name": "vikunja-attachments"
-          },
-          {
-            "mountPath": "/opt/wiki",
-            "name": "wiki-gql",
-            "readOnly": true
-          },
-          {
-            "mountPath": "/opt/kelos-tools",
-            "name": "agent-tools",
-            "readOnly": true
-          },
-          {
-            "mountPath": "/kelos/agent-lifecycle",
-            "name": "agent-lifecycle"
-          }
-        ],
-        "volumes": [
-          {
-            "configMap": {
-              "name": "wait-for-blockers"
-            },
-            "name": "wait-for-blockers"
-          },
-          {
-            "name": "run-link-token",
-            "secret": {
-              "items": [
-                {
-                  "key": "token",
-                  "path": "token"
-                },
-                {
-                  "key": "ca.crt",
-                  "path": "ca.crt"
-                }
-              ],
-              "optional": true,
-              "secretName": "kelos-run-link-token"
-            }
-          },
-          {
-            "emptyDir": {},
-            "name": "vikunja-attachments"
-          },
-          {
-            "configMap": {
-              "name": "wiki-gql",
-              "optional": true
-            },
-            "name": "wiki-gql"
-          },
-          {
-            "configMap": {
-              "name": "agent-tools",
-              "optional": true
-            },
-            "name": "agent-tools"
-          },
-          {
-            "name": "pr-opener-token",
-            "secret": {
-              "defaultMode": 288,
-              "items": [
-                {
-                  "key": "GITHUB_TOKEN",
-                  "path": "token"
-                }
-              ],
-              "secretName": "github-token"
-            }
-          },
-          {
-            "configMap": {
-              "name": "pr-opener"
-            },
-            "name": "pr-opener"
-          },
-          {
-            "emptyDir": {},
-            "name": "agent-lifecycle"
-          },
-          {
-            "configMap": {
-              "defaultMode": 365,
-              "name": "sidecar-guard"
-            },
-            "name": "sidecar-guard"
           }
         ]
       },
@@ -3110,7 +3112,111 @@
                 "name": "vikunja-attachments"
               }
             ]
+          }
+        ],
+        "resources": {
+          "limits": {
+            "memory": "8Gi"
           },
+          "requests": {
+            "cpu": "3",
+            "memory": "4Gi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/workspace/attachments",
+            "name": "vikunja-attachments"
+          },
+          {
+            "mountPath": "/opt/wiki",
+            "name": "wiki-gql",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/opt/kelos-tools",
+            "name": "agent-tools",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/kelos/agent-lifecycle",
+            "name": "agent-lifecycle"
+          }
+        ],
+        "volumes": [
+          {
+            "configMap": {
+              "name": "wait-for-blockers"
+            },
+            "name": "wait-for-blockers"
+          },
+          {
+            "name": "run-link-token",
+            "secret": {
+              "items": [
+                {
+                  "key": "token",
+                  "path": "token"
+                },
+                {
+                  "key": "ca.crt",
+                  "path": "ca.crt"
+                }
+              ],
+              "optional": true,
+              "secretName": "kelos-run-link-token"
+            }
+          },
+          {
+            "emptyDir": {},
+            "name": "vikunja-attachments"
+          },
+          {
+            "configMap": {
+              "name": "wiki-gql",
+              "optional": true
+            },
+            "name": "wiki-gql"
+          },
+          {
+            "configMap": {
+              "name": "agent-tools",
+              "optional": true
+            },
+            "name": "agent-tools"
+          },
+          {
+            "name": "pr-opener-token",
+            "secret": {
+              "defaultMode": 288,
+              "items": [
+                {
+                  "key": "GITHUB_TOKEN",
+                  "path": "token"
+                }
+              ],
+              "secretName": "github-token"
+            }
+          },
+          {
+            "configMap": {
+              "name": "pr-opener"
+            },
+            "name": "pr-opener"
+          },
+          {
+            "emptyDir": {},
+            "name": "agent-lifecycle"
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "sidecar-guard"
+            },
+            "name": "sidecar-guard"
+          }
+        ],
+        "lastInitContainers": [
           {
             "command": [
               "/opt/sidecar-guard/sidecar_guard.sh",
@@ -3219,108 +3325,6 @@
                 "readOnly": true
               }
             ]
-          }
-        ],
-        "resources": {
-          "limits": {
-            "memory": "8Gi"
-          },
-          "requests": {
-            "cpu": "3",
-            "memory": "4Gi"
-          }
-        },
-        "volumeMounts": [
-          {
-            "mountPath": "/workspace/attachments",
-            "name": "vikunja-attachments"
-          },
-          {
-            "mountPath": "/opt/wiki",
-            "name": "wiki-gql",
-            "readOnly": true
-          },
-          {
-            "mountPath": "/opt/kelos-tools",
-            "name": "agent-tools",
-            "readOnly": true
-          },
-          {
-            "mountPath": "/kelos/agent-lifecycle",
-            "name": "agent-lifecycle"
-          }
-        ],
-        "volumes": [
-          {
-            "configMap": {
-              "name": "wait-for-blockers"
-            },
-            "name": "wait-for-blockers"
-          },
-          {
-            "name": "run-link-token",
-            "secret": {
-              "items": [
-                {
-                  "key": "token",
-                  "path": "token"
-                },
-                {
-                  "key": "ca.crt",
-                  "path": "ca.crt"
-                }
-              ],
-              "optional": true,
-              "secretName": "kelos-run-link-token"
-            }
-          },
-          {
-            "emptyDir": {},
-            "name": "vikunja-attachments"
-          },
-          {
-            "configMap": {
-              "name": "wiki-gql",
-              "optional": true
-            },
-            "name": "wiki-gql"
-          },
-          {
-            "configMap": {
-              "name": "agent-tools",
-              "optional": true
-            },
-            "name": "agent-tools"
-          },
-          {
-            "name": "pr-opener-token",
-            "secret": {
-              "defaultMode": 288,
-              "items": [
-                {
-                  "key": "GITHUB_TOKEN",
-                  "path": "token"
-                }
-              ],
-              "secretName": "github-token"
-            }
-          },
-          {
-            "configMap": {
-              "name": "pr-opener"
-            },
-            "name": "pr-opener"
-          },
-          {
-            "emptyDir": {},
-            "name": "agent-lifecycle"
-          },
-          {
-            "configMap": {
-              "defaultMode": 365,
-              "name": "sidecar-guard"
-            },
-            "name": "sidecar-guard"
           }
         ]
       },
