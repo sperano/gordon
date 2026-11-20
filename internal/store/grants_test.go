@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
@@ -204,5 +205,49 @@ func TestGrantReusedReceiverRoleAsWorkerCannotInsertDeliveries(t *testing.T) {
 	defer ws.Close()
 	if _, _, err := ws.Accept(ctx, delivery("forged")); !denied(err) {
 		t.Fatalf("former receiver's Accept = %v, want permission denied", err)
+	}
+}
+
+func TestGrantWorkerUpdatesOnlyMutableColumns(t *testing.T) {
+	owner, dbURL := storetest.Open(t)
+	worker := role(t, dbURL)
+	if err := owner.Grant(ctx, store.Roles{Worker: worker}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := store.Open(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	accept(t, owner, "k1")
+	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, submitOnly(), false); err != nil {
+		t.Fatalf("worker Complete: %v", err)
+	}
+	storetest.Exec(t, dbURL, `UPDATE runs SET state = 'finished'`)
+	acceptRequest(t, owner, "k2", "vikunja/comment/2")
+	if got, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, submitOnly(), false); err != nil || got.Outcome != route.Dispatch {
+		t.Fatalf("worker rerun of a finished run = %s, %v; want dispatch", got.Outcome, err)
+	}
+	claimed, err := ws.ClaimActions(ctx, "w", 1, testTTL)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("worker ClaimActions = %d, %v; want one", len(claimed), err)
+	}
+	if err := ws.ActionDone(ctx, claimed[0].Lease); err != nil {
+		t.Fatalf("worker ActionDone: %v", err)
+	}
+	conn, err := pgx.Connect(ctx, storetest.WithUser(t, dbURL, worker, rolePassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	for _, q := range []string{
+		`UPDATE decisions SET outcome = 'ignored'`,
+		`UPDATE actions SET target = 'github/x'`,
+		`UPDATE runs SET name = 'other'`,
+		`UPDATE requests SET inbox_id = inbox_id`,
+	} {
+		if _, err := conn.Exec(ctx, q); !denied(err) {
+			t.Errorf("worker %s = %v, want permission denied", q, err)
+		}
 	}
 }

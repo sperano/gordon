@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT, UPDATE` on `decisions`, `requests`, `runs` and `actions`; on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | none in this stage; Gordon 04 adds `create/get/list/delete` on `kelos.dev` Tasks in `kelos-agents` |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs` and `actions`, and `UPDATE` of their mutable columns only (a request's outcome, a run's state and rerun fields, an action's queue columns; nothing on `decisions`); on `inbox` `SELECT` and `UPDATE` of its queue columns and `body` only (no `INSERT`: deliveries come from the receiver); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja token, read-only GitHub token | none in this stage; Gordon 04 adds `create/get/list/delete` on `kelos.dev` Tasks in `kelos-agents` |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -36,7 +36,7 @@ Every mode:
 | Variable | Default | |
 |---|---|---|
 | `GORDON_DATABASE_URL_FILE` | required | Postgres URL of the mode's role |
-| `GORDON_ADMIN_ADDR` | `:9090` | `/healthz`, `/readyz`, `/metrics` (not exposed by the ingress) |
+| `GORDON_ADMIN_ADDR` | `:9090` | `receiver` and `worker` only (`migrate` serves nothing): `/healthz`, `/readyz`, `/metrics` (not exposed by the ingress) |
 | `GORDON_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
 `migrate`: `GORDON_RECEIVER_ROLE`, `GORDON_WORKER_ROLE` (optional; empty grants nothing).

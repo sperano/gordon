@@ -17,11 +17,22 @@ type Roles struct {
 	Worker   string
 }
 
-// workerTables are the tables the worker reads and writes; it never
-// deletes, and it never changes the schema. The inbox is the receiver's:
-// the worker cannot insert a delivery, and it updates only the queue
-// bookkeeping and the body (pruning).
+// workerTables are the tables the worker reads and inserts into; it
+// never deletes, and it never changes the schema. The inbox is the
+// receiver's: the worker cannot insert a delivery, and it updates only
+// the queue bookkeeping and the body (pruning).
 var workerTables = []string{"decisions", "requests", "runs", "actions"}
+
+// workerUpdates are the columns the worker may update in each of
+// workerTables; a table it never updates (decisions) has no entry. A
+// run's name and creation time, and an action's identity (key, kind,
+// target, value, its delivery), are fixed once inserted.
+var workerUpdates = map[string]string{
+	"requests": "outcome, executed",
+	"runs": "family, project, request_key, inbox_id, identity, profile, config_version, state, " +
+		"task_exists, generation, updated_at",
+	"actions": "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, last_error, finished_at",
+}
 
 // gordonTables are every table the schema has: a role's grants on them
 // are revoked before its mode's are applied.
@@ -75,7 +86,10 @@ func (s *Store) Grant(ctx context.Context, r Roles) error {
 			"GRANT SELECT ON schema_migrations TO "+role,
 			"GRANT SELECT, UPDATE ("+workerInboxColumns+") ON inbox TO "+role)
 		for _, t := range workerTables {
-			stmts = append(stmts, fmt.Sprintf("GRANT SELECT, INSERT, UPDATE ON %s TO %s", t, role))
+			stmts = append(stmts, fmt.Sprintf("GRANT SELECT, INSERT ON %s TO %s", t, role))
+			if cols, ok := workerUpdates[t]; ok {
+				stmts = append(stmts, fmt.Sprintf("GRANT UPDATE (%s) ON %s TO %s", cols, t, role))
+			}
 		}
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
