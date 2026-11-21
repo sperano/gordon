@@ -291,7 +291,7 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 // families that stay (`_worker.tpl`), so they are not checked.
 func TestVikunjaEntriesMatchTheirSwitches(t *testing.T) {
 	legacy := map[run.Family][]string{}
-	for _, s := range Switches() {
+	for _, s := range append(Switches(), GitHubSwitches()...) {
 		legacy[s.Family] = s.Legacy
 	}
 	for _, e := range Entries() {
@@ -300,5 +300,30 @@ func TestVikunjaEntriesMatchTheirSwitches(t *testing.T) {
 				t.Errorf("%s acts for %s, but its switch's legacy %v omits %s", e.ID, f, sw, e.Legacy[0])
 			}
 		}
+	}
+}
+
+// TestGitHubFamiliesPublishTheirSwitch: every GitHub family names the
+// legacy components the cutover (09) turns off and what Gordon needs,
+// once, each component changed by stage 08 or 09.
+func TestGitHubFamiliesPublishTheirSwitch(t *testing.T) {
+	github := []run.Family{run.PRFollowUp, run.PRReview, run.PROpen, run.MergeClose}
+	var seen []run.Family
+	for _, s := range GitHubSwitches() {
+		if slices.Contains(seen, s.Family) {
+			t.Errorf("%s: two switches", s.Family)
+		}
+		seen = append(seen, s.Family)
+		if len(s.Legacy) == 0 || s.Off == "" || len(s.Needs) == 0 {
+			t.Errorf("%s: incomplete switch %+v", s.Family, s)
+		}
+		for _, p := range s.Legacy {
+			if !stagedBetween(p, StageGitHub, StageGitHubCut) {
+				t.Errorf("%s: legacy %s is changed by neither stage 08 nor 09", s.Family, p)
+			}
+		}
+	}
+	if !slices.Equal(seen, github) {
+		t.Errorf("GitHub switches %v, want %v", seen, github)
 	}
 }

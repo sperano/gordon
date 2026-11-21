@@ -74,7 +74,9 @@ func (f *fakeInbox) Enqueue(_ context.Context, ds []store.Delivery) (int, error)
 	return n, nil
 }
 
-func (f *fakeInbox) KnownDeliveries(context.Context, []string) (map[string]bool, error) { return nil, nil }
+func (f *fakeInbox) KnownDeliveries(context.Context, []string) (map[string]bool, error) {
+	return nil, nil
+}
 
 func (f *fakeInbox) HandledRequests(_ context.Context, keys []string) (map[string]bool, error) {
 	out := map[string]bool{}
