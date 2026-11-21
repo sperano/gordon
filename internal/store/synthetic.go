@@ -82,6 +82,25 @@ func synthetic(kind, name string, data synthData) (Delivery, error) {
 		Kind: ev.Kind, Scope: ev.Scope(), Headers: map[string]string{SyntheticHeader: kind}, Body: body}, nil
 }
 
+// GitHubSynthetic is a synthetic GitHub delivery of eventName with body,
+// for a webhook the GitHub reconciliation found missing: guid makes its
+// delivery key (github/delivery/<guid>), so the same recovery is queued
+// once. It parses the body it builds, so its keys are the router's.
+func GitHubSynthetic(eventName, guid string, body any) (Delivery, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return Delivery{}, fmt.Errorf("synthetic github %s: %w", eventName, err)
+	}
+	headers := map[string]string{event.GitHubEventHeader: eventName, event.GitHubDeliveryHeader: guid,
+		SyntheticHeader: SyntheticReconcile}
+	ev, err := event.ParseGitHub(event.Delivery{Source: event.SourceGitHub, Headers: headers, Body: raw})
+	if err != nil {
+		return Delivery{}, fmt.Errorf("synthetic github %s: %w", eventName, err)
+	}
+	return Delivery{Source: event.SourceGitHub, DeliveryKey: ev.DeliveryKey, RequestKey: ev.RequestKey,
+		Kind: ev.Kind, Scope: ev.Scope(), Headers: headers, Body: raw}, nil
+}
+
 // Enqueue stores synthetic deliveries, each unless its key is stored
 // already; it returns how many it stored, none when it fails (the
 // transaction rolled back).

@@ -175,6 +175,10 @@ func isRequest(text, trigger string, html bool) bool {
 // command for trigger, as the router matches it.
 func IsVikunjaRequest(text, trigger string) bool { return isRequest(text, trigger, true) }
 
+// IsGitHubRequest reports whether a GitHub comment's or review's Markdown
+// is an owner command for trigger, as the router matches it.
+func IsGitHubRequest(text, trigger string) bool { return isRequest(text, trigger, false) }
+
 // agents returns the task's assignees that are agent variants.
 func (r Router) agents(t event.Task) []string {
 	var out []string

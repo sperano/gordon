@@ -109,6 +109,8 @@ type Worker struct {
 	Kelos *Kelos
 	// Lifecycle is the Vikunja lifecycle's writer, reconciliation and links.
 	Lifecycle Lifecycle
+	// GitHub is the GitHub lifecycle's App and reconciliation.
+	GitHub GitHub
 }
 
 // Worker defaults.
@@ -174,7 +176,9 @@ func LoadWorker(env Getenv) (Worker, error) {
 		}
 	}
 	c.Lifecycle = r.lifecycle()
+	c.GitHub = r.github()
 	r.checkWriter(c)
+	r.checkGitHubWriter(c)
 	return c, r.err()
 }
 
@@ -228,8 +232,8 @@ func (c Worker) String() string {
 	}
 	return fmt.Sprintf("shadow=%v id=%s concurrency=%d lease=%s poll=%s attempts=%d backoff=%s..%s project_limit=%d "+
 		"upstream=%v reconcile=%s retention=%s config=%s rules=%d dispatch=%s kelos=%s vikunja_writer=%v "+
-		"vikunja_reconcile=%s", c.Shadow, c.ID, c.Concurrency,
+		"vikunja_reconcile=%s github_writer=%v github_reconcile=%s", c.Shadow, c.ID, c.Concurrency,
 		c.LeaseTTL, c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
 		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL,
-		c.Lifecycle.WriteToken != "", c.Lifecycle.ReconcileInterval)
+		c.Lifecycle.WriteToken != "", c.Lifecycle.ReconcileInterval, c.GitHub.AppDir != "", c.GitHub.ReconcileInterval)
 }
