@@ -209,6 +209,29 @@ func TestBotReviewReadsHistoryOnlyWhenARequest(t *testing.T) {
 	}
 }
 
+// TestSuggestionsCapAloneReadsHistory: with only the suggestions cap on
+// (no bot-round cap) and the fix-suggestions label configured, a
+// suggestions review still reads the PR history; without the label it
+// does not, there being no cap to decide.
+func TestSuggestionsCapAloneReadsHistory(t *testing.T) {
+	const suggestionsLimit = 4
+	r := router()
+	r.Config.Policy.MaxRoundsPerPR = 0
+	r.Config.Policy.SuggestionsMaxRounds = suggestionsLimit
+	r.Config.Policy.FixSuggestionsLabel = "kelos:fix-suggestions"
+	ev, err := event.Parse(botReview(t, kelosBot, suggestion, "now"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := r.Reads(ev), (route.Reads{PullRequest: true, History: true}); got != want {
+		t.Errorf("suggestions review under the suggestions cap alone reads %+v, want %+v", got, want)
+	}
+	r.Config.Policy.FixSuggestionsLabel = ""
+	if got, want := r.Reads(ev), (route.Reads{PullRequest: true}); got != want {
+		t.Errorf("suggestions review without the fix-suggestions label reads %+v, want %+v", got, want)
+	}
+}
+
 // TestBotReviewSkipsHistoryWithTheCapsOff: with no round cap, even a
 // findings review reads only the pull request.
 func TestBotReviewSkipsHistoryWithTheCapsOff(t *testing.T) {

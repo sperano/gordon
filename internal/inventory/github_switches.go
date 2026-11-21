@@ -7,8 +7,10 @@ const (
 	needApp = "`GORDON_GITHUB_APP_DIR` (the Gordon Cole App's `appID`, `installationID` and `privateKey`; " +
 		"its installation lists the repository with Pull requests, Contents, Issues and Checks: write)"
 	needGitHubReconcile = "`GORDON_GITHUB_RECONCILE_INTERVAL` > 0 (missed owner requests, review-bot findings and merge-closes)"
-	needNoPRHooks       = "a dispatch config whose Tasks of the family carry no `pr-task-dedup`, `review-round-cap`, " +
-		"`announce-github-start` or `pr-review-supersede` init container (Gordon deduplicates, caps, announces and supersedes)"
+	needNoFollowUpHooks = "a dispatch config whose Tasks of the family carry no `pr-task-dedup`, `review-round-cap` " +
+		"or `announce-github-start` init container (Gordon deduplicates, caps and announces)"
+	needNoReviewHooks = "a dispatch config whose Tasks of the family carry no `pr-task-dedup` " +
+		"or `pr-review-supersede` init container (Gordon deduplicates and supersedes)"
 )
 
 // GitHubSwitches lists the GitHub families' contracts, in run.Families
@@ -23,11 +25,11 @@ func GitHubSwitches() []Switch {
 			"templates/reviewpollspawners.yaml"),
 			"the project's `pr-followup-<workspace>-<variant>` and review-poll spawners, the GitHub reactor's 👀, draft label " +
 				"and draft conversion for its repository, and the review poller's repository entry",
-			[]string{needKelos, needApp, needNoPRHooks, needGitHubReconcile}},
+			[]string{needKelos, needApp, needNoFollowUpHooks, needGitHubReconcile}},
 		{run.PRReview, chartPath("templates/reviewspawners.yaml", "scripts/review_skip.py", "scripts/supersede_reviews.py",
 			"templates/pr-review-supersede.yaml", "scripts/dedupe_pr_task.py"),
 			"the project's `pr-review-<workspace>-<reviewer>` spawners and the GitHub reactor's skipped review checks for its repository",
-			[]string{needKelos, needApp, needDelete, needNoPRHooks}},
+			[]string{needKelos, needApp, needDelete, needNoReviewHooks}},
 		{run.PROpen, chartPath("templates/mergespawners.yaml", "scripts/pr_open.py"),
 			"the repository's pr-open merge spawner (opened, reopened)",
 			[]string{needWriter}},

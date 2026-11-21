@@ -327,3 +327,42 @@ func TestGitHubFamiliesPublishTheirSwitch(t *testing.T) {
 		t.Errorf("GitHub switches %v, want %v", seen, github)
 	}
 }
+
+// TestGitHubSwitchesNameTheirFamilysInitContainers: a GitHub switch names,
+// in backticks, exactly the init containers that act for its family, so
+// the printed table and DEPLOYMENT.md list the same containers per family.
+func TestGitHubSwitchesNameTheirFamilysInitContainers(t *testing.T) {
+	want := map[run.Family][]string{
+		run.PRFollowUp: {"announce-github-start", "pr-task-dedup", "review-round-cap"},
+		run.PRReview:   {"pr-review-supersede", "pr-task-dedup"},
+	}
+	var all []string
+	for _, e := range Entries() {
+		if e.Kind == InitContainer {
+			all = append(all, e.ID)
+		}
+	}
+	for _, s := range GitHubSwitches() {
+		needs := strings.Join(s.Needs, "; ")
+		var got []string
+		for _, id := range all {
+			if strings.Contains(needs, "`"+id+"`") {
+				got = append(got, id)
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want[s.Family]) {
+			t.Errorf("%s needs name init containers %v, want %v", s.Family, got, want[s.Family])
+		}
+	}
+	for _, e := range Entries() {
+		if e.Kind != InitContainer {
+			continue
+		}
+		for _, f := range e.Families {
+			if w, ok := want[f]; ok && !slices.Contains(w, e.ID) {
+				t.Errorf("init container %s acts for %s but is not expected in its switch", e.ID, f)
+			}
+		}
+	}
+}
