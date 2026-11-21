@@ -158,6 +158,12 @@ type Policy struct {
 	// CancelReaction is the owner's reaction that withdraws a `/gordon`
 	// request: the reconciliation never recovers it.
 	CancelReaction string `json:"cancel_reaction,omitempty"`
+	// The review-round caps (cap_review_rounds.py), 0 for none: the
+	// review-bot rounds a pull request may take (followUp.maxRoundsPerPR),
+	// and the pushes whose suggestions-only reviews may start an agent
+	// (followUp.fixSuggestions.maxRounds).
+	MaxRoundsPerPR       int `json:"max_rounds_per_pr,omitempty"`
+	SuggestionsMaxRounds int `json:"suggestions_max_rounds,omitempty"`
 }
 
 // Bot is a review bot whose findings start a PR follow-up.

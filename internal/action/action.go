@@ -28,6 +28,11 @@ const (
 	// CancelRun stops a Vikunja task's implementation and discuss runs:
 	// queued submissions are cancelled, live Kelos Tasks deleted.
 	CancelRun Kind = "cancel-run"
+	// SupersedeReviews stops the reviews of older heads of the target
+	// review run's pull request, by the same reviewer
+	// (supersede_reviews.py): queued submissions are cancelled, live
+	// Kelos Tasks created before the run's deleted.
+	SupersedeReviews Kind = "supersede-reviews"
 )
 
 // Target is the object an action writes to.

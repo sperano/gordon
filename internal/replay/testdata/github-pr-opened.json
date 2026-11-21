@@ -166,9 +166,21 @@
             "target": "kelos/kelos-agents/review-lucarne-pr-challenger-7-01234567"
           },
           {
+            "key": "supersede-reviews:kelos/kelos-agents/review-lucarne-pr-challenger-7-01234567",
+            "kind": "supersede-reviews",
+            "target": "kelos/kelos-agents/review-lucarne-pr-challenger-7-01234567",
+            "after": "submit-task:kelos/kelos-agents/review-lucarne-pr-challenger-7-01234567"
+          },
+          {
             "key": "submit-task:kelos/kelos-agents/review-lucarne-idiomatic-go-7-01234567",
             "kind": "submit-task",
             "target": "kelos/kelos-agents/review-lucarne-idiomatic-go-7-01234567"
+          },
+          {
+            "key": "supersede-reviews:kelos/kelos-agents/review-lucarne-idiomatic-go-7-01234567",
+            "kind": "supersede-reviews",
+            "target": "kelos/kelos-agents/review-lucarne-idiomatic-go-7-01234567",
+            "after": "submit-task:kelos/kelos-agents/review-lucarne-idiomatic-go-7-01234567"
           }
         ]
       },

@@ -161,6 +161,9 @@ func LoadWorker(env Getenv) (Worker, error) {
 		r.fail("GORDON_LEASE_TTL %s must exceed GORDON_UPSTREAM_TIMEOUT %s", c.LeaseTTL, c.UpstreamTimeout)
 	}
 	r.jsonFile("GORDON_ROUTING_CONFIG_FILE", &c.Routing)
+	if p := c.Routing.Policy; p.MaxRoundsPerPR < 0 || p.SuggestionsMaxRounds < 0 {
+		r.fail("GORDON_ROUTING_CONFIG_FILE policy max_rounds_per_pr and suggestions_max_rounds must not be negative")
+	}
 	c.Kelos = r.kelos()
 	if !c.Shadow && r.str("GORDON_DISPATCH_CONFIG_FILE", "") == "" {
 		r.fail("GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE: nothing could be submitted")

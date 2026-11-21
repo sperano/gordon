@@ -120,7 +120,16 @@
           {
             "key": "convert-to-draft:github/sperano/vigie/pull/42",
             "kind": "convert-to-draft",
-            "target": "github/sperano/vigie/pull/42"
+            "target": "github/sperano/vigie/pull/42",
+            "after": "add-label:github/sperano/vigie/pull/42:kelos:follow-up"
+          },
+          {
+            "key": "post-notice:github/sperano/vigie/pull/42:start:pr-followup-vigie-42-c700001",
+            "kind": "post-notice",
+            "target": "github/sperano/vigie/pull/42",
+            "value": "start",
+            "detail": "pr-followup-vigie-42-c700001",
+            "after": "submit-task:kelos/kelos-agents/pr-followup-vigie-42-c700001"
           }
         ]
       }

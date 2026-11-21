@@ -73,6 +73,7 @@ func (ledger) SeenDelivery(string) bool                       { return false }
 func (ledger) HandledRequest(string) bool                     { return false }
 func (ledger) Run(string) (route.RunRecord, bool)             { return route.RunRecord{}, false }
 func (ledger) TaskRuns(int64, []run.Family) []route.RunRecord { return nil }
+func (ledger) PRRuns(string, int) []route.RunRecord           { return nil }
 func (f fakeComments) Comments(context.Context, int64, int) (json.RawMessage, error) {
 	return json.RawMessage(f), nil
 }

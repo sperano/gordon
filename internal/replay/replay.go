@@ -104,6 +104,18 @@ func (l Ledger) TaskRuns(taskID int64, families []run.Family) []route.RunRecord 
 	return out
 }
 
+// PRRuns returns the pull request's follow-up runs, ordered by name.
+func (l Ledger) PRRuns(workspace string, pr int) []route.RunRecord {
+	var out []route.RunRecord
+	for _, r := range l.Runs {
+		if r.Family == run.PRFollowUp && r.Workspace == workspace && r.PR == pr {
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, func(a, b route.RunRecord) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
 // Load reads every *.json fixture of dir, sorted by name.
 func Load(dir string) ([]Fixture, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))

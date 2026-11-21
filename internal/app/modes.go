@@ -160,7 +160,8 @@ func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: observe}
 	p := &worker.Processor{
 		Store: s, Router: route.Router{Config: cfg.Routing, Ownership: cfg.Ownership},
-		State:  worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: upstream.GitHub{Client: github}},
+		State: worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: upstream.GitHub{Client: github},
+			History: upstream.GitHub{Client: github}},
 		Shadow: cfg.Shadow, Owner: cfg.ID, Concurrency: cfg.Concurrency, LeaseTTL: cfg.LeaseTTL,
 		MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff, Projects: projects,
 		DeferDelay: cfg.DeferDelay, Metrics: m, Log: log,
