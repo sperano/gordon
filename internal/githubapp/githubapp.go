@@ -78,6 +78,9 @@ type App struct {
 	// minting serializes the mints of one scope, so concurrent writers
 	// on a cold or expiring entry mint one token, not one each.
 	minting map[string]*sync.Mutex
+	// missed, when set, runs after a writer finds no cached token and
+	// before it takes the scope's lock (a test hook).
+	missed func()
 }
 
 type token struct {
@@ -184,6 +187,9 @@ func (a *App) Token(ctx context.Context, repo string, perms map[string]string) (
 	key := cacheKey(repo, perms)
 	if t, ok := a.cached(key); ok {
 		return t, nil
+	}
+	if a.missed != nil {
+		a.missed()
 	}
 	lock := a.scopeLock(key)
 	lock.Lock()

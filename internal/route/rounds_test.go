@@ -208,3 +208,18 @@ func TestBotReviewReadsHistoryOnlyWhenARequest(t *testing.T) {
 		}
 	}
 }
+
+// TestBotReviewSkipsHistoryWithTheCapsOff: with no round cap, even a
+// findings review reads only the pull request.
+func TestBotReviewSkipsHistoryWithTheCapsOff(t *testing.T) {
+	r := router()
+	r.Config.Policy.MaxRoundsPerPR = 0
+	r.Config.Policy.SuggestionsMaxRounds = 0
+	ev, err := event.Parse(botReview(t, cubic, "**1 issue found**", "now"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := r.Reads(ev), (route.Reads{PullRequest: true}); got != want {
+		t.Errorf("findings review with the caps off reads %+v, want %+v", got, want)
+	}
+}

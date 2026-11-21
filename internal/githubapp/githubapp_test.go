@@ -168,8 +168,9 @@ func TestTokenIsNarrowedAndCached(t *testing.T) {
 	}
 }
 
-// TestConcurrentWritersOfAScopeMintOnce: a writer arriving while the
-// scope's token is being minted waits for it instead of minting its own.
+// TestConcurrentWritersOfAScopeMintOnce: a writer that misses the cache
+// while the scope's token is being minted waits for it instead of minting
+// its own.
 func TestConcurrentWritersOfAScopeMintOnce(t *testing.T) {
 	m := newMint(t)
 	m.held, m.arrived, m.release = true, make(chan struct{}), make(chan struct{})
@@ -185,11 +186,13 @@ func TestConcurrentWritersOfAScopeMintOnce(t *testing.T) {
 		}
 		tokens <- tok
 	}
+	missed := make(chan struct{}, 2)
+	a.missed = func() { missed <- struct{}{} }
 	go call()
+	<-missed
 	<-arrived // the first mint is in flight
-	started := make(chan struct{})
-	go func() { close(started); call() }()
-	<-started
+	go call()
+	<-missed // the second writer found no token: only the lock stops its mint
 	close(m.release)
 	for range 2 {
 		if tok := <-tokens; tok != "ghs_gordon" {

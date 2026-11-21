@@ -270,8 +270,8 @@ a duplicate.
 
 | Family | Off when Gordon owns it | Gordon needs |
 |---|---|---|
-| `pr-followup` | the project's `pr-followup-*` and review-poll spawners, the GitHub reactor's 👀, draft label and conversion for its repository, the review poller's repository entry | dispatch config and Task `create`; the App; Tasks without the `pr-task-dedup`, `review-round-cap`, `announce-github-start` and `pr-review-supersede` init containers; the GitHub reconciliation |
-| `pr-review` | the project's `pr-review-*` spawners and the reactor's skipped checks for its repository | dispatch config and Task `create`; the App; `list` and `delete` on `tasks`; Tasks without the `pr-task-dedup`, `review-round-cap`, `announce-github-start` and `pr-review-supersede` init containers |
+| `pr-followup` | the project's `pr-followup-*` and review-poll spawners, the GitHub reactor's 👀, draft label and conversion for its repository, the review poller's repository entry | dispatch config and Task `create`; the App; Tasks without the `pr-task-dedup`, `review-round-cap` and `announce-github-start` init containers; the GitHub reconciliation |
+| `pr-review` | the project's `pr-review-*` spawners and the reactor's skipped checks for its repository | dispatch config and Task `create`; the App; `list` and `delete` on `tasks`; Tasks without the `pr-task-dedup` and `pr-review-supersede` init containers |
 | `pr-open` | the repository's pr-open merge spawner | the Vikunja write token |
 | `merge-close` | the repository's merge-close spawner and its `merge-close-reconcile` entry | the Vikunja write token; the GitHub reconciliation |
 
