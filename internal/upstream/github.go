@@ -35,9 +35,9 @@ const (
 // query) is refused before it reaches a URL.
 var repository = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
-// safeRepository is an owner/name pair neither of whose segments is a dot
-// segment ("." or ".."), which the URL path would resolve away.
-func safeRepository(repo string) bool {
+// SafeRepository reports an owner/name pair neither of whose segments is
+// a dot segment ("." or ".."), which the URL path would resolve away.
+func SafeRepository(repo string) bool {
 	if !repository.MatchString(repo) {
 		return false
 	}
@@ -79,7 +79,7 @@ type githubPR struct {
 // PullRequest reads a pull request; withFiles also lists its changed
 // files (the reviewers' file patterns need them).
 func (g GitHub) PullRequest(ctx context.Context, repo string, number int, withFiles bool) (event.PullRequest, error) {
-	if !safeRepository(repo) || number <= 0 {
+	if !SafeRepository(repo) || number <= 0 {
 		return event.PullRequest{}, &Error{Provider: ProviderGitHub, Class: Invalid,
 			Err: fmt.Errorf("pull request %q#%d", repo, number)}
 	}

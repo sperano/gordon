@@ -72,7 +72,7 @@ func list[T any](ctx context.Context, c *Client, path string, query url.Values, 
 }
 
 func checkPR(repo string, number int) error {
-	if !safeRepository(repo) || number <= 0 {
+	if !SafeRepository(repo) || number <= 0 {
 		return &Error{Provider: ProviderGitHub, Class: Invalid, Err: fmt.Errorf("pull request %q#%d", repo, number)}
 	}
 	return nil
@@ -170,7 +170,7 @@ func listedPR(repo string, raw githubListedPRJSON) ListedPR {
 }
 
 func (g GitHub) pulls(ctx context.Context, repo string, q url.Values, more func([]githubListedPRJSON) bool) ([]ListedPR, error) {
-	if !safeRepository(repo) {
+	if !SafeRepository(repo) {
 		return nil, &Error{Provider: ProviderGitHub, Class: Invalid, Err: fmt.Errorf("repository %q", repo)}
 	}
 	raw, err := list(ctx, g.Client, fmt.Sprintf("/repos/%s/pulls", repo), q, more)
@@ -240,7 +240,7 @@ func prNumber(u, kind string) int {
 // false) or inline review comments (inline true) created or updated
 // since.
 func (g GitHub) CommentsSince(ctx context.Context, repo string, since time.Time, inline bool) ([]ListedComment, error) {
-	if !safeRepository(repo) {
+	if !SafeRepository(repo) {
 		return nil, &Error{Provider: ProviderGitHub, Class: Invalid, Err: fmt.Errorf("repository %q", repo)}
 	}
 	path, kind := fmt.Sprintf("/repos/%s/issues/comments", repo), "issues"

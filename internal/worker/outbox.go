@@ -89,6 +89,9 @@ func IsCancelled(err error) bool { return errors.As(err, new(cancelledError)) }
 
 func isAmbiguous(err error) bool { return errors.As(err, new(ambiguousError)) }
 
+// IsAmbiguous reports an error marked Ambiguous: the write may have applied.
+func IsAmbiguous(err error) bool { return isAmbiguous(err) }
+
 // IsPermanent reports whether err, or an error it wraps, is Permanent.
 func IsPermanent(err error) bool { return errors.As(err, new(permanentError)) }
 

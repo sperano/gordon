@@ -289,7 +289,7 @@ func TestGitHubPullRequestFailsOnAFailedFilesPage(t *testing.T) {
 	}
 }
 
-func TestGitHubRefusesUnsafeRepository(t *testing.T) {
+func TestGitHubRefusesUnSafeRepository(t *testing.T) {
 	c, _ := client(t, ProviderGitHub, func(http.ResponseWriter, *http.Request) {
 		t.Error("request sent for an unsafe repository")
 	})
