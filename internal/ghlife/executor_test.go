@@ -51,6 +51,23 @@ func TestReactionOnceAndRecovered(t *testing.T) {
 	}
 }
 
+// TestReactionByAnotherUserIsNotTheApps: 👀 from someone else on the
+// comment is no reaction of the App's; it still reacts.
+func TestReactionByAnotherUserIsNotTheApps(t *testing.T) {
+	f := newFake(t)
+	f.othersEyes["IC_77"] = true
+	e, _ := executor(f, nil)
+	if ok, err := e.Recover(ctx, react()); ok || err != nil {
+		t.Fatalf("recover %v %v, want no reaction of the App's", ok, err)
+	}
+	if err := e.Execute(ctx, react()); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.wrote(); !slices.Equal(got, []string{"react IC_77"}) {
+		t.Errorf("writes %v, want the App's reaction", got)
+	}
+}
+
 func draftActions() (action.Action, action.Action) {
 	label := action.New(action.AddLabel, pr4, "kelos:follow-up")
 	return label, action.New(action.ConvertDraft, pr4, "").WaitFor(label)
@@ -145,6 +162,29 @@ func TestSkippedChecks(t *testing.T) {
 	bad.Value = "review/x@feedbeef"
 	if err := e.Execute(ctx, bad); !worker.IsPermanent(err) {
 		t.Errorf("bad reason: %v, want permanent", err)
+	}
+}
+
+// TestSkippedCheckPostedOverAFailedRun: a review run that concluded
+// failure on the head is no skip; the skip is posted over it, so the
+// required check does not hold the merge.
+func TestSkippedCheckPostedOverAFailedRun(t *testing.T) {
+	f := newFake(t)
+	f.checks["0123abcd"] = []map[string]any{{"name": "review/pr-challenger", "status": "completed", "conclusion": "failure"}}
+	e, _ := executor(f, nil)
+	a := action.New(action.SkippedChecks, pr4, "review/pr-challenger@0123abcd")
+	a.Detail = "label:kelos:no-review"
+	if applied, err := e.Recover(ctx, a); err != nil || applied {
+		t.Fatalf("Recover over a failed run = %v, %v; want not applied", applied, err)
+	}
+	if err := e.Execute(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"check review/pr-challenger@0123abcd"}; !slices.Equal(f.writes, want) {
+		t.Fatalf("writes %v, want %v", f.writes, want)
+	}
+	if applied, err := e.Recover(ctx, a); err != nil || !applied {
+		t.Fatalf("Recover after the skip = %v, %v; want applied", applied, err)
 	}
 }
 

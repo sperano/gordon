@@ -170,6 +170,7 @@ func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 			Vikunja: &event.Vikunja{Task: event.Task{ID: 6, ProjectID: -1}, Comment: &event.Comment{ID: 1, Body: body}}}
 	}
 	request, bot := p.Trigger+" fix it", p.ReviewBots[0].Login
+	const findings = "**2 issues found**"
 	handled := replay.Ledger{Requests: []string{"github/req/1", "vikunja/comment/1"}}
 	cases := []struct {
 		name  string
@@ -193,8 +194,9 @@ func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 		{"edited PR request", onPR(event.GitHubIssueComment, "edited", p.GitHubOwner, request), nil, nil, nil},
 		{"owner PR comment that is no request", onPR(event.GitHubIssueComment, "created", p.GitHubOwner, "lgtm"), nil, nil, nil},
 		{"other's PR request", onPR(event.GitHubIssueComment, "created", "mallory", request), nil, nil, nil},
-		{"review bot review", onPR(event.GitHubReview, "submitted", bot, "findings"), nil, nil, []string{repo, repo + "+history"}},
-		{"review bot review, request handled", onPR(event.GitHubReview, "submitted", bot, "findings"), handled, nil,
+		{"review bot review", onPR(event.GitHubReview, "submitted", bot, findings), nil, nil, []string{repo, repo + "+history"}},
+		{"review bot review that is no request", onPR(event.GitHubReview, "submitted", bot, "thanks"), nil, nil, []string{repo}},
+		{"review bot review, request handled", onPR(event.GitHubReview, "submitted", bot, findings), handled, nil,
 			[]string{repo, repo + "+history"}},
 		{"other's review", onPR(event.GitHubReview, "submitted", "mallory", "findings"), nil, nil, nil},
 		{"issue comment", event.Event{Kind: event.GitHubIssueComment, Action: "created", Actor: p.GitHubOwner,
@@ -258,7 +260,7 @@ func TestStateReaderHistoryFailures(t *testing.T) {
 	cfg := profile.Defaults()
 	repo, bot := cfg.Projects[0].Repository, cfg.Policy.ReviewBots[0].Login
 	ev := event.Event{Kind: event.GitHubReview, Action: "submitted", Actor: bot, RequestKey: "github/req/1",
-		GitHub: &event.GitHub{Repository: repo, OnPullRequest: true, Body: "x", PullRequest: event.PullRequest{Number: 3}}}
+		GitHub: &event.GitHub{Repository: repo, OnPullRequest: true, Body: "**1 issue found**", PullRequest: event.PullRequest{Number: 3}}}
 	down := errors.New("github down")
 	for name, h := range map[string]HistoryReader{"no reader": nil, "failing reader": failingHistory{down}} {
 		st, err := StateReader{Config: cfg, Tasks: &recordingTasks{}, PRs: &recordingPRs{}, History: h}.Read(context.Background(), ev, replay.Ledger{})
@@ -272,5 +274,14 @@ func TestStateReaderHistoryFailures(t *testing.T) {
 		if !errors.Is(err, want) {
 			t.Errorf("%s: error %v, want %v", name, err, want)
 		}
+	}
+	ignored := ev
+	gh := *ev.GitHub
+	gh.Body = "thanks"
+	ignored.GitHub = &gh
+	st, err := StateReader{Config: cfg, Tasks: &recordingTasks{}, PRs: &recordingPRs{}, History: failingHistory{down}}.Read(
+		context.Background(), ignored, replay.Ledger{})
+	if err != nil || st.History != nil || st.PullRequest == nil {
+		t.Errorf("a bot review that is no request: %+v, %v; want the PR read, no history, no error", st, err)
 	}
 }

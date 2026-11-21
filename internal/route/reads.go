@@ -82,8 +82,15 @@ func (r Router) commentReads(ev event.Event) Reads {
 		}
 		return Reads{PullRequest: true, OwnerRequest: true}
 	}
-	if ev.Kind == event.GitHubReview && slices.ContainsFunc(p.ReviewBots, func(b profile.Bot) bool { return b.Login == ev.Actor }) {
-		return Reads{PullRequest: true, History: r.capsOn()}
+	if ev.Kind != event.GitHubReview {
+		return Reads{}
 	}
-	return Reads{}
+	i := slices.IndexFunc(p.ReviewBots, func(b profile.Bot) bool { return b.Login == ev.Actor })
+	if i < 0 {
+		return Reads{}
+	}
+	// Only a review that can be a request is capped: an ignored one
+	// reads no history, whose failure would retry it.
+	found, err := botFindings(p.ReviewBots[i], gh.Body, true)
+	return Reads{PullRequest: true, History: r.capsOn() && found && err == nil}
 }

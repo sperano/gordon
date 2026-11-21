@@ -33,6 +33,7 @@ type fakeLister struct {
 	reviews  map[int][]upstream.ListedReview
 	comments map[bool][]upstream.ListedComment
 	fail     string
+	listed   []int // the PRs whose reviews were listed
 }
 
 func (f *fakeLister) OpenPullRequests(_ context.Context, repo string) ([]upstream.ListedPR, error) {
@@ -47,6 +48,7 @@ func (f *fakeLister) ClosedPullRequests(_ context.Context, repo string, _ time.T
 }
 
 func (f *fakeLister) Reviews(_ context.Context, _ string, n int) ([]upstream.ListedReview, error) {
+	f.listed = append(f.listed, n)
 	return f.reviews[n], nil
 }
 
@@ -102,7 +104,7 @@ func config() profile.Config {
 
 func agentPR(n int, author, head string) upstream.ListedPR {
 	return upstream.ListedPR{PullRequest: event.PullRequest{Repository: "sperano/vigie", Number: n, State: "open",
-		Author: author, HeadRef: head, HeadSHA: "abc12345", HeadRepo: "sperano/vigie", BaseRef: "main"}}
+		Author: author, HeadRef: head, HeadSHA: "abc12345", HeadRepo: "sperano/vigie", BaseRef: "main"}, Updated: ago(time.Hour)}
 }
 
 func listed(id int64, author, body string, at time.Time) upstream.ListedReview {
@@ -129,9 +131,11 @@ func TestReconcileRecoversMissedRequests(t *testing.T) {
 	merged.State, merged.Merged, merged.Closed = "closed", true, ago(time.Hour)
 	feature := agentPR(10, "sperano", "feature")
 	feature.State, feature.Closed = "closed", ago(time.Hour)
+	stale := agentPR(6, "sperano", "kelos/vikunja-7")
+	stale.Updated = ago(25 * time.Hour)
 	l := &fakeLister{
 		open: map[string][]upstream.ListedPR{"sperano/vigie": {agentPR(4, "sperano", "kelos/vikunja-5"),
-			agentPR(5, "mallory", "kelos/vikunja-6")}},
+			agentPR(5, "mallory", "kelos/vikunja-6"), stale}},
 		closed: map[string][]upstream.ListedPR{"sperano/vigie": {merged, feature}},
 		reviews: map[int][]upstream.ListedReview{
 			4: {listed(1, "cubic-dev-ai[bot]", "**2 issues found**", ago(3*time.Hour)),
@@ -141,6 +145,8 @@ func TestReconcileRecoversMissedRequests(t *testing.T) {
 				listed(5, "sperano", "looks good", ago(time.Hour)),
 				listed(6, "gordon-cole-ai[bot]", "**Review verdict: blocking**", ago(time.Minute))}, // within the grace
 			5: {listed(7, "cubic-dev-ai[bot]", "**1 issue found**", ago(time.Hour))}, // a stranger's PR
+			// Never listed: the PR is untouched since before the window.
+			6: {listed(8, "cubic-dev-ai[bot]", "**1 issue found**", ago(time.Hour))},
 		},
 		comments: map[bool][]upstream.ListedComment{
 			false: {{ID: 70, Author: "sperano", Body: "/gordon please", PR: 4, Created: ago(time.Hour)},
@@ -163,6 +169,9 @@ func TestReconcileRecoversMissedRequests(t *testing.T) {
 	}
 	if got := keysOf(in.stored); !slices.Equal(got, want) {
 		t.Fatalf("queued %v, want %v", got, want)
+	}
+	if !slices.Equal(l.listed, []int{4}) {
+		t.Errorf("listed the reviews of %v, want the updated PR by an author alone", l.listed)
 	}
 	if err := r.Once(context.Background()); err != nil || len(in.stored) != len(want) {
 		t.Fatalf("a second pass queued again: %v, %v", err, keysOf(in.stored))

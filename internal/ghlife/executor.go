@@ -253,9 +253,10 @@ func checkSpec(a action.Action) (string, string, error) {
 	return a.Value[:i], a.Value[i+1:], nil
 }
 
-// checkApplied: a completed run of that check is on the head already. A
+// checkApplied: a skipped run of that check is on the head already. A
 // redelivery to the reactor posted it again; GitHub keeps the latest run
-// of a name, so one is enough.
+// of a name, so one is enough. A run that concluded otherwise (a failed
+// review) is no skip: the skip is posted over it.
 func (e *Executor) checkApplied(ctx context.Context, a action.Action, t Target) (bool, error) {
 	if err := pullTarget(a, t); err != nil {
 		return false, err
@@ -271,15 +272,21 @@ func (e *Executor) checkApplied(ctx context.Context, a action.Action, t Target) 
 	if err := e.W.REST(ctx, t.Repo, githubapp.Checks, http.MethodGet, p, nil, &out); err != nil {
 		return false, err
 	}
-	return slices.ContainsFunc(out.CheckRuns, func(r checkRun) bool { return r.Status == checkCompleted }), nil
+	return slices.ContainsFunc(out.CheckRuns, func(r checkRun) bool {
+		return r.Status == checkCompleted && r.Conclusion == checkSkipped
+	}), nil
 }
 
 type checkRun struct {
-	Status string `json:"status"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
 }
 
-// checkCompleted is a finished check run's status.
-const checkCompleted = "completed"
+// A posted skip: a finished check run concluded skipped.
+const (
+	checkCompleted = "completed"
+	checkSkipped   = "skipped"
+)
 
 // postCheck posts review_skip.check_run_body.
 func (e *Executor) postCheck(ctx context.Context, a action.Action, t Target) error {
@@ -288,7 +295,7 @@ func (e *Executor) postCheck(ctx context.Context, a action.Action, t Target) err
 	if !ok || value == "" {
 		return worker.Permanent(fmt.Errorf("skipped check reason %q", a.Detail))
 	}
-	body := map[string]any{"name": check, "head_sha": sha, "status": checkCompleted, "conclusion": "skipped",
+	body := map[string]any{"name": check, "head_sha": sha, "status": checkCompleted, "conclusion": checkSkipped,
 		"output": map[string]string{"title": "Not reviewed", "summary": SkippedSummary(check, kind, value)}}
 	return e.W.REST(ctx, t.Repo, githubapp.Checks, http.MethodPost, path("repos", t.Owner, t.Name, "check-runs"), body, nil)
 }

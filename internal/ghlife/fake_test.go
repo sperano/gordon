@@ -38,17 +38,20 @@ type fakeGitHub struct {
 	labels    []string
 	repoLabel bool
 	reacted   map[string]bool // node -> EYES by the App
-	checks    map[string][]map[string]any
-	comments  []comment
-	private   bool
-	writes    []string
-	tokens    []string
-	failNext  map[string]bool
-	nextID    int64
+	// othersEyes: node -> EYES by someone else, a group the App's
+	// viewerHasReacted is false in until it reacts too.
+	othersEyes map[string]bool
+	checks     map[string][]map[string]any
+	comments   []comment
+	private    bool
+	writes     []string
+	tokens     []string
+	failNext   map[string]bool
+	nextID     int64
 }
 
 func newFake(t *testing.T) *fakeGitHub {
-	f := &fakeGitHub{repoLabel: true, reacted: map[string]bool{}, checks: map[string][]map[string]any{},
+	f := &fakeGitHub{repoLabel: true, reacted: map[string]bool{}, othersEyes: map[string]bool{}, checks: map[string][]map[string]any{},
 		failNext: map[string]bool{}, nextID: 500}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
@@ -110,8 +113,9 @@ func (f *fakeGitHub) graphql(w http.ResponseWriter, r *http.Request) {
 	switch q := req.Query; {
 	case q == reactedQuery:
 		groups := []map[string]any{{"content": "HEART", "viewerHasReacted": true}}
-		if f.reacted[req.Variables["id"].(string)] {
-			groups = append(groups, map[string]any{"content": "EYES", "viewerHasReacted": true})
+		node := req.Variables["id"].(string)
+		if f.reacted[node] || f.othersEyes[node] {
+			groups = append(groups, map[string]any{"content": "EYES", "viewerHasReacted": f.reacted[node]})
 		}
 		reply(w, map[string]any{"data": map[string]any{"node": map[string]any{"reactionGroups": groups}}})
 	case q == addReaction:

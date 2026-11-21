@@ -183,3 +183,28 @@ func TestCappedRequestIsNotDraftedOrAnnounced(t *testing.T) {
 		t.Errorf("draft waits for %q, notice for %q", fd.Actions[2].After, fd.Actions[3].After)
 	}
 }
+
+// TestBotReviewReadsHistoryOnlyWhenARequest: with a cap on, a bot review
+// that can be a request (findings, or suggestions the label may opt in)
+// reads the PR history; one that is no request does not.
+func TestBotReviewReadsHistoryOnlyWhenARequest(t *testing.T) {
+	r := router()
+	r.Config.Policy.MaxRoundsPerPR = 3
+	for _, c := range []struct {
+		name, sender, body string
+		history            bool
+	}{
+		{"findings", cubic, "**1 issue found**", true},
+		{"suggestions", kelosBot, suggestion, true},
+		{"approve", kelosBot, "**Review verdict: approve** (review/pr-challenger)", false},
+		{"a body matching nothing", cubic, "thanks", false},
+	} {
+		ev, err := event.Parse(botReview(t, c.sender, c.body, "now"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := r.Reads(ev), (route.Reads{PullRequest: true, History: c.history}); got != want {
+			t.Errorf("%s reads %+v, want %+v", c.name, got, want)
+		}
+	}
+}

@@ -20,23 +20,24 @@ func TestWriterClassifiesAnswers(t *testing.T) {
 	cases := []struct {
 		name      string
 		status    int
-		header    string
+		header    map[string]string
 		write     bool
 		ambiguous bool
 		permanent bool
 	}{
-		{"read 502", http.StatusBadGateway, "", false, false, false},
-		{"write 502", http.StatusBadGateway, "", true, true, false},
-		{"write 422", http.StatusUnprocessableEntity, "", true, false, true},
-		{"write 429", http.StatusTooManyRequests, "", true, false, false},
-		{"rate limited 403", http.StatusForbidden, "0", true, false, false},
-		{"refused 403", http.StatusForbidden, "", true, false, true},
+		{"read 502", http.StatusBadGateway, nil, false, false, false},
+		{"write 502", http.StatusBadGateway, nil, true, true, false},
+		{"write 422", http.StatusUnprocessableEntity, nil, true, false, true},
+		{"write 429", http.StatusTooManyRequests, nil, true, false, false},
+		{"rate limited 403", http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "0"}, true, false, false},
+		{"secondary rate limited 403", http.StatusForbidden, map[string]string{"Retry-After": "60"}, true, false, false},
+		{"refused 403", http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "4999"}, true, false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				if c.header != "" {
-					w.Header().Set("X-RateLimit-Remaining", c.header)
+				for k, v := range c.header {
+					w.Header().Set(k, v)
 				}
 				w.WriteHeader(c.status)
 				fmt.Fprint(w, `{"message":"nope"}`)
@@ -55,10 +56,27 @@ func TestWriterClassifiesAnswers(t *testing.T) {
 			if got := worker.IsAmbiguous(err); got != c.ambiguous {
 				t.Errorf("ambiguous = %v, want %v (%v)", got, c.ambiguous, err)
 			}
-			if worker.IsPermanent(err) != c.permanent {
-				t.Errorf("permanent = %v, want %v", !c.permanent, c.permanent)
+			if got := worker.IsPermanent(err); got != c.permanent {
+				t.Errorf("permanent = %v, want %v (%v)", got, c.permanent, err)
 			}
 		})
+	}
+}
+
+// TestWriterTransportFailure: a write whose connection fails may have
+// reached GitHub, so it is ambiguous (recovered before a retry); a read
+// is retried as is.
+func TestWriterTransportFailure(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close() // every connection is refused
+	w := &Writer{App: newFakeTokens(), BaseURL: srv.URL, HTTP: srv.Client()}
+	err := w.REST(context.Background(), Repo{owner, repoNm}, githubapp.Checks, http.MethodPost, "/x", nil, nil)
+	if !worker.IsAmbiguous(err) || worker.IsPermanent(err) {
+		t.Errorf("failed write: %v, want ambiguous", err)
+	}
+	err = w.REST(context.Background(), Repo{owner, repoNm}, githubapp.Checks, http.MethodGet, "/x", nil, nil)
+	if err == nil || worker.IsAmbiguous(err) || worker.IsPermanent(err) {
+		t.Errorf("failed read: %v, want a plain retried error", err)
 	}
 }
 

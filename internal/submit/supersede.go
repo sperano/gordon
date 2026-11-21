@@ -36,9 +36,10 @@ type SupersedeStore interface {
 // supersedes (action.SupersedeReviews, supersede_reviews.py), once the
 // new review's Task exists. Holding the admission lock, it finishes
 // Gordon's older queued or running review runs of the pull request by
-// the same reviewer (a queued submission is never created) and deletes
+// the same reviewer (a queued submission is never created) and lists
 // every unfinished review Task of the pull request by that reviewer
-// created before the new one, a legacy spawner's included. Finished
+// created before the new one, a legacy spawner's included, which it
+// deletes after releasing the lock. Finished
 // Tasks stay: their logs may matter, and Kelos's TTL removes them.
 type Superseder struct {
 	Store SupersedeStore
@@ -101,29 +102,36 @@ func (s *Superseder) cancelOlder(ctx context.Context, name string) error {
 	return err
 }
 
-// Execute cancels the older runs and deletes the older live Tasks.
+// Execute cancels the older runs under the admission lock, then deletes
+// the older live Tasks it listed there once the lock is released: the
+// Kelos deletes would hold every submission behind them.
 func (s *Superseder) Execute(ctx context.Context, a action.Action) error {
 	name, err := s.run(a)
 	if err != nil {
 		return err
 	}
-	return s.Store.WithAdmission(ctx, func(ctx context.Context) error {
+	var live []kelos.Metadata
+	err = s.Store.WithAdmission(ctx, func(ctx context.Context) error {
 		if err := s.cancelOlder(ctx, name); err != nil {
 			return err
 		}
-		live, err := s.older(ctx, name)
-		if err != nil {
+		var err error
+		if live, err = s.older(ctx, name); err != nil {
 			return refusedPermanent(err)
-		}
-		// By uid: a Task recreated under a listed name meanwhile is
-		// refused (a Conflict, retried), never deleted unseen.
-		for _, m := range live {
-			if err := s.Kelos.Delete(ctx, m.Name, m.UID); err != nil && !kelos.IsNotFound(err) {
-				return refusedPermanent(err)
-			}
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// By uid: a Task recreated under a listed name meanwhile is refused
+	// (a Conflict, retried), never deleted unseen.
+	for _, m := range live {
+		if err := s.Kelos.Delete(ctx, m.Name, m.UID); err != nil && !kelos.IsNotFound(err) {
+			return refusedPermanent(err)
+		}
+	}
+	return nil
 }
 
 // Recover cancels the older runs, as Execute does, then reports the

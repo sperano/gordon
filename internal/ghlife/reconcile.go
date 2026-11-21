@@ -155,6 +155,9 @@ func (r *Reconciler) repository(ctx context.Context, repo string) ([]store.Deliv
 			continue
 		}
 		byNumber[pr.Number] = pr
+		if pr.Updated.Before(r.now().Add(-r.Lookback)) {
+			continue // untouched since before the window: no review in it
+		}
 		found, err := r.reviews(ctx, pr)
 		errs = append(errs, err)
 		out = append(out, found...)

@@ -58,9 +58,10 @@ var (
 	PullRequests = map[string]string{"pull_requests": "write"}
 	Draft        = map[string]string{"pull_requests": "write", "contents": "write"}
 	Checks       = map[string]string{"checks": "write"}
-	// Comments posts and reads PR conversation comments and reads the
+	// Comments posts and reads PR conversation comments (Issues: write is
+	// enough, GitHub takes it or Pull requests: write) and reads the
 	// repository's visibility.
-	Comments = map[string]string{"pull_requests": "write", "issues": "write", "metadata": "read"}
+	Comments = map[string]string{"issues": "write", "metadata": "read"}
 )
 
 // App mints and caches the installation tokens of one App installation.
@@ -74,6 +75,9 @@ type App struct {
 
 	mu    sync.Mutex
 	cache map[string]token
+	// minting serializes the mints of one scope, so concurrent writers
+	// on a cold or expiring entry mint one token, not one each.
+	minting map[string]*sync.Mutex
 }
 
 type token struct {
@@ -178,12 +182,15 @@ func cacheKey(repo string, perms map[string]string) string {
 // permissions, from the cache while it is valid for renewBefore more.
 func (a *App) Token(ctx context.Context, repo string, perms map[string]string) (string, error) {
 	key := cacheKey(repo, perms)
-	a.mu.Lock()
-	if t, ok := a.cache[key]; ok && a.now().Add(renewBefore).Before(t.expires) {
-		a.mu.Unlock()
-		return t.value, nil
+	if t, ok := a.cached(key); ok {
+		return t, nil
 	}
-	a.mu.Unlock()
+	lock := a.scopeLock(key)
+	lock.Lock()
+	defer lock.Unlock()
+	if t, ok := a.cached(key); ok { // another writer minted it meanwhile
+		return t, nil
+	}
 	t, err := a.mint(ctx, repo, perms)
 	if err != nil {
 		return "", err
@@ -195,6 +202,32 @@ func (a *App) Token(ctx context.Context, repo string, perms map[string]string) (
 	}
 	a.cache[key] = t
 	return t.value, nil
+}
+
+// cached is the scope's token while it is valid for renewBefore more.
+func (a *App) cached(key string) (string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	t, ok := a.cache[key]
+	if !ok || !a.now().Add(renewBefore).Before(t.expires) {
+		return "", false
+	}
+	return t.value, true
+}
+
+// scopeLock is the mutex serializing the scope's mints.
+func (a *App) scopeLock(key string) *sync.Mutex {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.minting == nil {
+		a.minting = map[string]*sync.Mutex{}
+	}
+	l, ok := a.minting[key]
+	if !ok {
+		l = &sync.Mutex{}
+		a.minting[key] = l
+	}
+	return l
 }
 
 func (a *App) mint(ctx context.Context, repo string, perms map[string]string) (token, error) {

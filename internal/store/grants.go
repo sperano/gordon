@@ -23,8 +23,8 @@ type Roles struct {
 // never deletes, and it never changes the schema. The inbox is the
 // receiver's for webhooks: the worker inserts only its own synthetic
 // deliveries (workerInboxInsert: requeues and reconciliation, never a
-// body digest; a row policy refuses any row that is not a Vikunja
-// delivery with the synthetic header), and it updates only the queue
+// body digest; a row policy refuses any row that is not a Vikunja or
+// GitHub delivery with the synthetic header), and it updates only the queue
 // bookkeeping and the body (pruning).
 var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks"}
 

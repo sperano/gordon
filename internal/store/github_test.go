@@ -20,7 +20,7 @@ func prRun(id run.Identity) route.Decision {
 }
 
 func TestLedgerPRRuns(t *testing.T) {
-	s, _ := storetest.Open(t)
+	s, dbURL := storetest.Open(t)
 	follow := func(pr int, kind string, comment int64) run.Identity {
 		return run.Identity{Family: run.PRFollowUp, Workspace: "vigie", PR: pr, CommentKind: kind, CommentID: comment}
 	}
@@ -30,13 +30,15 @@ func TestLedgerPRRuns(t *testing.T) {
 		dec.RequestKey = id.Name()
 		recorded(t, s, "k"+id.Name(), dec.RequestKey, dec)
 	}
+	const finished = "pr-followup-vigie-4-c77"
+	storetest.Exec(t, dbURL, `UPDATE runs SET state = 'finished' WHERE name = $1`, finished)
 	led := s.Ledger(ctx)
 	got := led.PRRuns("vigie", 4)
 	var names []string
 	for _, r := range got {
 		names = append(names, r.Name)
-		if r.Family != run.PRFollowUp || r.Workspace != "vigie" || r.PR != 4 || !r.Active {
-			t.Errorf("record %+v", r)
+		if r.Family != run.PRFollowUp || r.Workspace != "vigie" || r.PR != 4 || r.Active != (r.Name != finished) {
+			t.Errorf("record %+v; want active unless finished", r)
 		}
 	}
 	if led.Err != nil || !slices.Equal(names, []string{"pr-followup-vigie-4-c77", "pr-followup-vigie-4-r88"}) {

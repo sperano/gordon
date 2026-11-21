@@ -147,7 +147,7 @@ func classify(method, path string, resp *http.Response, write bool, data []byte,
 	}
 	_ = json.Unmarshal(data, &msg) //nolint:errcheck // a message is optional
 	st := &ErrStatus{Method: method, Path: path, Status: status, Message: msg.Message}
-	limited := status == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0"
+	limited := status == http.StatusForbidden && rateLimited(resp)
 	switch {
 	case status >= http.StatusInternalServerError && write:
 		return worker.Ambiguous(st)
@@ -163,6 +163,14 @@ func classify(method, path string, resp *http.Response, write bool, data []byte,
 		return fmt.Errorf("github %s %s: %w", method, path, err)
 	}
 	return nil
+}
+
+// rateLimited reports a 403 that is a rate limit, retried: the primary
+// limit spent (X-RateLimit-Remaining: 0) or a secondary limit, which
+// answers with Retry-After. GitHub refuses a limited request before
+// acting on it, so a limited write is no ambiguous one.
+func rateLimited(resp *http.Response) bool {
+	return resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != ""
 }
 
 // REST calls path (relative to BaseURL, already escaped).

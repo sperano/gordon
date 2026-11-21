@@ -1,6 +1,7 @@
 package submit
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -110,6 +111,55 @@ func TestSupersedeByARestartOrAnUnlistedTaskDoesNothing(t *testing.T) {
 	}
 	if got := e.kelos.Deletes(); len(got) != 0 {
 		t.Fatalf("deleted %v", got)
+	}
+}
+
+// heldAdmission is the store, reporting whether its admission lock is
+// held.
+type heldAdmission struct {
+	SupersedeStore
+	held bool
+}
+
+func (h *heldAdmission) WithAdmission(ctx context.Context, fn func(context.Context) error) error {
+	return h.SupersedeStore.WithAdmission(ctx, func(ctx context.Context) error {
+		h.held = true
+		defer func() { h.held = false }()
+		return fn(ctx)
+	})
+}
+
+// deletesUnlocked is the Kelos API, recording whether each delete ran
+// under the admission lock.
+type deletesUnlocked struct {
+	Deleter
+	lock   *heldAdmission
+	locked []bool
+}
+
+func (d *deletesUnlocked) Delete(ctx context.Context, name, uid string) error {
+	d.locked = append(d.locked, d.lock.held)
+	return d.Deleter.Delete(ctx, name, uid)
+}
+
+// TestSupersedeDeletesOutsideTheAdmissionLock: the Kelos deletes run
+// once the lock is released, so no submission waits behind them.
+func TestSupersedeDeletesOutsideTheAdmissionLock(t *testing.T) {
+	e := newEnv(t, false, dispatch.Limits{})
+	seedReviews(t, e, map[string]int{olderReview: -60, ownReview: 0})
+	e.kelos.Put(reviewTask(ownReview, "pr-challenger", "7", kelos.PhasePending, "2026-11-21T10:00:00Z"))
+	e.kelos.Put(reviewTask(olderReview, "pr-challenger", "7", kelos.PhaseRunning, "2026-11-21T09:00:00Z"))
+	lock := &heldAdmission{SupersedeStore: e.store}
+	api := &deletesUnlocked{Deleter: e.api, lock: lock}
+	s := &Superseder{Store: lock, Kelos: api}
+	if err := s.Execute(ctx, supersede(ownReview)); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(api.locked, []bool{false}) {
+		t.Errorf("deletes under the lock %v, want one delete after it", api.locked)
+	}
+	if got, _ := e.run(t, olderReview); got != "finished" {
+		t.Errorf("older run %s, want finished", got)
 	}
 }
 

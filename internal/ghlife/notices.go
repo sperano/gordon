@@ -41,12 +41,20 @@ type comment struct {
 // anyone else's comment suppresses nothing.
 func (e *Executor) trusted(ctx context.Context, t Target) ([]comment, error) {
 	var out []comment
-	for page := 1; page <= maxCommentPages; page++ {
+	// The page after the cap tells a full last page (exactly the cap)
+	// from more comments than one listing reads.
+	for page := 1; page <= maxCommentPages+1; page++ {
 		var batch []comment
 		p := fmt.Sprintf("%s?per_page=%d&page=%d", path("repos", t.Owner, t.Name, "issues", fmt.Sprint(t.N), "comments"),
 			commentsPerPage, page)
 		if err := e.W.REST(ctx, t.Repo, githubapp.Comments, http.MethodGet, p, nil, &batch); err != nil {
 			return nil, err
+		}
+		if len(batch) == 0 {
+			return out, nil
+		}
+		if page > maxCommentPages {
+			break
 		}
 		for _, c := range batch {
 			if slices.Contains(e.Policy.PullRequestAuthors, c.User.Login) {
@@ -57,7 +65,9 @@ func (e *Executor) trusted(ctx context.Context, t Target) ([]comment, error) {
 			return out, nil
 		}
 	}
-	return nil, fmt.Errorf("comments of %s#%d: over %d pages", t.FullName(), t.N, maxCommentPages)
+	// Retrying reads the same comments: the notice cannot be checked.
+	return nil, worker.Permanent(fmt.Errorf("comments of %s#%d: over %d, the notice cannot be checked",
+		t.FullName(), t.N, maxCommentPages*commentsPerPage))
 }
 
 // legacyPosted reports a notice of the same intent posted by the legacy
