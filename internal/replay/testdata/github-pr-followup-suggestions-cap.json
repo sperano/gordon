@@ -1,0 +1,162 @@
+{
+  "description": "A suggestions-only Kelos review on a fix-suggestions PR whose suggestions started agents on 4 other heads is capped: the label is removed and the suggestions-cap notice posted, no run.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "pull_request_review",
+      "X-GitHub-Delivery": "33333333-2222-3333-4444-000000000004"
+    },
+    "body": {
+      "action": "submitted",
+      "sender": {
+        "login": "gordon-cole-ai[bot]"
+      },
+      "repository": {
+        "full_name": "sperano/vigie"
+      },
+      "review": {
+        "id": 800001,
+        "body": "**Review verdict: suggestions** (review/pr-challenger)\n\nTwo suggestions.",
+        "commit_id": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+      },
+      "pull_request": {
+        "number": 42,
+        "state": "open",
+        "draft": false,
+        "merged": false,
+        "user": {
+          "login": "sperano"
+        },
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          "repo": {
+            "full_name": "sperano/vigie"
+          }
+        },
+        "base": {
+          "ref": "main"
+        },
+        "labels": [
+          {
+            "name": "kelos:claude-sonnet"
+          },
+          {
+            "name": "kelos:fix-suggestions"
+          }
+        ]
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/vigie",
+      "number": 42,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "head_repo": "sperano/vigie",
+      "base_ref": "main",
+      "labels": [
+        "kelos:claude-sonnet",
+        "kelos:fix-suggestions"
+      ],
+      "files": []
+    },
+    "history": {
+      "reviews": [
+        {
+          "id": 710001,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: suggestions** (review/pr-challenger)\n\nTwo suggestions.",
+          "commit_id": "head01"
+        },
+        {
+          "id": 710002,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: suggestions** (review/pr-challenger)\n\nTwo suggestions.",
+          "commit_id": "head02"
+        },
+        {
+          "id": 710003,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: suggestions** (review/pr-challenger)\n\nTwo suggestions.",
+          "commit_id": "head03"
+        },
+        {
+          "id": 710004,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: suggestions** (review/pr-challenger)\n\nTwo suggestions.",
+          "commit_id": "head04"
+        },
+        {
+          "id": 800001,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: suggestions** (review/pr-challenger)\n\nTwo suggestions.",
+          "commit_id": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+        }
+      ],
+      "comments": [
+        {
+          "id": 900001,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r710001` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r710001 -->"
+        },
+        {
+          "id": 900002,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r710002` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r710002 -->"
+        },
+        {
+          "id": 900003,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r710003` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r710003 -->"
+        },
+        {
+          "id": 900004,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r710004` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r710004 -->"
+        }
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "pr-followup-vigie-42-r800001"
+    ],
+    "divergence": "Gordon decides the review-round cap before submitting: legacy created the follow-up Task, whose review-round-cap init container failed it before the model started."
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "github/delivery/33333333-2222-3333-4444-000000000004",
+    "request_key": "github/sperano/vigie/r/800001",
+    "families": [
+      {
+        "family": "pr-followup",
+        "project": "vigie",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "reason": "suggestions-round-cap",
+        "actions": [
+          {
+            "key": "remove-label:github/sperano/vigie/pull/42:kelos:fix-suggestions",
+            "kind": "remove-label",
+            "target": "github/sperano/vigie/pull/42",
+            "value": "kelos:fix-suggestions"
+          },
+          {
+            "key": "post-notice:github/sperano/vigie/pull/42:suggestions-cap",
+            "kind": "post-notice",
+            "target": "github/sperano/vigie/pull/42",
+            "value": "suggestions-cap"
+          }
+        ]
+      }
+    ]
+  }
+}

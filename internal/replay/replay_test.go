@@ -15,7 +15,7 @@ const fixtureDir = "testdata"
 
 // minFixtures is the committed fixture count: deleting one fails, and
 // the glob cannot silently match nothing.
-const minFixtures = 52
+const minFixtures = 54
 
 // minWriteFixtures is the committed count of fixtures recording the
 // legacy lifecycle's writes (an empty list included): deleting one fails.

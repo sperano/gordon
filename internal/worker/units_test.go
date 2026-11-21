@@ -244,3 +244,33 @@ func TestNeedsRetry(t *testing.T) {
 		t.Fatal("dispatch retried")
 	}
 }
+
+type failingHistory struct{ err error }
+
+func (f failingHistory) History(context.Context, string, int) ([]event.Review, []event.IssueComment, error) {
+	return nil, nil, f.err
+}
+
+// TestStateReaderHistoryFailures: a bot review's history that cannot be
+// read leaves it unread, the pull request still read, and the error
+// returned, so the router retries instead of counting no rounds.
+func TestStateReaderHistoryFailures(t *testing.T) {
+	cfg := profile.Defaults()
+	repo, bot := cfg.Projects[0].Repository, cfg.Policy.ReviewBots[0].Login
+	ev := event.Event{Kind: event.GitHubReview, Action: "submitted", Actor: bot, RequestKey: "github/req/1",
+		GitHub: &event.GitHub{Repository: repo, OnPullRequest: true, Body: "x", PullRequest: event.PullRequest{Number: 3}}}
+	down := errors.New("github down")
+	for name, h := range map[string]HistoryReader{"no reader": nil, "failing reader": failingHistory{down}} {
+		st, err := StateReader{Config: cfg, Tasks: &recordingTasks{}, PRs: &recordingPRs{}, History: h}.Read(context.Background(), ev, replay.Ledger{})
+		if st.History != nil || st.PullRequest == nil {
+			t.Errorf("%s: state %+v, want the PR without its history", name, st)
+		}
+		want := errNoHistory
+		if h != nil {
+			want = down
+		}
+		if !errors.Is(err, want) {
+			t.Errorf("%s: error %v, want %v", name, err, want)
+		}
+	}
+}
