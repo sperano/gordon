@@ -35,6 +35,11 @@ func prEvent(t *testing.T, o prOpts) event.Delivery {
 			"head": map[string]any{"ref": o.head, "sha": "abc12345", "repo": map[string]any{"full_name": o.headRepo}}}})
 }
 
+// reviewDispatch is one reviewer's submission and the supersede of the
+// older heads' reviews that waits for it.
+var reviewDispatch = []string{"submit-task:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345",
+	"supersede-reviews:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345"}
+
 func TestReviewGates(t *testing.T) {
 	r := router()
 	open := route.State{PullRequest: openPR()}
@@ -58,7 +63,7 @@ func TestReviewGates(t *testing.T) {
 		{"fresh author not allowed", prOpts{action: "opened", author: "sperano", head: "feature"}, route.State{PullRequest: byStranger},
 			route.Reject, route.ReasonAuthorNotAllowed, nil},
 		{"fresh author allowed", prOpts{action: "opened", author: "mallory", head: "feature"}, open,
-			route.Dispatch, "", []string{"submit-task:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345"}},
+			route.Dispatch, "", reviewDispatch},
 		{"fresh skip author", prOpts{action: "opened", author: "sperano", head: "feature"}, route.State{PullRequest: byRenovate},
 			route.Act, route.ReasonSkipAuthor, skipped},
 		{"no-review other branch", prOpts{action: "opened", author: "sperano", head: "feature", labels: []string{"kelos:no-review"}},
@@ -70,7 +75,7 @@ func TestReviewGates(t *testing.T) {
 		{"no-review added since", prOpts{action: "opened", author: "sperano", head: "image-build/x"},
 			noReview, route.Act, route.ReasonNoReviewLabel, []string{"post-skipped-checks:github/sperano/vigie/pull/4:review/pr-challenger@abc12345"}},
 		{"no-review removed since", prOpts{action: "opened", author: "sperano", head: "image-build/x", labels: []string{"kelos:no-review"}},
-			open, route.Dispatch, "", []string{"submit-task:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345"}},
+			open, route.Dispatch, "", reviewDispatch},
 		{"closed since", prOpts{action: "synchronize", author: "sperano", head: "feature"}, closed, route.Stale, route.ReasonPullRequestClosed, nil},
 		{"drafted since", prOpts{action: "synchronize", author: "sperano", head: "feature"}, drafted, route.Stale, route.ReasonDraft, nil},
 	}

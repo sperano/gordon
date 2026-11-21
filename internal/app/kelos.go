@@ -6,6 +6,7 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/config"
+	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/store"
@@ -33,17 +34,18 @@ func newKelos(cfg config.Worker, m *metrics.Metrics) (*kelos.Client, error) {
 }
 
 // executors are the outbox executors of this release: Kelos Task
-// submission and run cancellation when Kelos is configured, and the
-// Vikunja writer with a write token. The GitHub writers arrive with
-// Gordon 08; until then their actions stay queued (deferred), never
-// dropped.
-func executors(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metrics, log *slog.Logger) map[action.Kind]worker.Executor {
+// submission, run cancellation and review supersede when Kelos is
+// configured, the Vikunja writer with a write token and the GitHub writer
+// with the App. A writer missing leaves its actions queued (deferred),
+// never dropped.
+func executors(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubapp.App, m *metrics.Metrics,
+	log *slog.Logger) map[action.Kind]worker.Executor {
 	out := map[action.Kind]worker.Executor{}
 	if k != nil {
 		out[action.SubmitTask] = &submit.Executor{Runs: s, Kelos: k, Limits: cfg.Kelos.Dispatch.Limits,
 			BusyDelay: cfg.Kelos.BusyDelay, Metrics: m, Log: log.With("executor", string(action.SubmitTask))}
 	}
-	lifecycleExecutors(out, cfg, s, k)
+	lifecycleExecutors(out, cfg, s, k, app)
 	return out
 }
 

@@ -58,6 +58,9 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 	}
 	if pr := f.State.PullRequest; pr != nil {
 		e.prs.prs[fmt.Sprintf("%s#%d", pr.Repository, pr.Number)] = *pr
+		if h := f.State.History; h != nil {
+			e.prs.history[fmt.Sprintf("%s#%d", pr.Repository, pr.Number)] = *h
+		}
 	}
 	seedLedger(t, e, f.Ledger)
 	d, err := f.Build()

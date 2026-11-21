@@ -46,6 +46,7 @@ type githubComment struct {
 	Body     string `json:"body"`
 	HTMLURL  string `json:"html_url"`
 	ReviewID int64  `json:"pull_request_review_id"`
+	CommitID string `json:"commit_id"`
 }
 
 type githubPullRequest struct {
@@ -163,7 +164,7 @@ func request(ev *Event, raw githubBody) error {
 			return fmt.Errorf("%w: review without review or pull_request", ErrMalformed)
 		}
 		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindReview, raw.Review.ID, raw.Review.NodeID, raw.Review.Body
-		gh.CommentURL = raw.Review.HTMLURL
+		gh.CommentURL, gh.ReviewCommitID = raw.Review.HTMLURL, raw.Review.CommitID
 	case GitHubPullRequest:
 		if raw.PullRequest == nil {
 			return fmt.Errorf("%w: pull_request event without pull_request", ErrMalformed)

@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison; nothing on `decisions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source = 'vikunja'` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel`; nothing else (no Secrets, no pods) |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison; nothing on `decisions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source` `vikunja` or `github` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token and the GitHub App's keys | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel` or `pr-review` (superseded reviews); nothing else (no Secrets, no pods) |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -93,7 +93,10 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | empty | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. Without it Vikunja actions stay queued (deferred); outside shadow a Gordon-owned family that writes to Vikunja is refused without it, or with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction` |
 | `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
-| `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`); unset, no link |
+| `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`, on a pull request `<sillage>/open?url=<PR URL>`, only on a private repository); unset, no link |
+| `GORDON_GITHUB_APP_DIR` | empty | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write mints its own installation token, narrowed to the repository and that write's permissions. Without it GitHub actions stay queued (deferred); outside shadow a Gordon-owned `pr-followup` or `pr-review` is refused without it |
+| `GORDON_GITHUB_RECONCILE_INTERVAL` | `0` (off) | pace of the GitHub reconciliation: for each configured repository's open pull requests by a pull-request author, the owner's `/gordon` comments, inline comments and reviews and each review bot's latest review with a body, not handled yet, and those pull requests closed from an agent branch, are queued as synthetic deliveries, each once |
+| `GORDON_GITHUB_RECONCILE_LOOKBACK`, `GORDON_GITHUB_RECONCILE_GRACE` | `24h`, `10m` | its window: submitted, created or closed within the first, and longer ago than the second (the webhook may still be on its way) |
 
 ## Dispatch configuration
 
@@ -218,6 +221,60 @@ possible: `SELECT family, state, count(*) FROM actions WHERE state NOT IN
 ('done', 'failed') GROUP BY 1, 2` empty for the scope's families; `failed`
 actions are dead-lettered (never retried), so review them separately.
 
+## GitHub lifecycle (Gordon 08)
+
+Gordon decides and executes the GitHub lifecycle the reactor, the PR
+follow-up and reviewer init containers and the pollers performed, as
+durable actions on the GitHub families. Its writes act as the GitHub App
+(`GORDON_GITHUB_APP_DIR`); its reads keep the read-only token. The
+routing configuration's `policy` carries the round caps
+(`max_rounds_per_pr`, `suggestions_max_rounds`; `0` for none,
+`values-hollingsworth.yaml`'s `50` and `4` by default).
+
+- **PR follow-ups** (`pr-followup`): an owner request gets 👀 (GraphQL
+  `addReaction`), any request the draft label then, once labelled, the
+  draft conversion (a draft is left alone, label included; a repository
+  without the label gets neither), and once the run is submitted the start
+  notice on the pull request. A review bot's request is stopped before it
+  is submitted once the pull request took `max_rounds_per_pr` bot rounds
+  (bot reviews named by a start notice from a pull-request author, or by a
+  run of the ledger), or, for a suggestions-only review, once
+  `suggestions_max_rounds` other heads had suggestions rounds; the cap
+  notice is posted once per pull request and the suggestions cap removes
+  the fix-suggestions label. A capped request is never drafted. The owner's
+  requests are never capped.
+- **Reviews** (`pr-review`): once a review run is submitted, Gordon's older
+  runs of the same pull request and reviewer are cancelled (a queued
+  submission is never created) and the unfinished review Tasks of that
+  pull request and reviewer created before it are deleted, a legacy
+  spawner's included; a limit restart supersedes nothing. A skipped PR's
+  required checks are posted completed `skipped`, once per head.
+- **Recovery**: with `GORDON_GITHUB_RECONCILE_INTERVAL`, missed owner
+  requests, review-bot findings and merge-closes are queued again (see
+  the variable). Their request keys are the webhooks', so nothing is
+  answered twice.
+- Every write first reads what it changes; a notice is found again by its
+  action marker, or the legacy marker of the same notice, on a comment by
+  a pull-request author (the App's bot or a Workspace token's user), so a
+  lost answer is recovered, never written blind.
+
+### GitHub ownership switches
+
+`go run ./cmd/gordon-inventory` prints the full table (its second
+switches table). When a rule makes Gordon the owner (Gordon 09), the same
+Hollingsworth change turns off, for the rule's project (its repository's
+PRs), what `Off when Gordon owns it` names. Rollback is the Vikunja
+families' (below): the rule back to `shadow` and the switches back on;
+queued actions drain, each Task-name lookup and notice marker preventing
+a duplicate.
+
+| Family | Off when Gordon owns it | Gordon needs |
+|---|---|---|
+| `pr-followup` | the project's `pr-followup-*` and review-poll spawners, the GitHub reactor's 👀, draft label and conversion for its repository, the review poller's repository entry | dispatch config and Task `create`; the App; Tasks without the `pr-task-dedup`, `review-round-cap` and `announce-github-start` init containers; the GitHub reconciliation |
+| `pr-review` | the project's `pr-review-*` spawners and the reactor's skipped checks for its repository | dispatch config and Task `create`; the App; `list` and `delete` on `tasks`; Tasks without the `pr-task-dedup` and `pr-review-supersede` init containers |
+| `pr-open` | the repository's pr-open merge spawner | the Vikunja write token |
+| `merge-close` | the repository's merge-close spawner and its `merge-close-reconcile` entry | the Vikunja write token; the GitHub reconciliation |
+
 ## Probes and metrics
 
 - Liveness `GET /healthz` (200 while the process serves).
@@ -241,14 +298,15 @@ actions are dead-lettered (never retried), so review them separately.
   `gordon_reconcile_last_success_timestamp_seconds`, `gordon_leases_expired_total{queue}`,
   `gordon_bodies_pruned_total`,
   `gordon_vikunja_reconcile_runs_total{result}`, `gordon_vikunja_reconcile_queued_total`,
+  `gordon_github_reconcile_runs_total{result}`, `gordon_github_reconcile_queued_total`,
   plus the Go and process collectors. `gordon_action_attempts_total`'s
-  `kind` includes `assign`, `sync-label` and `cancel-run`.
+  `kind` includes `assign`, `sync-label`, `cancel-run` and `supersede-reviews`.
 
 Suggested alerts: `gordon_queue_oldest_age_seconds{state="pending"}` above
 the retry cap, any `gordon_queue_depth{state="failed"}` or
 `{queue="actions",state="ambiguous"}`, reconciliation not successful for
 several intervals (`gordon_vikunja_reconcile_runs_total{result="error"}`
-too, once it is on), `gordon_intake_requests_total{result="unavailable"}`,
+and `gordon_github_reconcile_runs_total{result="error"}` too, once on), `gordon_intake_requests_total{result="unavailable"}`,
 `gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
 a submission's request: the lookup or the admission list before the
 create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.

@@ -313,11 +313,12 @@ func TestGrantWorkerDispatchRights(t *testing.T) {
 	}
 }
 
-// TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries: the row policy
-// refuses a worker insert of a GitHub delivery or of a Vikunja delivery
-// without the synthetic header; the receiver and the worker's own
-// synthetic deliveries are unaffected.
-func TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries(t *testing.T) {
+// TestGrantWorkerInsertsOnlySyntheticDeliveries: the row policy refuses
+// a worker insert of a delivery without the synthetic header, or of
+// another source than Vikunja and GitHub; the receiver and the worker's
+// own synthetic deliveries (requeues, the Vikunja and GitHub
+// reconciliations) are unaffected.
+func TestGrantWorkerInsertsOnlySyntheticDeliveries(t *testing.T) {
 	owner, dbURL := storetest.Open(t)
 	receiver, worker := role(t, dbURL), role(t, dbURL)
 	if err := owner.Grant(ctx, store.Roles{Receiver: receiver, Worker: worker}); err != nil {
@@ -333,16 +334,25 @@ func TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries(t *testing.T) {
 		t.Fatal(err)
 	}
 	github := syn
-	github.Source, github.DeliveryKey = event.SourceGitHub, "forged-github"
+	github.Source, github.DeliveryKey, github.Headers = event.SourceGitHub, "forged-github", map[string]string{"X-Test": "1"}
 	unmarked := syn
 	unmarked.DeliveryKey, unmarked.Headers = "forged-unmarked", map[string]string{"X-Test": "1"}
-	for name, d := range map[string]store.Delivery{"github": github, "no synthetic header": unmarked} {
+	internal := syn
+	internal.Source, internal.DeliveryKey = event.SourceImageBuild, "forged-image-build"
+	for name, d := range map[string]store.Delivery{"unmarked github": github, "no synthetic header": unmarked,
+		"synthetic image-build": internal} {
 		if _, err := ws.Enqueue(ctx, []store.Delivery{d}); !denied(err) {
 			t.Errorf("worker insert of a %s delivery = %v, want permission denied", name, err)
 		}
 	}
-	if n, err := ws.Enqueue(ctx, []store.Delivery{syn}); err != nil || n != 1 {
-		t.Fatalf("worker synthetic Enqueue = %d, %v; want 1 stored", n, err)
+	ghSyn, err := store.GitHubSynthetic("pull_request", "gordon-reconcile/sperano/vigie/closed/4", map[string]any{
+		"action": "closed", "repository": map[string]any{"full_name": "sperano/vigie"},
+		"pull_request": map[string]any{"number": 4, "merged": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := ws.Enqueue(ctx, []store.Delivery{syn, ghSyn}); err != nil || n != 2 {
+		t.Fatalf("worker synthetic Enqueue = %d, %v; want 2 stored", n, err)
 	}
 	rs, err := store.Open(ctx, storetest.WithUser(t, dbURL, receiver, rolePassword))
 	if err != nil {
@@ -357,7 +367,7 @@ func TestGrantWorkerInsertsOnlySyntheticVikunjaDeliveries(t *testing.T) {
 	}
 }
 
-// forgedDeliveries are a GitHub delivery and a Vikunja one without the
+// forgedDeliveries are a GitHub and a Vikunja delivery without the
 // synthetic header, both of which the worker insert policy refuses.
 func forgedDeliveries(t *testing.T) map[string]store.Delivery {
 	t.Helper()
@@ -366,7 +376,7 @@ func forgedDeliveries(t *testing.T) map[string]store.Delivery {
 		t.Fatal(err)
 	}
 	github := syn
-	github.Source, github.DeliveryKey = event.SourceGitHub, "forged-github"
+	github.Source, github.DeliveryKey, github.Headers = event.SourceGitHub, "forged-github", map[string]string{"X-Test": "1"}
 	unmarked := syn
 	unmarked.DeliveryKey, unmarked.Headers = "forged-unmarked", map[string]string{"X-Test": "1"}
 	return map[string]store.Delivery{"github": github, "no synthetic header": unmarked}

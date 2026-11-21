@@ -99,11 +99,15 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	if err != nil {
 		return err
 	}
+	app, err := newGitHubApp(cfg)
+	if err != nil {
+		return err
+	}
 	// One Vikunja reader for the router and the reconciliation, so the
 	// Vikunja upstream limit bounds their reads together (the lifecycle
 	// writer reads through its own client, under the outbox's limiter).
-	vikunja := vikunjaReader(cfg, m)
-	proc := processor(cfg, s, m, log, projects, vikunja)
+	vikunja, github := vikunjaReader(cfg, m), githubReader(cfg, m)
+	proc := processor(cfg, s, m, log, projects, vikunja, github)
 	g := newGroup(ctx)
 	if err := start(g, log, ServerAdmin, cfg.AdminAddr, adminServer(admin.Handler()), cfg.ShutdownGrace, onListen); err != nil {
 		g.cancel()
@@ -119,7 +123,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		return nil
 	})
 	if !cfg.Shadow {
-		out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, m, log))
+		out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, app, m, log))
 		g.Go(func(ctx context.Context) error {
 			worker.Loop(ctx, store.QueueActions, cfg.ShutdownGrace, cfg.PollInterval, log, out.Tick)
 			return nil
@@ -132,6 +136,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		return nil
 	})
 	startVikunjaReconcile(g, cfg, s, vikunja, m, log)
+	startGitHubReconcile(g, cfg, s, github, m, log)
 	log.Info("worker started", "config", cfg.String())
 	return g.Wait()
 }
@@ -151,16 +156,21 @@ func vikunjaReader(cfg config.Worker, m *metrics.Metrics) upstream.Vikunja {
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: upstreamObserver(m)}}
 }
 
+// githubReader is the GET-only GitHub client of the worker's read-only
+// token, shared by the router and the reconciliation so the GitHub
+// upstream limit bounds their reads together.
+func githubReader(cfg config.Worker, m *metrics.Metrics) upstream.GitHub {
+	return upstream.GitHub{Client: &upstream.Client{Provider: upstream.ProviderGitHub, BaseURL: cfg.GitHubAPIURL,
+		Authorization: "Bearer " + cfg.GitHubToken, Headers: upstream.GitHubHeaders,
+		HTTP:  &http.Client{Timeout: cfg.UpstreamTimeout},
+		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: upstreamObserver(m)}}
+}
+
 func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter,
-	vikunja upstream.Vikunja) *worker.Processor {
-	hc := &http.Client{Timeout: cfg.UpstreamTimeout}
-	observe := upstreamObserver(m)
-	github := &upstream.Client{Provider: upstream.ProviderGitHub, BaseURL: cfg.GitHubAPIURL,
-		Authorization: "Bearer " + cfg.GitHubToken, Headers: upstream.GitHubHeaders, HTTP: hc,
-		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: observe}
+	vikunja upstream.Vikunja, github upstream.GitHub) *worker.Processor {
 	p := &worker.Processor{
 		Store: s, Router: route.Router{Config: cfg.Routing, Ownership: cfg.Ownership},
-		State:  worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: upstream.GitHub{Client: github}},
+		State:  worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: github, History: github},
 		Shadow: cfg.Shadow, Owner: cfg.ID, Concurrency: cfg.Concurrency, LeaseTTL: cfg.LeaseTTL,
 		MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff, Projects: projects,
 		DeferDelay: cfg.DeferDelay, Metrics: m, Log: log,

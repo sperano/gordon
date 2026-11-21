@@ -73,7 +73,8 @@
             "key": "post-skipped-checks:github/sperano/lucarne/pull/8:review/pr-challenger@0123456789abcdef0123456789abcdef01234567",
             "kind": "post-skipped-checks",
             "target": "github/sperano/lucarne/pull/8",
-            "value": "review/pr-challenger@0123456789abcdef0123456789abcdef01234567"
+            "value": "review/pr-challenger@0123456789abcdef0123456789abcdef01234567",
+            "detail": "author:renovate[bot]"
           }
         ]
       }

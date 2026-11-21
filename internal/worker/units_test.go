@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -148,6 +149,11 @@ func (r *recordingPRs) PullRequest(_ context.Context, repo string, n int, files 
 	return event.PullRequest{Repository: repo, Number: n}, nil
 }
 
+func (r *recordingPRs) History(_ context.Context, repo string, _ int) ([]event.Review, []event.IssueComment, error) {
+	r.reads = append(r.reads, repo+"+history")
+	return nil, nil, nil
+}
+
 func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 	cfg := profile.Defaults()
 	repo, p := cfg.Projects[0].Repository, cfg.Policy
@@ -187,8 +193,9 @@ func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 		{"edited PR request", onPR(event.GitHubIssueComment, "edited", p.GitHubOwner, request), nil, nil, nil},
 		{"owner PR comment that is no request", onPR(event.GitHubIssueComment, "created", p.GitHubOwner, "lgtm"), nil, nil, nil},
 		{"other's PR request", onPR(event.GitHubIssueComment, "created", "mallory", request), nil, nil, nil},
-		{"review bot review", onPR(event.GitHubReview, "submitted", bot, "findings"), nil, nil, []string{repo}},
-		{"review bot review, request handled", onPR(event.GitHubReview, "submitted", bot, "findings"), handled, nil, []string{repo}},
+		{"review bot review", onPR(event.GitHubReview, "submitted", bot, "findings"), nil, nil, []string{repo, repo + "+history"}},
+		{"review bot review, request handled", onPR(event.GitHubReview, "submitted", bot, "findings"), handled, nil,
+			[]string{repo, repo + "+history"}},
 		{"other's review", onPR(event.GitHubReview, "submitted", "mallory", "findings"), nil, nil, nil},
 		{"issue comment", event.Event{Kind: event.GitHubIssueComment, Action: "created", Actor: p.GitHubOwner,
 			GitHub: &event.GitHub{Repository: repo, Body: request, PullRequest: event.PullRequest{Number: 3}}}, nil, nil, nil},
@@ -209,14 +216,15 @@ func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 			if led == nil {
 				led = replay.Ledger{}
 			}
-			st, err := StateReader{Config: cfg, Tasks: tasks, PRs: prs}.Read(context.Background(), tc.ev, led)
+			st, err := StateReader{Config: cfg, Tasks: tasks, PRs: prs, History: prs}.Read(context.Background(), tc.ev, led)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(tasks.ids, tc.tasks) || !reflect.DeepEqual(prs.reads, tc.prs) {
 				t.Fatalf("read tasks %v PRs %v, want %v %v", tasks.ids, prs.reads, tc.tasks, tc.prs)
 			}
-			if (st.Task != nil) != (len(tc.tasks) > 0) || (st.PullRequest != nil) != (len(tc.prs) > 0) {
+			history := slices.Contains(tc.prs, repo+"+history")
+			if (st.Task != nil) != (len(tc.tasks) > 0) || (st.PullRequest != nil) != (len(tc.prs) > 0) || (st.History != nil) != history {
 				t.Fatalf("state %+v does not hold what was read", st)
 			}
 		})
@@ -234,5 +242,35 @@ func TestNeedsRetry(t *testing.T) {
 	}
 	if needsRetry(route.Decision{Outcome: route.Dispatch, Families: []route.FamilyDecision{{Outcome: route.Dispatch}}}) {
 		t.Fatal("dispatch retried")
+	}
+}
+
+type failingHistory struct{ err error }
+
+func (f failingHistory) History(context.Context, string, int) ([]event.Review, []event.IssueComment, error) {
+	return nil, nil, f.err
+}
+
+// TestStateReaderHistoryFailures: a bot review's history that cannot be
+// read leaves it unread, the pull request still read, and the error
+// returned, so the router retries instead of counting no rounds.
+func TestStateReaderHistoryFailures(t *testing.T) {
+	cfg := profile.Defaults()
+	repo, bot := cfg.Projects[0].Repository, cfg.Policy.ReviewBots[0].Login
+	ev := event.Event{Kind: event.GitHubReview, Action: "submitted", Actor: bot, RequestKey: "github/req/1",
+		GitHub: &event.GitHub{Repository: repo, OnPullRequest: true, Body: "x", PullRequest: event.PullRequest{Number: 3}}}
+	down := errors.New("github down")
+	for name, h := range map[string]HistoryReader{"no reader": nil, "failing reader": failingHistory{down}} {
+		st, err := StateReader{Config: cfg, Tasks: &recordingTasks{}, PRs: &recordingPRs{}, History: h}.Read(context.Background(), ev, replay.Ledger{})
+		if st.History != nil || st.PullRequest == nil {
+			t.Errorf("%s: state %+v, want the PR without its history", name, st)
+		}
+		want := errNoHistory
+		if h != nil {
+			want = down
+		}
+		if !errors.Is(err, want) {
+			t.Errorf("%s: error %v, want %v", name, err, want)
+		}
 	}
 }

@@ -89,7 +89,8 @@ func TestPRCommentGates(t *testing.T) {
 	draft := openPR()
 	draft.Draft = true
 	fd := family(t, r.Decide(body(), route.State{PullRequest: draft}, replay.Ledger{}))
-	want := []string{"submit-task:kelos/kelos-agents/pr-followup-vigie-4-c77", "react:github/sperano/vigie/c/77:eyes"}
+	want := []string{"submit-task:kelos/kelos-agents/pr-followup-vigie-4-c77", "react:github/sperano/vigie/c/77:eyes",
+		"post-notice:github/sperano/vigie/pull/4:start:pr-followup-vigie-4-c77"}
 	if got := keys(fd.Actions); !slices.Equal(got, want) {
 		t.Errorf("draft PR actions %v, want %v", got, want)
 	}
@@ -98,14 +99,14 @@ func TestPRCommentGates(t *testing.T) {
 func TestBotSuggestionsNeedOptIn(t *testing.T) {
 	r := router()
 	d := r.Decide(ghDelivery(t, "pull_request_review", review("gordon-cole-ai[bot]", "**Review verdict: suggestions** (review/x)")),
-		route.State{PullRequest: openPR("kelos:fix-suggestions")}, replay.Ledger{})
+		route.State{PullRequest: openPR("kelos:fix-suggestions"), History: &route.PRHistory{}}, replay.Ledger{})
 	fd := family(t, d)
 	expectFamily(t, fd, run.PRFollowUp, route.Dispatch, "")
 	if fd.Runs[0].Name != "pr-followup-vigie-4-r88" || fd.Runs[0].Profile.Variant != "claude-opus" {
 		t.Errorf("run %s variant %s", fd.Runs[0].Name, fd.Runs[0].Profile.Variant)
 	}
 	cubic := r.Decide(ghDelivery(t, "pull_request_review", review("cubic-dev-ai[bot]", "**3 issues found** across 2 files")),
-		route.State{PullRequest: openPR()}, replay.Ledger{})
+		route.State{PullRequest: openPR(), History: &route.PRHistory{}}, replay.Ledger{})
 	expectFamily(t, family(t, cubic), run.PRFollowUp, route.Dispatch, "")
 	suggestions := review("gordon-cole-ai[bot]", "**Review verdict: suggestions** (review/x)")
 	unknown := r.Decide(ghDelivery(t, "pull_request_review", suggestions), route.State{}, replay.Ledger{})
@@ -198,7 +199,8 @@ func TestOwnerReactionTargetsNodeID(t *testing.T) {
 	delete(noNode["comment"].(map[string]any), "node_id")
 	fd = family(t, r.Decide(ghDelivery(t, "issue_comment", noNode), st, replay.Ledger{}))
 	want := []string{"submit-task:kelos/kelos-agents/pr-followup-vigie-4-c77",
-		"add-label:github/sperano/vigie/pull/4:kelos:follow-up", "convert-to-draft:github/sperano/vigie/pull/4"}
+		"add-label:github/sperano/vigie/pull/4:kelos:follow-up", "convert-to-draft:github/sperano/vigie/pull/4",
+		"post-notice:github/sperano/vigie/pull/4:start:pr-followup-vigie-4-c77"}
 	if got := keys(fd.Actions); !slices.Equal(got, want) {
 		t.Errorf("no node id actions %v, want %v", got, want)
 	}
