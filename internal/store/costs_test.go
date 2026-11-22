@@ -417,7 +417,8 @@ func TestCostDueOrder(t *testing.T) {
 	if id2 <= id {
 		t.Fatalf("inbox ids %d, %d; want ascending", id, id2)
 	}
-	newer := costRun(id, "vikunja-n")
+	// The newer run's name sorts first, so only finish order puts it last.
+	newer := costRun(id, "vikunja-0")
 	newer.Finished = costNow.Add(-30 * time.Minute)
 	recordedOrder := []store.CostRun{newer, costRun(id2, "vikunja-b"), costRun(id, "vikunja-b"), costRun(id, "vikunja-a")}
 	for _, c := range recordedOrder {
@@ -429,7 +430,7 @@ func TestCostDueOrder(t *testing.T) {
 		name string
 		id   int64
 	}
-	want := []key{{"vikunja-a", id}, {"vikunja-b", id}, {"vikunja-b", id2}, {"vikunja-n", id}}
+	want := []key{{"vikunja-a", id}, {"vikunja-b", id}, {"vikunja-b", id2}, {"vikunja-0", id}}
 	due := costDue(t, s, costNow)
 	got := make([]key, 0, len(due))
 	for _, n := range due {
