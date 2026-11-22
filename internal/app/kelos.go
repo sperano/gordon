@@ -40,13 +40,13 @@ func newKelos(cfg config.Worker, m *metrics.Metrics) (*kelos.Client, error) {
 // with the App. A writer missing leaves its actions queued (deferred),
 // never dropped.
 func executors(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubapp.App, m *metrics.Metrics,
-	log *slog.Logger) map[action.Kind]worker.Executor {
+	log *slog.Logger, autoAssignUsers map[int64]int64) map[action.Kind]worker.Executor {
 	out := map[action.Kind]worker.Executor{}
 	if k != nil {
 		out[action.SubmitTask] = &submit.Executor{Runs: s, Kelos: k, Limits: cfg.Kelos.Dispatch.Limits,
 			BusyDelay: cfg.Kelos.BusyDelay, Metrics: m, Log: log.With("executor", string(action.SubmitTask))}
 	}
-	lifecycleExecutors(out, cfg, s, k, app)
+	lifecycleExecutors(out, cfg, s, k, app, autoAssignUsers)
 	return out
 }
 

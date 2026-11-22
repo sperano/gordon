@@ -11,6 +11,7 @@ import (
 
 // Vikunja event names, as in the delivery's event_name.
 const (
+	vikunjaTaskCreated    = "task.created"
 	vikunjaTaskUpdated    = "task.updated"
 	vikunjaCommentCreated = "task.comment.created"
 )
@@ -72,7 +73,7 @@ func ParseVikunja(body []byte) (Event, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return Event{}, fmt.Errorf("%w: %v", ErrMalformed, err)
 	}
-	if raw.EventName != vikunjaTaskUpdated && raw.EventName != vikunjaCommentCreated {
+	if raw.EventName != vikunjaTaskCreated && raw.EventName != vikunjaTaskUpdated && raw.EventName != vikunjaCommentCreated {
 		return Event{}, fmt.Errorf("%w: vikunja %q", ErrUnsupported, raw.EventName)
 	}
 	var data vikunjaData
@@ -96,7 +97,17 @@ func ParseVikunja(body []byte) (Event, error) {
 	if raw.EventName == vikunjaTaskUpdated {
 		return taskUpdated(ev, raw.Data)
 	}
+	if raw.EventName == vikunjaTaskCreated {
+		return taskCreated(ev), nil
+	}
 	return commentCreated(ev, data)
+}
+
+func taskCreated(ev Event) Event {
+	ev.Kind = VikunjaTaskCreated
+	ev.DeliveryKey = fmt.Sprintf("vikunja/task.created/%d", ev.Vikunja.Task.ID)
+	ev.RequestKey = ev.DeliveryKey
+	return ev
 }
 
 func vikunjaTask(data vikunjaData) Task {

@@ -20,6 +20,9 @@ type Reads struct {
 	// Chain reads, once the task is read and ChainTask holds for it, its
 	// subtasks and its comments.
 	Chain bool
+	// Parents reads a created task's parents to avoid pre-assigning a
+	// chain subtask before the chain hands it off.
+	Parents bool
 	// History reads a pull request's reviews and conversation comments,
 	// which the review-round caps count (a review bot's request only).
 	History bool
@@ -47,6 +50,10 @@ func (r Router) ChainTask(t event.Task) bool {
 func (r Router) Reads(ev event.Event) Reads {
 	p := r.Config.Policy
 	switch ev.Kind {
+	case event.VikunjaTaskCreated:
+		if p, ok := r.Config.Project(ev.Vikunja.Task.ProjectID); ok && p.AutoAssignVariant != "" {
+			return Reads{Task: ev.Vikunja.Task.ID, Parents: true}
+		}
 	case event.VikunjaTaskUpdated:
 		if _, ok := r.Config.Project(ev.Vikunja.Task.ProjectID); ok {
 			return Reads{Task: ev.Vikunja.Task.ID, Chain: true}

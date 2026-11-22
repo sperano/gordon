@@ -80,7 +80,7 @@ func TestExecutorsRouteGitHubKindsToTheApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := map[action.Kind]worker.Executor{}
-	lifecycleExecutors(out, cfg, nil, &kelos.Client{}, app)
+	lifecycleExecutors(out, cfg, nil, &kelos.Client{}, app, nil)
 	both := []string{upstream.ProviderGitHub, upstream.ProviderVikunja}
 	for kind, want := range map[action.Kind][]string{
 		action.React: both, action.AddLabel: both, action.RemoveLabel: both, action.PostNotice: both,
@@ -97,7 +97,7 @@ func TestExecutorsRouteGitHubKindsToTheApp(t *testing.T) {
 	// Without the App the GitHub kinds stay queued; without Kelos there is
 	// no supersede.
 	out = map[action.Kind]worker.Executor{}
-	lifecycleExecutors(out, cfg, nil, nil, nil)
+	lifecycleExecutors(out, cfg, nil, nil, nil, nil)
 	if _, ok := out[action.ConvertDraft]; ok {
 		t.Error("a draft executor without the App")
 	}
@@ -151,7 +151,7 @@ func TestWritersGetTheirReaders(t *testing.T) {
 	k := &kelos.Client{BaseURL: srv.URL, Namespace: route.KelosNamespace, HTTP: srv.Client()}
 	gh := githubExecutor(cfg, nil, k, app)
 	checkReaders(t, "GitHub writer", gh.Messages, gh.Limits, gh.MaxRestarts)
-	vk := vikunjaExecutor(cfg, nil, k)
+	vk := vikunjaExecutor(cfg, nil, k, nil)
 	checkReaders(t, "Vikunja writer", vk.Messages, vk.Limits, vk.MaxRestarts)
 	if ex := githubExecutor(cfg, nil, nil, app); ex.Messages != nil || ex.Limits != nil {
 		t.Error("GitHub writer reads Tasks without Kelos")

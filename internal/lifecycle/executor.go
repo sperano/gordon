@@ -43,11 +43,13 @@ type Executor struct {
 	W      *Writer
 	Policy profile.Policy
 	// Agents are the agent variants' Vikunja users.
-	Agents   []string
-	Runs     Runs
-	Lock     Locker
-	Links    Links
-	Messages TaskMessages
+	Agents []string
+	// AutoAssignUsers caches each opted-in project's configured user's id.
+	AutoAssignUsers map[int64]int64
+	Runs            Runs
+	Lock            Locker
+	Links           Links
+	Messages        TaskMessages
 	// Limits reads a stopped Task's limit for its restart notices;
 	// MaxRestarts is the restarts a chain may take, which they name.
 	Limits      TaskLimits
@@ -99,6 +101,8 @@ func (e *Executor) handler(k action.Kind) (handler, bool) {
 		return handler{e.moveApplied, e.move}, true
 	case action.Assign:
 		return handler{e.assignApplied, e.assign}, true
+	case action.AssignIfUnassigned:
+		return handler{e.assignIfUnassignedApplied, e.assignIfUnassigned}, true
 	case action.SyncLabel:
 		return handler{e.syncApplied, e.sync}, true
 	case action.React:

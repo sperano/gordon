@@ -33,6 +33,7 @@ const (
 type Kind string
 
 const (
+	VikunjaTaskCreated        Kind = "vikunja/task.created"
 	VikunjaTaskUpdated        Kind = "vikunja/task.updated"
 	VikunjaTaskCommentCreated Kind = "vikunja/task.comment.created"
 	GitHubIssueComment        Kind = "github/issue_comment"

@@ -22,7 +22,7 @@ import (
 
 // vikunjaKinds are the action kinds the Vikunja writer performs.
 var vikunjaKinds = []action.Kind{action.React, action.AddLabel, action.RemoveLabel, action.MoveBucket,
-	action.MarkDone, action.PostNotice, action.Assign, action.SyncLabel, action.Notify}
+	action.MarkDone, action.PostNotice, action.Assign, action.AssignIfUnassigned, action.SyncLabel, action.Notify}
 
 // agentUsers are the routing configuration's agent variants, sorted.
 func agentUsers(cfg config.Worker) []string {
@@ -40,7 +40,7 @@ func agentUsers(cfg config.Worker) []string {
 // the target's provider: a provider without its writer defers the
 // action, which stays queued.
 func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, s *store.Store, k *kelos.Client,
-	app *githubapp.App) {
+	app *githubapp.App, autoAssignUsers map[int64]int64) {
 	if k != nil {
 		out[action.CancelRun] = &submit.Canceller{Store: s, Kelos: k}
 		out[action.SupersedeReviews] = &submit.Superseder{Store: s, Kelos: k}
@@ -54,7 +54,7 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 			providers[kind][provider] = ex
 		}
 	}
-	vex := vikunjaExecutor(cfg, s, k)
+	vex := vikunjaExecutor(cfg, s, k, autoAssignUsers)
 	if vex != nil {
 		register(upstream.ProviderVikunja, vex, vikunjaKinds)
 	}
@@ -72,14 +72,15 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 
 // vikunjaExecutor is the Vikunja writer's executor, nil without a write
 // token.
-func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client) *lifecycle.Executor {
+func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client, autoAssignUsers map[int64]int64) *lifecycle.Executor {
 	l := cfg.Lifecycle
 	if l.WriteToken == "" {
 		return nil
 	}
 	ex := &lifecycle.Executor{
 		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + l.WriteToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
-		Policy: cfg.Routing.Policy, Agents: agentUsers(cfg), Runs: s, Lock: s, Namespace: route.KelosNamespace,
+		Policy: cfg.Routing.Policy, Agents: agentUsers(cfg), AutoAssignUsers: autoAssignUsers,
+		Runs: s, Lock: s, Namespace: route.KelosNamespace,
 		MaxRestarts: cfg.Restart.Max, Ntfy: ntfy(cfg),
 		Links: lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
 			Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL},
@@ -88,6 +89,29 @@ func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client) *lifecy
 		ex.Messages, ex.Limits = taskMessages(k), taskLimits(k)
 	}
 	return ex
+}
+
+func resolveAutoAssignUsers(ctx context.Context, cfg config.Worker) (map[int64]int64, error) {
+	out := map[int64]int64{}
+	if cfg.Lifecycle.WriteToken == "" {
+		return out, nil
+	}
+	w := &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + cfg.Lifecycle.WriteToken,
+		HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}}
+	for _, project := range cfg.Routing.Projects {
+		if project.AutoAssignVariant == "" {
+			continue
+		}
+		id, ok, err := w.ProjectUser(ctx, project.VikunjaID, project.AutoAssignVariant)
+		if err != nil {
+			return nil, fmt.Errorf("resolve auto-assign user for project %s: %w", project.Name, err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("auto-assign user %q has no access to project %s", project.AutoAssignVariant, project.Name)
+		}
+		out[project.VikunjaID] = id
+	}
+	return out, nil
 }
 
 // taskLimits reads the limit that stopped a Task for its restart notices:

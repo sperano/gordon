@@ -99,6 +99,10 @@ type State struct {
 	// chain label (Reads.Chain).
 	Subtasks []event.Task        `json:"subtasks,omitempty"`
 	Comments []event.TaskComment `json:"comments,omitempty"`
+	// Parents are a created task's fresh parents; ParentsRead distinguishes
+	// no parents from a failed read.
+	Parents     []event.Task `json:"parents,omitempty"`
+	ParentsRead bool         `json:"parents_read,omitempty"`
 	// History is a pull request's fresh reviews and conversation
 	// comments, read only for a review bot's request while a round cap is
 	// configured (Reads.History): the cap counts the rounds from them.

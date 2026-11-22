@@ -52,6 +52,30 @@ func TestStateReaderReadsAChainsSubtasks(t *testing.T) {
 	}
 }
 
+func TestStateReaderReadsCreatedTaskParents(t *testing.T) {
+	cfg := profile.Defaults()
+	project := cfg.Projects[0]
+	created := event.Event{Kind: event.VikunjaTaskCreated,
+		Vikunja: &event.Vikunja{Task: event.Task{ID: 1, ProjectID: project.VikunjaID}}}
+	parent := event.Task{ID: 2, Labels: []string{cfg.Policy.ChainLabel}}
+	tasks := &fakeTasks{tasks: map[int64]event.Task{
+		1: {ID: 1, ProjectID: project.VikunjaID, Relations: event.Relations{Parents: []event.Related{{ID: 2}}}},
+		2: parent,
+	}}
+	sr := StateReader{Config: cfg, Tasks: tasks}
+	st, err := sr.Read(context.Background(), created, replay.Ledger{})
+	if err != nil || !st.ParentsRead || len(st.Parents) != 1 || st.Parents[0].ID != parent.ID ||
+		!st.Parents[0].HasLabel(cfg.Policy.ChainLabel) {
+		t.Fatalf("parent state %+v (%v)", st, err)
+	}
+	delete(tasks.tasks, parent.ID)
+	st, err = sr.Read(context.Background(), created, replay.Ledger{})
+	var upstreamError *upstream.Error
+	if err == nil || !errors.As(err, &upstreamError) || upstreamError.Class != upstream.NotFound || st.ParentsRead {
+		t.Fatalf("failed parent read: state %+v, err %v", st, err)
+	}
+}
+
 // barrierTasks answers a subtask read only once want reads are in flight
 // together, and records the most it saw at once.
 type barrierTasks struct {

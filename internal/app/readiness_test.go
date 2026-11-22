@@ -28,7 +28,7 @@ func TestReadinessKindsAreRouted(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := map[action.Kind]worker.Executor{}
-	lifecycleExecutors(out, cfg, nil, nil, app)
+	lifecycleExecutors(out, cfg, nil, nil, app, nil)
 	if got := providers(t, out[action.Notify]); !slices.Equal(got, []string{upstream.ProviderVikunja}) {
 		t.Errorf("notify writes to %v", got)
 	}
@@ -47,7 +47,7 @@ func TestReadinessKindsAreRouted(t *testing.T) {
 	// through: the field stays a nil interface, not a typed nil.
 	cfg.Lifecycle.WriteToken = ""
 	out = map[action.Kind]worker.Executor{}
-	lifecycleExecutors(out, cfg, nil, nil, app)
+	lifecycleExecutors(out, cfg, nil, nil, app, nil)
 	gh = out[action.MergePullRequest].(worker.ByProvider).Executors[upstream.ProviderGitHub].(*ghlife.Executor)
 	if gh.Vikunja != nil {
 		t.Errorf("Vikunja %v without a writer", gh.Vikunja)

@@ -122,6 +122,42 @@ func (e *Executor) assign(ctx context.Context, a action.Action) error {
 	return e.W.Assign(ctx, id, user)
 }
 
+func (e *Executor) assignIfUnassignedApplied(ctx context.Context, a action.Action) (bool, error) {
+	id, err := taskTarget(a)
+	if err != nil {
+		return false, err
+	}
+	project, err := strconv.ParseInt(a.Detail, 10, 64)
+	if err != nil || project <= 0 {
+		return false, worker.Permanent(fmt.Errorf("assign-if-unassigned project %q", a.Detail))
+	}
+	t, err := e.W.Task(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	return !e.autoAssignable(t, project), nil
+}
+
+func (e *Executor) autoAssignable(t Task, project int64) bool {
+	p := e.Policy
+	return t.ProjectID == project && len(t.Assignees) == 0 &&
+		!hasLabel(t, p.NoAgentLabel) && !hasLabel(t, p.ChainLabel) && !hasLabel(t, p.DiscussLabel)
+}
+
+func (e *Executor) assignIfUnassigned(ctx context.Context, a action.Action) error {
+	id, _ := taskTarget(a)
+	project, _ := strconv.ParseInt(a.Detail, 10, 64)
+	t, err := e.W.Task(ctx, id)
+	if err != nil || !e.autoAssignable(t, project) {
+		return err
+	}
+	user, ok := e.AutoAssignUsers[project]
+	if !ok {
+		return worker.Permanent(fmt.Errorf("no cached auto-assign user for project %d", project))
+	}
+	return e.W.Assign(ctx, id, user)
+}
+
 // syncPlan is what makes the target carry exactly the source's label of
 // the title created by the trusted creator (subtask_chain.sync_label):
 // the ids to remove and the id to add (0 for none).

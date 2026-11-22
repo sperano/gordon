@@ -290,6 +290,45 @@ func TestAssign(t *testing.T) {
 	}
 }
 
+func TestAssignIfUnassigned(t *testing.T) {
+	f := newFake(t)
+	f.board()
+	ex := executor(f, nil)
+	a := action.New(action.AssignIfUnassigned, action.VikunjaTask(5), "claude-opus")
+	a.Detail = "3"
+	f.put(Task{ID: 5, ProjectID: 3})
+	if applied, err := ex.Recover(ctx, a); err != nil || applied {
+		t.Fatalf("recover unassigned task: applied %v, err %v", applied, err)
+	}
+	if err := ex.Execute(ctx, a); err != nil || len(f.get(5).Assignees) != 1 || f.get(5).Assignees[0].Username != "claude-opus" {
+		t.Fatalf("assign-if-unassigned: %v, %+v", err, f.get(5).Assignees)
+	}
+	if applied, err := ex.Recover(ctx, a); err != nil || !applied {
+		t.Fatalf("recover assigned task: applied %v, err %v", applied, err)
+	}
+	for _, tc := range []struct {
+		name string
+		task Task
+	}{
+		{name: "assigned to another user", task: Task{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}}},
+		{name: "moved to another project", task: Task{ID: 5, ProjectID: 4}},
+		{name: "no-agent label", task: Task{ID: 5, ProjectID: 3, Labels: []Label{{Title: "no-agent"}}}},
+		{name: "chain label", task: Task{ID: 5, ProjectID: 3, Labels: []Label{{Title: "chain"}}}},
+		{name: "discuss label", task: Task{ID: 5, ProjectID: 3, Labels: []Label{{Title: "discuss"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f.put(tc.task)
+			before := len(f.writes)
+			if applied, err := ex.Recover(ctx, a); err != nil || !applied || len(f.writes) != before {
+				t.Fatalf("recover: applied %v, err %v, writes %d, want %d", applied, err, len(f.writes), before)
+			}
+			if err := ex.Execute(ctx, a); err != nil || len(f.writes) != before {
+				t.Fatalf("execute: err %v, writes %d, want %d", err, len(f.writes), before)
+			}
+		})
+	}
+}
+
 // TestSyncLabelKeepsProvenance: the subtask gets exactly the parent's
 // auto-merge label made by the trusted creator, and loses a lookalike.
 func TestSyncLabelKeepsProvenance(t *testing.T) {
