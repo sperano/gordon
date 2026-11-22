@@ -45,6 +45,10 @@ const (
 	// Value (auto_merge.py); Detail is the Vikunja task a refusal is
 	// reported on.
 	MergePullRequest Kind = "merge-pull-request"
+	// PublishCost posts, or edits in place, the completion cost notice of
+	// the run Value on the target Vikunja task with the text Gordon
+	// stored for its generation; Detail is "<generation>:<revision>".
+	PublishCost Kind = "publish-cost"
 )
 
 // Target is the object an action writes to.
@@ -118,5 +122,16 @@ func Notice(target Target, kind, detail string) Action {
 		a.Key += ":" + detail
 		a.Detail = detail
 	}
+	return a
+}
+
+// CostNotice is the publish-cost action of revision rev of the cost
+// notice of run name's generation (its inbox row): every revision is
+// its own action, so a later one is queued while an earlier one is
+// still pending.
+func CostNotice(task int64, name string, generation int64, rev int) Action {
+	a := New(PublishCost, VikunjaTask(task), name)
+	a.Detail = fmt.Sprintf("%d:%d", generation, rev)
+	a.Key += ":" + a.Detail
 	return a
 }

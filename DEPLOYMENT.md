@@ -100,6 +100,9 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_CONFLICT_RECONCILE_INTERVAL` | `0` (off) | pace of the conflict reconciliation: for each Workspace of a project whose `pr-conflict` is not legacy's, the repository's open agent PRs based on the Workspace's ref (`base_ref` of its first project, `main` by default) or stacked on another such PR are read one by one, and each GitHub reports in conflict (mergeable `false`, `dirty`) whose episode has no run left is queued, once an hour. Push and `pull_request` events start no scan: this interval is the detection delay. One read-only GitHub read per candidate PR and pass |
 | `GORDON_LIMIT_RESTART_MAX` | `3` | restarts of one chain after a subscription limit; then the gave-up notice |
 | `GORDON_LIMIT_RESTART_GRACE`, `GORDON_LIMIT_RESTART_FALLBACK` | `2m`, `1h` | a limit stop restarts this long after its reset; without a known reset time, the fallback after its Task's completion |
+| `GORDON_SILLAGE_API_URL` | empty (off) | Sillage's read API, reached in the cluster (`http://sillage.sillage.svc`, not the public host behind forward-auth): the completion cost notices read `GET /api/v1/cost/task/<Vikunja host>/<task id>` (sperano/sillage#57 or later). Unset, the cost notice pass is off; outside shadow a Gordon-owned `vikunja-cost` is refused without it |
+| `GORDON_COST_WAIT`, `GORDON_COST_DEADLINE` | `2m`, `6h` | a finished run's notice is checked every `WAIT` until Sillage's estimate of the run is final; `DEADLINE` after the run finished, it is posted with what Sillage has, marked not final. `WAIT` must be below `DEADLINE` |
+| `GORDON_COST_REFRESH`, `GORDON_COST_LIVE_FOR` | `15m`, `336h` | a task's newest notice is re-read every `REFRESH` and edited in place when its figures change, until `LIVE_FOR` after its last revision |
 | `GORDON_READINESS_RECONCILE_INTERVAL` | `0` (off) | pace of the readiness backstop: every open readiness candidate (an allowed author's non-draft PR from a `kelos/vikunja-<id>` branch of the repository) of each repository whose PR project's `pr-readiness` is not legacy's is queued as a synthetic `pull_request` (action `gordon-readiness`), once per head and interval. It replaces the legacy cron scan and the event waiter's polling (`eventWaitSeconds`, `pollSeconds`): `1m` keeps the legacy latency. Required, with the App and the dispatch config, by a non-legacy `pr-readiness` rule |
 | `GORDON_NTFY_URL`, `GORDON_NTFY_TOPIC`, `GORDON_NTFY_TOKEN_FILE` | empty | the private ntfy publisher of a ready head (`prReadiness.notify`): an HTTPS base URL (refused otherwise), the topic and its bearer token. Outside shadow a Gordon-owned `pr-readiness` is refused without them while `policy.readiness.notify` is on |
 
@@ -371,6 +374,60 @@ repository, a repository without an entry is refused; `cubic_repos`,
   tries again; a rate limit or 5xx is retried; an ambiguous merge is
   recovered by reading the PR.
 
+## Completion cost notices (Gordon 12)
+
+Each finished run of a Vikunja task (implementation, discuss and
+follow-up runs, failed and limit-stopped ones included, each generation
+once) gets a cost notice on its task where Gordon owns `vikunja-cost`:
+the run's estimated API-equivalent cost, the task's total to date (with
+how many runs it covers), the run's categories, the run's and task's
+coverage (`complete`, `partial` shown AT LEAST, `unknown` shown UNKNOWN,
+never $0, with Sillage's notes), the price table's version and date, the
+assumption codes, and the Lucarne run and Sillage `#cost` links, with a
+`<!-- kelos:cost task=<name> -->` marker. A review's, PR fix's or
+conflict fix's cost is in the task total. There is no legacy component
+to turn off.
+
+- **When**: once Sillage reports the run (by its Task uid) `final`;
+  without that by `GORDON_COST_DEADLINE`, posted marked not final.
+  Sillage unanswered (transport error, 5xx, an answer that does not match
+  the contract) is a retry with the worker's backoff, never a zero
+  estimate (`gordon_cost_notice_checks_total{result="unavailable"}` or
+  `"incompatible"`); a task Sillage has no story of yet (404) waits.
+- **Once**: the row (`cost_notices`, one per run generation) and each
+  revision's text are stored in the transaction that queues its
+  `publish-cost` action. The action writes the latest stored revision,
+  under the task's lock, as an edit of the comment that carries the
+  generation's `<!-- gordon:cost run=<name> gen=<inbox id> rev=<n> -->`
+  marker (on a comment by Gordon's own user) or as a new comment. An
+  ambiguous post or edit is recovered by finding that marker at the
+  revision or a later one.
+- **Updates**: the task's newest notice stays live: when its figures
+  change (late usage, a review or fix, a price-table change) it is edited
+  in place, never posted again; posting a newer run's notice freezes the
+  older one. A notice unchanged for `GORDON_COST_LIVE_FOR` settles.
+- **Rollback**: remove the rule. No new notice is recorded, and the
+  project's waiting and live notices read and write nothing more
+  (`result="not-owned"`); revisions already queued drain, each found by
+  its marker first.
+
+Hollingsworth (Gordon 13 deploys it):
+
+- Pin the Gordon image built from this change and Sillage at
+  sperano/sillage#57's merge or later, with its usage feed on
+  (`SILLAGE_LOKI_URL`, `SILLAGE_USAGE_SINCE`; see that change's
+  requirements): without it every estimate is `unknown`.
+- `helm/gordon` worker env: `GORDON_SILLAGE_API_URL:
+  http://sillage.sillage.svc`; `GORDON_SILLAGE_URL` stays the public
+  `https://sillage.spe.quebec` for the links.
+- `helm/gordon/templates/networkpolicy-egress.yaml`: the worker's egress
+  to the `sillage` namespace's Sillage pods on their container port
+  (`8080`; kube-router matches after the Service's DNAT). The `sillage`
+  namespace has no ingress policy.
+- The ownership file: a `vikunja-cost` rule per project (or `*`) with
+  its gate evidence; the migration (`0005_cost_notices.sql`) and its
+  grants run with `gordon migrate` before the worker starts.
+
 ### GitHub ownership switches
 
 `go run ./cmd/gordon-inventory` prints the full table (its second
@@ -418,8 +475,10 @@ a duplicate.
   `gordon_conflict_reconcile_runs_total{result}`, `gordon_conflict_reconcile_queued_total`,
   `gordon_readiness_reconcile_runs_total{result}`, `gordon_readiness_reconcile_queued_total`,
   `gordon_limit_restart_decisions_total{result}` (`restarted`, `superseded`, `gave-up`, `name-too-long`, `none`),
+  `gordon_cost_notice_checks_total{result}` (`published`, `updated`, `unchanged`, `waiting`, `settled`,
+  `unavailable`, `incompatible`, `raced`, `not-owned`),
   plus the Go and process collectors. `gordon_action_attempts_total`'s
-  `kind` includes `assign`, `sync-label`, `cancel-run`, `supersede-reviews`, `notify` and `merge-pull-request`.
+  `kind` includes `assign`, `sync-label`, `cancel-run`, `supersede-reviews`, `notify`, `merge-pull-request` and `publish-cost`.
 
 Suggested alerts: `gordon_queue_oldest_age_seconds{state="pending"}` above
 the retry cap, any `gordon_queue_depth{state="failed"}` or
@@ -427,7 +486,8 @@ the retry cap, any `gordon_queue_depth{state="failed"}` or
 several intervals (`gordon_vikunja_reconcile_runs_total{result="error"}`,
 `gordon_github_reconcile_runs_total{result="error"}`,
 `gordon_conflict_reconcile_runs_total{result="error"}` and
-`gordon_readiness_reconcile_runs_total{result="error"}` too, once on), `gordon_limit_restart_decisions_total{result="gave-up"}`, `gordon_intake_requests_total{result="unavailable"}`,
+`gordon_readiness_reconcile_runs_total{result="error"}` too, once on), `gordon_limit_restart_decisions_total{result="gave-up"}`,
+`gordon_cost_notice_checks_total{result=~"unavailable|incompatible"}` rising for an hour, `gordon_intake_requests_total{result="unavailable"}`,
 `gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
 a submission's request: the lookup or the admission list before the
 create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.

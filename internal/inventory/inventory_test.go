@@ -17,7 +17,7 @@ var wantIDs = []string{
 	"announce-start", "sillage-blocker-span", "run-link", "failure-reporter", "fetch-attachments", "claim-task",
 	"pr-followup", "github-reactor", "review-skip", "pr-review", "pr-task-dedup", "pr-review-supersede",
 	"review-round-cap", "announce-github-start", "pr-conflict", "pr-open", "merge-close", "limit-reaper",
-	"review-poller", "conflict-reconcile", "merge-close-reconcile", "pr-readiness", "wiki-comment-poller",
+	"review-poller", "conflict-reconcile", "merge-close-reconcile", "pr-readiness", "cost-notices", "wiki-comment-poller",
 	"wiki-followup", "announce-wiki-start", "image-build-request", "image-build-push", "image-build-reconcile",
 	"kelos-branch-lock", "pr-opener", "reviewer-scripts", "sidecar-guard", "test-postgres", "mactest",
 	"dispatch-verifier", "webhook-proxy", "cluster-triage", "succeeded-task-cleaner", "cheatsheet",
@@ -119,7 +119,7 @@ func TestEntriesAreComplete(t *testing.T) {
 			t.Errorf("duplicate entry %s", e.ID)
 		}
 		seen[e.ID] = true
-		if e.Trigger == "" || len(e.Legacy) == 0 || e.Kind == "" {
+		if e.Trigger == "" || len(e.Legacy) == 0 && e.Decision != Add || e.Kind == "" {
 			t.Errorf("%s: missing trigger, legacy files or kind", e.ID)
 		}
 		checkDecision(t, e)
@@ -139,6 +139,12 @@ func checkDecision(t *testing.T, e Entry) {
 	case Retain:
 		if e.Owner != Kelos && e.Owner != Hollingsworth || e.Implement != 0 || e.Cutover != 0 || len(e.Families) != 0 {
 			t.Errorf("%s: retain by %s with stages %d → %d", e.ID, e.Owner, e.Implement, e.Cutover)
+		}
+	case Add:
+		if e.Owner != Gordon || len(e.Legacy) != 0 || len(e.Families) == 0 || e.Implement < StageIntake ||
+			e.Cutover <= e.Implement || e.Cutover > StageRetire {
+			t.Errorf("%s: add by %s at %d → %d with legacy %v, families %v", e.ID, e.Owner, e.Implement, e.Cutover,
+				e.Legacy, e.Families)
 		}
 	case Retire:
 		if e.Owner != Nobody || e.Cutover == 0 || len(e.Families) != 0 {
@@ -257,6 +263,12 @@ func TestStagesWithHollingsworthPathsNameIt(t *testing.T) {
 // TestVikunjaFamiliesPublishTheirSwitch: every Vikunja family names the
 // legacy components the cutover turns off and what Gordon needs, once.
 func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
+	added := map[run.Family]bool{}
+	for _, e := range Entries() {
+		for _, f := range e.Families {
+			added[f] = added[f] || e.Decision == Add
+		}
+	}
 	seen := map[run.Family]bool{}
 	for _, s := range Switches() {
 		if seen[s.Family] {
@@ -266,8 +278,11 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 		if !strings.HasPrefix(string(s.Family), "vikunja-") {
 			t.Errorf("%s: a switch for a family that is not Vikunja's", s.Family)
 		}
-		if len(s.Legacy) == 0 || s.Off == "" || len(s.Needs) == 0 {
+		if len(s.Legacy) == 0 && !added[s.Family] || s.Off == "" || len(s.Needs) == 0 {
 			t.Errorf("%s: incomplete switch %+v", s.Family, s)
+		}
+		if added[s.Family] && len(s.Legacy) != 0 {
+			t.Errorf("%s: a family Gordon adds names legacy %v", s.Family, s.Legacy)
 		}
 		for _, p := range s.Legacy {
 			if !stagedBetween(p, StageVikunja, StageVikunjaCut) {
@@ -279,6 +294,9 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 		if strings.HasPrefix(string(f), "vikunja-") && !seen[f] {
 			t.Errorf("Vikunja family %s publishes no switch", f)
 		}
+	}
+	if md := SwitchesMarkdown(Switches()); !strings.Contains(md, "| `vikunja-cost` | – | nothing: ") {
+		t.Errorf("an added family's switch does not render without legacy:\n%s", md)
 	}
 	if md := SwitchesMarkdown(Switches()); strings.Count(md, "\n") != len(Switches())+2 {
 		t.Errorf("switch table has %d lines for %d switches", strings.Count(md, "\n"), len(Switches()))

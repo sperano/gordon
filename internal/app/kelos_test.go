@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sperano/gordon/internal/config"
+	"github.com/sperano/gordon/internal/costs"
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/kelos/kelostest"
@@ -19,6 +20,7 @@ import (
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
+	"github.com/sperano/gordon/internal/sillage"
 	"github.com/sperano/gordon/internal/store/storetest"
 	"github.com/sperano/gordon/internal/submit"
 )
@@ -123,7 +125,7 @@ func TestPassesOutsideShadow(t *testing.T) {
 		t.Fatalf("passes %v", got)
 	}
 	obs, ok := got[1].(*submit.Observer)
-	if !ok || len(obs.Finished) != 2 {
+	if !ok || len(obs.Finished) != 3 {
 		t.Fatalf("observer %+v", got[1])
 	}
 	if _, ok := obs.Finished[0].(*submit.Completions); !ok {
@@ -132,8 +134,38 @@ func TestPassesOutsideShadow(t *testing.T) {
 	if f, ok := obs.Finished[1].(*lifecycle.Failures); !ok || len(f.Projects) == 0 {
 		t.Errorf("second hook %T, want the failure notices with the projects", obs.Finished[1])
 	}
+	if _, ok := obs.Finished[2].(*costs.Hook); !ok {
+		t.Errorf("third hook %T, want the cost notices", obs.Finished[2])
+	}
 	r, ok := got[2].(*restart.Reaper)
 	if !ok || r.MaxRestarts != 4 || r.Grace != time.Minute || r.Fallback != time.Hour || len(r.Config.Projects) == 0 {
 		t.Errorf("limit restarts %+v", got[2])
+	}
+}
+
+// TestCostPassWithSillage: the cost notice pass runs outside shadow
+// when Sillage's API is configured, with the configured pacing.
+func TestCostPassWithSillage(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Defaults(), Kelos: &config.Kelos{},
+		Costs: config.Costs{APIURL: "http://sillage.sillage.svc", Wait: time.Minute, Deadline: time.Hour,
+			Refresh: 2 * time.Minute, LiveFor: 3 * time.Hour}}
+	cfg.Routing.Policy.VikunjaWebURL = "https://vikunja.example"
+	got := passes(cfg, nil, &kelos.Client{}, nil, discardLog())
+	if len(got) != 4 {
+		t.Fatalf("passes %v, want the cost pass last", got)
+	}
+	p, ok := got[3].(*costs.Publisher)
+	if !ok || p.Wait != time.Minute || p.Deadline != time.Hour || p.Refresh != 2*time.Minute || p.LiveFor != 3*time.Hour ||
+		p.VikunjaWeb != "https://vikunja.example" {
+		t.Fatalf("cost pass %+v", got[3])
+	}
+	if c, ok := p.Sillage.(*sillage.Client); !ok || c.BaseURL != "http://sillage.sillage.svc" {
+		t.Errorf("sillage client %+v", p.Sillage)
+	}
+	cfg.Shadow = true
+	for _, pass := range passes(cfg, nil, &kelos.Client{}, nil, discardLog()) {
+		if _, ok := pass.(*costs.Publisher); ok {
+			t.Error("the cost pass runs in shadow")
+		}
 	}
 }

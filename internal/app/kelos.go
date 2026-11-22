@@ -51,8 +51,8 @@ func executors(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubap
 }
 
 // passes are the reconciler's Kelos passes: the shadow comparison and,
-// outside shadow mode (the only one with runs), the run observer and the
-// limit restarts.
+// outside shadow mode (the only one with runs), the run observer, the
+// limit restarts and, with Sillage's API, the cost notices.
 func passes(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metrics, log *slog.Logger) []worker.Pass {
 	if k == nil {
 		return nil
@@ -62,6 +62,9 @@ func passes(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metri
 	if !cfg.Shadow {
 		out = append(out, &submit.Observer{Store: s, Kelos: k, Finished: finishHooks(cfg, s), Metrics: m,
 			Log: log.With("pass", "observe")}, limitRestarts(cfg, s, k, m, log))
+		if cp := costPublisher(cfg, s, m, log); cp != nil {
+			out = append(out, cp)
+		}
 	}
 	return out
 }

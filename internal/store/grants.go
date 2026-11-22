@@ -26,7 +26,8 @@ type Roles struct {
 // body digest; a row policy refuses any row that is not a Vikunja or
 // GitHub delivery with the synthetic header), and it updates only the queue
 // bookkeeping and the body (pruning).
-var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks", "run_completions"}
+var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks", "run_completions",
+	"cost_notices"}
 
 // workerUpdates are the columns the worker may update in each of
 // workerTables; a table it never updates (decisions) has no entry. A
@@ -41,6 +42,9 @@ var workerUpdates = map[string]string{
 	// built Task is only ever pruned (set NULL), which a column grant
 	// cannot narrow further.
 	"shadow_tasks": "task, result, diff, compared_at",
+	// A cost notice's run, task and finish are fixed; its publication
+	// is not.
+	"cost_notices": "state, rev, body, digest, failures, last_error, next_check, published_at, live_until, updated_at",
 }
 
 // gordonTables are every table the schema has: a role's grants on them

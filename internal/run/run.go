@@ -47,6 +47,11 @@ const (
 	// or at its review round limit, labels its task, notifies and merges
 	// on request (reconcile_pr_ready.py): model-free writes.
 	PRReadiness Family = "pr-readiness"
+	// VikunjaCost posts each finished run's completion cost notice on its
+	// Vikunja task, from Sillage's estimate, and keeps the task total of
+	// the latest one current (Gordon 12): model-free writes with no
+	// legacy implementation.
+	VikunjaCost Family = "vikunja-cost"
 )
 
 // Families lists every family the router decides, in a stable order.
@@ -54,7 +59,7 @@ var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
 	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure, VikunjaAutoAssign,
-	PRConflict, LimitRestart, PRReadiness,
+	PRConflict, LimitRestart, PRReadiness, VikunjaCost,
 }
 
 // AgentFamilies are the families whose runs work on a Vikunja task as its
