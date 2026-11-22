@@ -15,7 +15,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -33,9 +35,31 @@ const maxCommentPages = 50
 // reads and writes.
 type Writer struct {
 	BaseURL string
-	// Authorization is the full header value ("Bearer <token>").
+	// Authorization is the full header value ("Bearer <token>"). Set
+	// this directly only for a token that never rotates (tests); a
+	// production writer sets TokenFile instead, which takes precedence.
 	Authorization string
-	HTTP          *http.Client
+	// TokenFile, when set, is read fresh for every request (a rotated
+	// Secret applies without a restart) and sent as "Bearer <contents>".
+	TokenFile string
+	HTTP      *http.Client
+}
+
+// authorization is the request's Authorization header value: TokenFile's
+// current contents when set, else the static Authorization.
+func (w *Writer) authorization() (string, error) {
+	if w.TokenFile == "" {
+		return w.Authorization, nil
+	}
+	b, err := os.ReadFile(w.TokenFile)
+	if err != nil {
+		return "", fmt.Errorf("token: %w", err)
+	}
+	token := strings.TrimSpace(string(b))
+	if token == "" {
+		return "", fmt.Errorf("token: %s is empty", w.TokenFile)
+	}
+	return "Bearer " + token, nil
 }
 
 // ErrStatus is a Vikunja answer outside 2xx.
@@ -69,9 +93,13 @@ func (w *Writer) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return worker.Permanent(err)
 	}
+	auth, err := w.authorization()
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", w.Authorization)
+	req.Header.Set("Authorization", auth)
 	write := method != http.MethodGet
 	resp, err := w.HTTP.Do(req)
 	if err != nil {

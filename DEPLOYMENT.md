@@ -67,9 +67,9 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_SHADOW` | `true` | record decisions, execute nothing (no outbox loop at all) |
 | `GORDON_WORKER_ID` | hostname | lease owner name (the pod name) |
 | `GORDON_VIKUNJA_URL` | required | API base, e.g. `https://vikunja.example/api/v1` |
-| `GORDON_VIKUNJA_TOKEN_FILE` | required | read token: `GET /tasks/{id}` and its comments; with the reconciliation also `GET /tasks` (listing) and `GET /labels` |
+| `GORDON_VIKUNJA_TOKEN_FILE` | required | read token: `GET /tasks/{id}` and its comments; with the reconciliation also `GET /tasks` (listing) and `GET /labels`. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_GITHUB_API_URL` | `https://api.github.com` | |
-| `GORDON_GITHUB_TOKEN_FILE` | required | read-only token for pull requests and their files |
+| `GORDON_GITHUB_TOKEN_FILE` | required | read-only token for pull requests and their files. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_ROUTING_CONFIG_FILE` | `profile.Defaults()` | JSON `profile.Config` (unknown fields refused) |
 | `GORDON_OWNERSHIP_FILE` | empty (all legacy) | JSON `rollout.Table`; refused when invalid or ungated |
 | `GORDON_WORKER_CONCURRENCY` | `4` | per queue: inbox items decided at once, and separately outbox actions performed at once (up to twice this in flight per process outside shadow mode) |
@@ -90,7 +90,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
 | `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit, a held branch or a timed-out wait for the admission lock |
 | `GORDON_SHADOW_WINDOW` | `15m` | how long a shadow Task waits for the legacy Task of its name before it is recorded `missing` |
-| `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | empty | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. Without it Vikunja actions stay queued (deferred); outside shadow a Gordon-owned family that writes to Vikunja is refused without it, or with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction` |
+| `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | empty | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. Without it Vikunja actions stay queued (deferred); outside shadow a Gordon-owned family that writes to Vikunja is refused without it, or with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction`. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
 | `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`, on a pull request `<sillage>/open?url=<PR URL>`, only on a private repository); unset, no link |

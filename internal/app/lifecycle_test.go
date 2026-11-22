@@ -50,7 +50,7 @@ func TestResolveAutoAssignUsers(t *testing.T) {
 	}))
 	defer srv.Close()
 	cfg := config.Worker{VikunjaURL: srv.URL, UpstreamTimeout: time.Second,
-		Lifecycle: config.Lifecycle{WriteToken: "write-token"},
+		Lifecycle: config.Lifecycle{WriteTokenFile: writeFile(t, t.TempDir(), "w", "write-token")},
 		Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
 			AutoAssignVariant: "claude-opus"}}}}
 	got, err := resolveAutoAssignUsers(context.Background(), cfg)
@@ -70,7 +70,7 @@ func TestResolveAutoAssignUsersRefusesUnknownUser(t *testing.T) {
 	}))
 	defer srv.Close()
 	cfg := config.Worker{VikunjaURL: srv.URL, UpstreamTimeout: time.Second,
-		Lifecycle: config.Lifecycle{WriteToken: "write-token"},
+		Lifecycle: config.Lifecycle{WriteTokenFile: writeFile(t, t.TempDir(), "w", "write-token")},
 		Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
 			AutoAssignVariant: "missing"}}}}
 	_, err := resolveAutoAssignUsers(context.Background(), cfg)
@@ -85,7 +85,7 @@ func TestResolveAutoAssignUsersReturnsUpstreamError(t *testing.T) {
 	}))
 	defer srv.Close()
 	cfg := config.Worker{VikunjaURL: srv.URL, UpstreamTimeout: time.Second,
-		Lifecycle: config.Lifecycle{WriteToken: "write-token"},
+		Lifecycle: config.Lifecycle{WriteTokenFile: writeFile(t, t.TempDir(), "w", "write-token")},
 		Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
 			AutoAssignVariant: "claude-opus"}}}}
 	_, err := resolveAutoAssignUsers(context.Background(), cfg)

@@ -74,7 +74,7 @@ func providers(t *testing.T, ex worker.Executor) []string {
 
 func TestExecutorsRouteGitHubKindsToTheApp(t *testing.T) {
 	cfg := config.Worker{Routing: profile.Defaults(), GitHubAPIURL: "https://api.example"}
-	cfg.Lifecycle.WriteToken = "w"
+	cfg.Lifecycle.WriteTokenFile = "w"
 	app, err := githubapp.Load(appDir(t), cfg.GitHubAPIURL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestConflictReconcilerIsOptIn(t *testing.T) {
 // configured restarts; without Kelos, the GitHub writer reads neither.
 func TestWritersGetTheirReaders(t *testing.T) {
 	cfg := config.Worker{Routing: profile.Defaults(), GitHubAPIURL: "https://api.example", Restart: config.Restart{Max: 5}}
-	cfg.Lifecycle.WriteToken = "w"
+	cfg.Lifecycle.WriteTokenFile = "w"
 	app, err := githubapp.Load(appDir(t), cfg.GitHubAPIURL, nil)
 	if err != nil {
 		t.Fatal(err)

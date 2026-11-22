@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -75,13 +77,36 @@ type Observer func(provider, result string, d time.Duration)
 type Client struct {
 	Provider string
 	BaseURL  string
-	// Authorization is the full header value ("Bearer <token>"); "" sends none.
+	// Authorization is the full header value ("Bearer <token>"); "" sends
+	// none. Set this directly only for a token that never rotates
+	// (tests); a production client sets TokenFile instead, which takes
+	// precedence.
 	Authorization string
-	Headers       map[string]string
-	HTTP          *http.Client
+	// TokenFile, when set, is read fresh for every request (a rotated
+	// Secret applies without a restart) and sent as "Bearer <contents>".
+	TokenFile string
+	Headers   map[string]string
+	HTTP      *http.Client
 	// Limit bounds the requests in flight to this provider; nil is unbounded.
 	Limit   chan struct{}
 	Observe Observer
+}
+
+// authorization is the request's Authorization header value: TokenFile's
+// current contents when set, else the static Authorization.
+func (c *Client) authorization() (string, error) {
+	if c.TokenFile == "" {
+		return c.Authorization, nil
+	}
+	b, err := os.ReadFile(c.TokenFile)
+	if err != nil {
+		return "", fmt.Errorf("token: %w", err)
+	}
+	token := strings.TrimSpace(string(b))
+	if token == "" {
+		return "", fmt.Errorf("token: %s is empty", c.TokenFile)
+	}
+	return "Bearer " + token, nil
 }
 
 // NewLimit returns a limit of n requests in flight; nil when n <= 0.
@@ -124,8 +149,12 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 	for k, v := range c.Headers {
 		req.Header.Set(k, v)
 	}
-	if c.Authorization != "" {
-		req.Header.Set("Authorization", c.Authorization)
+	auth, err := c.authorization()
+	if err != nil {
+		return c.fail(Unavailable, 0, err, time.Since(start))
+	}
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

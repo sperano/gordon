@@ -11,10 +11,12 @@ import (
 
 // Lifecycle is the worker's Vikunja lifecycle configuration (Gordon 06).
 type Lifecycle struct {
-	// WriteToken is the Vikunja token the lifecycle's writes use (labels,
-	// buckets, assignments, reactions, notices), "" for none: Vikunja
-	// actions then stay queued, deferred, as before this stage.
-	WriteToken string
+	// WriteTokenFile is the file of the Vikunja token the lifecycle's
+	// writes use (labels, buckets, assignments, reactions, notices), ""
+	// for none: Vikunja actions then stay queued, deferred, as before
+	// this stage. Re-read on every write, so a rotated Secret applies
+	// without a restart.
+	WriteTokenFile string
 	// ReconcileInterval paces the Vikunja reconciliation (0: off).
 	ReconcileInterval time.Duration
 	// Lookback and RedispatchAfter bound the owner requests recovered.
@@ -36,7 +38,7 @@ var vikunjaWriting = []run.Family{run.VikunjaImplement, run.VikunjaDiscuss, run.
 	run.VikunjaCost}
 
 func (r *reader) lifecycle() Lifecycle {
-	l := Lifecycle{WriteToken: r.secretFile("GORDON_VIKUNJA_WRITE_TOKEN_FILE"),
+	l := Lifecycle{WriteTokenFile: r.optionalSecretFile("GORDON_VIKUNJA_WRITE_TOKEN_FILE"),
 		ReconcileInterval: r.offDuration("GORDON_VIKUNJA_RECONCILE_INTERVAL"),
 		Lookback:          r.duration("GORDON_FOLLOWUP_LOOKBACK", DefaultFollowUpLookback),
 		RedispatchAfter:   r.duration("GORDON_FOLLOWUP_REDISPATCH_AFTER", DefaultRedispatchAfter),
@@ -78,7 +80,7 @@ func (r *reader) checkWriter(c Worker) {
 		if rule.Owner != rollout.Gordon || !slices.Contains(vikunjaWriting, rule.Family) {
 			continue
 		}
-		if c.Lifecycle.WriteToken == "" {
+		if c.Lifecycle.WriteTokenFile == "" {
 			r.fail("ownership rule %s/%s writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required", rule.Project, rule.Family)
 		}
 		if rule.Family != run.VikunjaAutoAssign && !policyChecked {

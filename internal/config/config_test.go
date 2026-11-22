@@ -40,15 +40,18 @@ func workerEnv(t *testing.T) map[string]string {
 }
 
 func TestWorkerDefaults(t *testing.T) {
-	c, err := LoadWorker(envOf(workerEnv(t)))
+	env := workerEnv(t)
+	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !c.Shadow {
 		t.Fatal("worker executes by default; shadow must be the default")
 	}
-	if c.DatabaseURL != "postgres://worker:pw@db/gordon" || c.VikunjaToken != "vtoken" || c.GitHubToken != "gtoken" {
-		t.Fatalf("secrets read as %q %q %q, want trimmed file contents", c.DatabaseURL, c.VikunjaToken, c.GitHubToken)
+	if c.DatabaseURL != "postgres://worker:pw@db/gordon" || c.VikunjaTokenFile != env["GORDON_VIKUNJA_TOKEN_FILE"] ||
+		c.GitHubTokenFile != env["GORDON_GITHUB_TOKEN_FILE"] {
+		t.Fatalf("secrets read as %q %q %q, want the database URL's content and the tokens' paths",
+			c.DatabaseURL, c.VikunjaTokenFile, c.GitHubTokenFile)
 	}
 	if c.VikunjaURL != "https://vikunja.example/api/v1" || c.GitHubAPIURL != DefaultGitHubAPIURL {
 		t.Fatalf("urls %q %q", c.VikunjaURL, c.GitHubAPIURL)

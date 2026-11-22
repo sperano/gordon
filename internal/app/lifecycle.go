@@ -76,11 +76,11 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 // token.
 func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client, autoAssignUsers map[int64]int64) *lifecycle.Executor {
 	l := cfg.Lifecycle
-	if l.WriteToken == "" {
+	if l.WriteTokenFile == "" {
 		return nil
 	}
 	ex := &lifecycle.Executor{
-		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + l.WriteToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
+		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, TokenFile: l.WriteTokenFile, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
 		Policy: cfg.Routing.Policy, Agents: agentUsers(cfg), AutoAssignUsers: autoAssignUsers,
 		Runs: s, Lock: s, Costs: s, Namespace: route.KelosNamespace,
 		MaxRestarts: cfg.Restart.Max, Ntfy: ntfy(cfg),
@@ -101,10 +101,10 @@ func links(cfg config.Worker) lifecycle.Links {
 
 func resolveAutoAssignUsers(ctx context.Context, cfg config.Worker) (map[int64]int64, error) {
 	out := map[int64]int64{}
-	if cfg.Lifecycle.WriteToken == "" {
+	if cfg.Lifecycle.WriteTokenFile == "" {
 		return out, nil
 	}
-	w := &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + cfg.Lifecycle.WriteToken,
+	w := &lifecycle.Writer{BaseURL: cfg.VikunjaURL, TokenFile: cfg.Lifecycle.WriteTokenFile,
 		HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}}
 	for _, project := range cfg.Routing.Projects {
 		if project.AutoAssignVariant == "" {

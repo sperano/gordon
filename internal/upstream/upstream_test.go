@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -113,6 +115,41 @@ func TestClassify(t *testing.T) {
 		if len(o.results) != 1 || o.results[0] != "github/"+string(tc.want) {
 			t.Errorf("HTTP %d observed %v", tc.status, o.results)
 		}
+	}
+}
+
+func TestTokenFileIsReReadEachRequestForRotation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("Authorization"))
+		fmt.Fprint(w, `{"id":1}`)
+	}))
+	defer srv.Close()
+	c := &Client{Provider: ProviderVikunja, BaseURL: srv.URL, TokenFile: path, HTTP: srv.Client()}
+	if _, err := (Vikunja{c}).Task(ctx, 1); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("new\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Vikunja{c}).Task(ctx, 1); err != nil {
+		t.Fatalf("second read: %v", err)
+	}
+	if want := []string{"Bearer old", "Bearer new"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("authorization headers %v, want %v (a rotated Secret must apply without a restart)", got, want)
+	}
+}
+
+func TestTokenFileUnreadableIsUnavailableNotUnauthorized(t *testing.T) {
+	c := &Client{Provider: ProviderVikunja, BaseURL: "http://unused.invalid", TokenFile: filepath.Join(t.TempDir(), "missing"),
+		HTTP: http.DefaultClient}
+	_, err := (Vikunja{c}).Task(ctx, 1)
+	if ClassOf(err) != Unavailable {
+		t.Fatalf("missing token file = %v, want unavailable (no request was ever sent)", err)
 	}
 }
 
