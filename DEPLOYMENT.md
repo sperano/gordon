@@ -352,7 +352,9 @@ repository, a repository without an entry is refused; `cubic_repos`,
   user only.
 - **ntfy**: under the task's lock, a `⏳<sha8>-<n>` reaction before the
   send, `🔔<sha8>` after it, `🔁<sha8>-<n>` on a failed send (retried);
-  three sends whose outcome was never recorded stop it, as legacy.
+  each outcome write is tried three times. One send whose outcome was
+  never recorded stops every later send of the head (legacy allowed
+  three), since it may have been delivered.
   Redirects are never followed (the token stays on the configured host).
 - **Merge**: a merged, closed or pushed-since PR is left (legacy's pinned
   merge would have been refused and reported for a pushed head); a

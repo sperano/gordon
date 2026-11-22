@@ -209,7 +209,7 @@ func TestReadinessIgnoresWhatDoesNotHoldIt(t *testing.T) {
 			rd.CheckRuns = append([]event.CheckRun{check(0, "check", "completed", "failure", readAt.Add(-time.Hour))}, rd.CheckRuns...)
 		}, replay.Ledger{}},
 		{"Gordon's finished task run", func(*route.Readiness) {}, replay.Ledger{Runs: []route.RunRecord{{
-			Name: "vikunja-vigie-claude-opus-5", Family: run.VikunjaImplement, TaskID: 5}}}},
+			Name: "vikunja-vigie-claude-opus-5", Family: run.VikunjaImplement, TaskID: 5, Exists: true}}}},
 		{"legacy waiter of another head", func(rd *route.Readiness) {
 			rd.Tasks = []route.KelosTask{{Name: "pr-ready-x", Phase: "Running", Labels: map[string]string{route.RoleLabel: "pr-readiness"},
 				Annotations: map[string]string{route.RepositoryAnnotation: repo, route.SHAAnnotation: "fedcba9876543210fedcba9876543210fedcba98"}}}

@@ -134,17 +134,17 @@ func TestNotifyStopsAtTheUnconfirmedLimit(t *testing.T) {
 	f.put(Task{ID: 5, ProjectID: 3})
 	me := []User{{Username: gordon}}
 	f.taskReactions[5] = map[string][]User{PendingReaction + "01234567-1": me, PendingReaction + "01234567-2": me,
-		PendingReaction + "01234567-3": me, PendingReaction + "fedcba98-1": me}
+		RetryReaction + "01234567-1": me, PendingReaction + "fedcba98-1": me}
 	ex := executor(f, nil)
 	ex.Ntfy = n.publisher()
 	if err := ex.Execute(ctx, notifyAction()); err != nil || len(n.requests) != 0 {
-		t.Fatalf("at the limit: %v, %d sends", err, len(n.requests))
+		t.Fatalf("one reservation without an outcome: %v, %d sends, want none", err, len(n.requests))
 	}
 	f.taskReactions[5][RetryReaction+"01234567-2"] = me
 	if err := ex.Execute(ctx, notifyAction()); err != nil || len(n.requests) != 1 {
 		t.Fatalf("a recorded failure frees a send: %v, %d sends", err, len(n.requests))
 	}
-	if got := reactionValues(f, 5); !slices.Contains(got, PendingReaction+"01234567-4") {
+	if got := reactionValues(f, 5); !slices.Contains(got, PendingReaction+"01234567-3") {
 		t.Errorf("next attempt not numbered after the last: %v", got)
 	}
 }
@@ -257,6 +257,37 @@ func TestNotifyNeverResendsARecordedSend(t *testing.T) {
 		}
 		if got := slices.Contains(reactionValues(f, 5), delivered); got == c.permanent {
 			t.Errorf("%s: delivered reaction on %v", c.name, got)
+		}
+		// A later decision of the head queues a new notify action.
+		if err := ex.Execute(ctx, notifyAction()); err != nil || len(n.requests) != 1 {
+			t.Errorf("%s: later decision: %v after %d sends, want none more", c.name, err, len(n.requests))
+		}
+	}
+}
+
+func TestNotifyFailureNotRecordedStopsTheHead(t *testing.T) {
+	retry := RetryReaction + "01234567-1"
+	for _, c := range []struct {
+		name      string
+		refusals  int
+		permanent bool
+		sends     int
+	}{{"recorded on the last try", DeliveredWriteAttempts - 1, false, 2}, {"never recorded", DeliveredWriteAttempts, true, 1}} {
+		f, n := newFake(t), newNtfy(t, http.StatusBadGateway)
+		f.put(Task{ID: 5, ProjectID: 3})
+		f.refuseReactions[retry] = c.refusals
+		ex := executor(f, nil)
+		ex.Ntfy = n.publisher()
+		err := ex.Execute(ctx, notifyAction())
+		if err == nil || worker.IsPermanent(err) != c.permanent {
+			t.Errorf("%s: %v, want an error, permanent %v", c.name, err, c.permanent)
+		}
+		if got := slices.Contains(reactionValues(f, 5), retry); got == c.permanent {
+			t.Errorf("%s: retry reaction on %v", c.name, got)
+		}
+		n.status = http.StatusOK
+		if err := ex.Execute(ctx, notifyAction()); err != nil || len(n.requests) != c.sends {
+			t.Errorf("%s: next attempt: %v after %d sends, want %d", c.name, err, len(n.requests), c.sends)
 		}
 	}
 }
