@@ -26,7 +26,7 @@ type Roles struct {
 // body digest; a row policy refuses any row that is not a Vikunja or
 // GitHub delivery with the synthetic header), and it updates only the queue
 // bookkeeping and the body (pruning).
-var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks"}
+var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks", "run_completions"}
 
 // workerUpdates are the columns the worker may update in each of
 // workerTables; a table it never updates (decisions) has no entry. A
@@ -35,7 +35,7 @@ var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_
 var workerUpdates = map[string]string{
 	"requests": "outcome, executed",
 	"runs": "family, project, request_key, inbox_id, identity, profile, config_version, state, " +
-		"task_exists, generation, updated_at, task, task_uid, phase, observed_at",
+		"task_exists, generation, updated_at, task, task_uid, phase, observed_at, limit_restart",
 	"actions": "state, attempts, next_attempt_at, lease_token, lease_owner, lease_until, last_error, finished_at",
 	// A shadow Task's identity is fixed; its comparison is not, and its
 	// built Task is only ever pruned (set NULL), which a column grant

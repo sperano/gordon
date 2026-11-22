@@ -118,3 +118,36 @@ func TestGitHubReconcilerIsOptIn(t *testing.T) {
 }
 
 func discardLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+func TestConflictReconcilerIsOptIn(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Defaults()}
+	if r := conflictReconciler(cfg, nil, upstream.GitHub{}, nil, discardLog()); r != nil {
+		t.Fatalf("conflict reconciler %+v with no interval", r)
+	}
+	cfg.GitHub.ConflictInterval = time.Minute
+	if r := conflictReconciler(cfg, nil, upstream.GitHub{}, nil, discardLog()); r == nil || len(r.Config.Projects) == 0 {
+		t.Fatalf("conflict reconciler %+v", r)
+	}
+}
+
+// TestWritersGetTheirReaders: with Kelos, the Vikunja writer reads a
+// stopped Task's limit and the GitHub writer a failed Task's message,
+// and the Vikunja writer names the configured restarts.
+func TestWritersGetTheirReaders(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Defaults(), GitHubAPIURL: "https://api.example", Restart: config.Restart{Max: 5}}
+	cfg.Lifecycle.WriteToken = "w"
+	app, err := githubapp.Load(appDir(t), cfg.GitHubAPIURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ex := githubExecutor(cfg, nil, &kelos.Client{}, app); ex.Messages == nil {
+		t.Error("GitHub writer without the message reader")
+	}
+	if ex := githubExecutor(cfg, nil, nil, app); ex.Messages != nil {
+		t.Error("GitHub writer reads messages without Kelos")
+	}
+	ex := vikunjaExecutor(cfg, nil, &kelos.Client{})
+	if ex.Limits == nil || ex.Messages == nil || ex.MaxRestarts != 5 {
+		t.Errorf("Vikunja writer limits %v messages %v restarts %d", ex.Limits != nil, ex.Messages != nil, ex.MaxRestarts)
+	}
+}

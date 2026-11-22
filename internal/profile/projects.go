@@ -30,7 +30,7 @@ func project(name, title string, id int64, profiles map[Mode]string, configs ...
 // decides a shared repository's PR Workspace (the first one wins).
 func projects() []Project {
 	cocovm3d := project("cocovm-3d", "CoCoVM 3D", 141, plainProfiles, stackRust, "rust-emulator")
-	cocovm3d.Repository = "sperano/cocovm"
+	cocovm3d.Repository, cocovm3d.BaseRef = "sperano/cocovm", "feature/3d"
 	portal := project("portal", "Portal", 48, imageBuildProfiles, "homelab")
 	portal.Workspace, portal.Repository = "hollingsworth", "sperano/hollingsworth"
 	briq := project("briq", "BRIQ", 45, plainProfiles, stackSwift)

@@ -11,6 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/notice"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/worker"
 )
 
@@ -138,6 +139,8 @@ func (e *Executor) render(ctx context.Context, a action.Action, t Target) (strin
 		return notice.ReviewCapText(e.bots(), p.MaxRoundsPerPR, p.Trigger), nil
 	case notice.SuggestionsCap:
 		return notice.SuggestionsCapText(p.SuggestionsMaxRounds, p.FixSuggestionsLabel, p.Trigger), nil
+	case notice.Failed:
+		return e.failedText(ctx, a.Detail, t)
 	}
 	return "", worker.Permanent(fmt.Errorf("no GitHub notice %q", a.Value))
 }
@@ -152,15 +155,8 @@ func (e *Executor) startText(ctx context.Context, name string, t Target) (string
 	}
 	s := notice.PRStartInfo{Task: name, Model: r.Model, Effort: r.Effort}
 	if e.Links.Run(r.TaskUID) != "" || e.Links.Sillage != "" {
-		var repo struct {
-			Private bool   `json:"private"`
-			HTMLURL string `json:"html_url"`
-		}
-		err := e.W.REST(ctx, t.Repo, githubapp.Comments, http.MethodGet, path("repos", t.Owner, t.Name), nil, &repo)
-		switch {
-		case worker.IsPermanent(err): // visibility unknown for good: no links
-			repo.Private = false
-		case err != nil:
+		repo, err := e.visibility(ctx, t)
+		if err != nil {
 			return "", err
 		}
 		if repo.Private {
@@ -171,4 +167,51 @@ func (e *Executor) startText(ctx context.Context, name string, t Target) (string
 		}
 	}
 	return notice.PRStartText(s), nil
+}
+
+// repoVisibility is the part of a repository its notices' links need.
+type repoVisibility struct {
+	Private bool   `json:"private"`
+	HTMLURL string `json:"html_url"`
+}
+
+// visibility reads whether the repository is private; one GitHub refuses
+// for good counts as public (no private links), a transient failure is
+// returned and retried.
+func (e *Executor) visibility(ctx context.Context, t Target) (repoVisibility, error) {
+	var repo repoVisibility
+	err := e.W.REST(ctx, t.Repo, githubapp.Comments, http.MethodGet, path("repos", t.Owner, t.Name), nil, &repo)
+	switch {
+	case worker.IsPermanent(err):
+		return repoVisibility{}, nil
+	case err != nil:
+		return repoVisibility{}, err
+	}
+	return repo, nil
+}
+
+// failedText is a failed PR run's notice: its Task's status message, the
+// run link on a private repository only, as for the start notice.
+func (e *Executor) failedText(ctx context.Context, name string, t Target) (string, error) {
+	r, err := e.Runs.RunInfo(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	f := notice.PRFailedInfo{Task: name, Trigger: e.Policy.Trigger, Conflict: r.Family == run.PRConflict,
+		Namespace: e.Links.Namespace}
+	if e.Messages != nil {
+		if f.Message, err = e.Messages(ctx, name); err != nil {
+			return "", err
+		}
+	}
+	if url := e.Links.Run(r.TaskUID); url != "" {
+		repo, err := e.visibility(ctx, t)
+		if err != nil {
+			return "", err
+		}
+		if repo.Private {
+			f.RunURL = url
+		}
+	}
+	return notice.PRFailedText(f), nil
 }

@@ -27,28 +27,58 @@ var agentRunFamilies = append(slices.Clone(run.AgentFamilies), followUps...)
 // vikunja.spe.quebec/discuss Tasks).
 var discussFamilies = []run.Family{run.VikunjaDiscuss, run.VikunjaFollowUpDiscuss}
 
-// Failures is the observer's hook for Gordon's own Vikunja runs
-// (report_failures.py, action_needed.flag_discussions): a Failed run gets
-// the failed notice, the agent-error label and the action-needed label;
-// a discuss run that Succeeded gets action-needed, unless the owner asked
-// again since. Only where Gordon owns the vikunja-failure family: the
-// legacy reporter then skips Gordon's Tasks (gordon.spe.quebec/managed).
+// prRunFamilies are the runs that work on a pull request and report
+// their failure there.
+var prRunFamilies = []run.Family{run.PRFollowUp, run.PRConflict}
+
+// Failures is the observer's hook for Gordon's own runs. On a Vikunja
+// task (report_failures.py, action_needed.flag_discussions), a Failed run
+// gets the failed notice, the agent-error label and the action-needed
+// label, and a discuss run that Succeeded gets action-needed, unless the
+// owner asked again since; only where Gordon owns the vikunja-failure
+// family: the legacy reporter then skips Gordon's Tasks
+// (gordon.spe.quebec/managed). A Failed PR follow-up or conflict run gets
+// a failure notice on its pull request, where Gordon owns its family:
+// legacy reported neither. A Task the subscription limit stopped is the
+// limit restarts' (limit_reaper.py), never reported as failed, as the
+// legacy reporter skips limit stops.
 type Failures struct {
 	Store     FailureStore
 	Policy    profile.Policy
 	Ownership rollout.Table
+	// Projects locate a PR run's repository.
+	Projects []profile.Project
 }
 
 // Finished queues the finished run's lifecycle actions.
-func (f *Failures) Finished(ctx context.Context, r store.ObservedRun, phase string) error {
+func (f *Failures) Finished(ctx context.Context, r store.ObservedRun, t kelos.Task) error {
+	if t.LimitStop() {
+		return nil
+	}
+	if slices.Contains(prRunFamilies, r.Family) {
+		return f.prFailed(ctx, r, t.Phase())
+	}
 	if r.TaskID <= 0 || !slices.Contains(agentRunFamilies, r.Family) || !f.Ownership.Executes(r.Project, run.VikunjaFailure) {
 		return nil
 	}
-	actions, err := f.actions(ctx, r, phase)
+	actions, err := f.actions(ctx, r, t.Phase())
 	if err != nil || len(actions) == 0 {
 		return err
 	}
 	return f.Store.QueueRunActions(ctx, r.InboxID, run.VikunjaFailure, r.Project, actions)
+}
+
+// prFailed queues a failed PR run's notice on its pull request.
+func (f *Failures) prFailed(ctx context.Context, r store.ObservedRun, phase string) error {
+	if phase != kelos.PhaseFailed || r.PR <= 0 || !f.Ownership.Executes(r.Project, r.Family) {
+		return nil
+	}
+	i := slices.IndexFunc(f.Projects, func(p profile.Project) bool { return p.Name == r.Project })
+	if i < 0 || f.Projects[i].Repository == "" {
+		return nil
+	}
+	a := action.Notice(action.PullRequest(f.Projects[i].Repository, r.PR), notice.Failed, r.Name)
+	return f.Store.QueueRunActions(ctx, r.InboxID, r.Family, r.Project, []action.Action{a})
 }
 
 func (f *Failures) actions(ctx context.Context, r store.ObservedRun, phase string) ([]action.Action, error) {

@@ -155,6 +155,11 @@ type GitHub struct {
 	// OnPullRequest is false for an issue_comment on a plain issue.
 	OnPullRequest bool
 	PullRequest   PullRequest
+	// Synthetic is a delivery the worker queued (SyntheticHeader); only
+	// one carries ConflictWorkspace, the Workspace whose conflict
+	// reconciliation found the conflict.
+	Synthetic         bool
+	ConflictWorkspace string
 }
 
 // PullRequest is a GitHub pull-request snapshot, from a delivery or a
@@ -174,7 +179,22 @@ type PullRequest struct {
 	BaseRef    string   `json:"base_ref"`
 	Labels     []string `json:"labels"`
 	Files      []string `json:"files"`
+	// BaseSHA is the PR's base.sha (not the base branch's tip);
+	// Mergeable (nil while GitHub computes it) and MergeableState come
+	// from a fresh read of the one pull request.
+	BaseSHA        string `json:"base_sha,omitempty"`
+	Mergeable      *bool  `json:"mergeable,omitempty"`
+	MergeableState string `json:"mergeable_state,omitempty"`
 }
+
+// Conflicting reports a pull request GitHub found in conflict with its
+// base (reconcile_conflicts.py: mergeable false, mergeable_state dirty).
+func (p PullRequest) Conflicting() bool {
+	return p.Mergeable != nil && !*p.Mergeable && p.MergeableState == MergeableDirty
+}
+
+// MergeableDirty is GitHub's mergeable_state of a merge conflict.
+const MergeableDirty = "dirty"
 
 // PullRequestOpen is GitHub's state of an open pull request.
 const PullRequestOpen = "open"

@@ -9,6 +9,7 @@ import (
 	"github.com/sperano/gordon/internal/config"
 	"github.com/sperano/gordon/internal/ghlife"
 	"github.com/sperano/gordon/internal/githubapp"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/route"
@@ -30,15 +31,20 @@ func newGitHubApp(cfg config.Worker) (*githubapp.App, error) {
 	return githubapp.Load(cfg.GitHub.AppDir, cfg.GitHubAPIURL, &http.Client{Timeout: cfg.UpstreamTimeout})
 }
 
-// githubExecutor is the GitHub writer's executor, acting as the App.
-func githubExecutor(cfg config.Worker, s *store.Store, app *githubapp.App) *ghlife.Executor {
+// githubExecutor is the GitHub writer's executor, acting as the App; with
+// Kelos, its failure notices quote the Task's status message.
+func githubExecutor(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubapp.App) *ghlife.Executor {
 	l := cfg.Lifecycle
-	return &ghlife.Executor{
+	ex := &ghlife.Executor{
 		W:      &ghlife.Writer{App: app, BaseURL: cfg.GitHubAPIURL, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
 		Policy: cfg.Routing.Policy, Runs: s, Lock: s,
 		Links: lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
 			Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL},
 	}
+	if k != nil {
+		ex.Messages = taskMessages(k)
+	}
+	return ex
 }
 
 // githubReconciler is the GitHub reconciliation, nil when it is off.
@@ -61,6 +67,29 @@ func startGitHubReconcile(g *group, cfg config.Worker, s *store.Store, github up
 	}
 	g.Go(func(ctx context.Context) error {
 		worker.Every(ctx, cfg.GitHub.ReconcileInterval, func(ctx context.Context) { gr.Once(ctx) }) //nolint:errcheck // logged and counted
+		return nil
+	})
+}
+
+// conflictReconciler is the conflict reconciliation, nil when it is off.
+func conflictReconciler(cfg config.Worker, s *store.Store, github upstream.GitHub, m *metrics.Metrics,
+	log *slog.Logger) *ghlife.ConflictReconciler {
+	if cfg.GitHub.ConflictInterval <= 0 {
+		return nil
+	}
+	return &ghlife.ConflictReconciler{GitHub: github, Store: s, Config: cfg.Routing, Ownership: cfg.Ownership,
+		Metrics: m, Log: log.With("pass", "conflict-reconcile")}
+}
+
+// startConflictReconcile runs the conflict reconciliation in g, when it is on.
+func startConflictReconcile(g *group, cfg config.Worker, s *store.Store, github upstream.GitHub, m *metrics.Metrics,
+	log *slog.Logger) {
+	cr := conflictReconciler(cfg, s, github, m, log)
+	if cr == nil {
+		return
+	}
+	g.Go(func(ctx context.Context) error {
+		worker.Every(ctx, cfg.GitHub.ConflictInterval, func(ctx context.Context) { cr.Once(ctx) }) //nolint:errcheck // logged and counted
 		return nil
 	})
 }

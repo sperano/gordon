@@ -34,6 +34,10 @@ type Locker interface {
 // an error is a read that failed and is retried.
 type TaskMessages func(ctx context.Context, name string) (string, error)
 
+// TaskLimits reads the limit that stopped a Kelos Task ("" when it is
+// gone or tells none); an error is a read that failed and is retried.
+type TaskLimits func(ctx context.Context, name string) (string, error)
+
 // Executor performs the Vikunja actions (the outbox's Executor).
 type Executor struct {
 	W      *Writer
@@ -44,6 +48,10 @@ type Executor struct {
 	Lock     Locker
 	Links    Links
 	Messages TaskMessages
+	// Limits reads a stopped Task's limit for its restart notices;
+	// MaxRestarts is the restarts a chain may take, which they name.
+	Limits      TaskLimits
+	MaxRestarts int
 	// Namespace is the Kelos namespace a failure notice's retry names.
 	Namespace string
 }

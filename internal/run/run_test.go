@@ -16,6 +16,11 @@ func TestNamesMatchLegacyTemplates(t *testing.T) {
 		{Identity{Family: PRFollowUp, Workspace: "vigie", PR: 4, CommentKind: "l", CommentID: 99, HeadRef: "kelos/vikunja-12"}, "pr-followup-vigie-4-l99", "kelos/vikunja-12"},
 		{Identity{Family: PRReview, Workspace: "vigie", Reviewer: "idiomatic-go", PR: 4, HeadSHA: "0123456789abcdef"}, "review-vigie-idiomatic-go-4-01234567", ""},
 		{Identity{Family: PRReview, Workspace: "vigie", Reviewer: "pr-challenger", PR: 4, HeadSHA: "abc"}, "review-vigie-pr-challenger-4-abc", ""},
+		{Identity{Family: PRConflict, Workspace: "vigie", PR: 4, Episode: "0123abcd-4-89abcdef-01234567", HeadRef: "kelos/vikunja-12"},
+			"pr-conflict-0123abcd-4-89abcdef-01234567", "kelos/vikunja-12"},
+		{Identity{Family: VikunjaImplement, Project: "vigie", Variant: "gpt-sol", TaskID: 12, Retry: 2}, "vikunja-vigie-gpt-sol-12-retry2", "kelos/vikunja-12"},
+		{Identity{Family: PRFollowUp, Workspace: "vigie", PR: 4, CommentKind: "r", CommentID: 9, HeadRef: "b", Retry: 1}, "pr-followup-vigie-4-r9-retry1", "b"},
+		{Identity{Family: PROpen, TaskID: 12, Retry: 1}, "", ""},
 		{Identity{Family: PROpen, TaskID: 12}, "", ""},
 		{Identity{Family: MergeClose, TaskID: 12}, "", ""},
 	}

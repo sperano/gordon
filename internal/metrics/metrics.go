@@ -62,6 +62,13 @@ type Metrics struct {
 	VikunjaReconcileQueued prometheus.Counter
 	GitHubReconciles       *prometheus.CounterVec
 	GitHubReconcileQueued  prometheus.Counter
+	// LimitRestarts counts the limit restart pass's decisions about
+	// failed runs, by result (store.LimitRestarted, ...).
+	LimitRestarts *prometheus.CounterVec
+	// ConflictReconciles and ConflictReconcileQueued are the conflict
+	// reconciliation's passes and the conflicts it queued.
+	ConflictReconciles      *prometheus.CounterVec
+	ConflictReconcileQueued prometheus.Counter
 }
 
 // New registers Gordon's metrics, with the Go and process collectors, on
@@ -116,7 +123,7 @@ func New() *Metrics {
 		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions, m.ShadowComparisons,
 		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
 		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued,
-		m.GitHubReconciles, m.GitHubReconcileQueued)
+		m.GitHubReconciles, m.GitHubReconcileQueued, m.LimitRestarts, m.ConflictReconciles, m.ConflictReconcileQueued)
 	return m
 }
 
@@ -128,6 +135,11 @@ func (m *Metrics) lifecycle() {
 	m.GitHubReconciles = counter("github_reconcile_runs_total", "GitHub reconciliation passes by result.", "result")
 	m.GitHubReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
 		Name: "github_reconcile_queued_total", Help: "Synthetic deliveries the GitHub reconciliation queued."})
+	m.LimitRestarts = counter("limit_restart_decisions_total",
+		"Failed runs the limit restart pass decided about, by result.", "result")
+	m.ConflictReconciles = counter("conflict_reconcile_runs_total", "Conflict reconciliation passes by result.", "result")
+	m.ConflictReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
+		Name: "conflict_reconcile_queued_total", Help: "Confirmed conflicts the conflict reconciliation queued."})
 }
 
 func counter(name, help string, labels ...string) *prometheus.CounterVec {

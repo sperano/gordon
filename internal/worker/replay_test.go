@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/replay"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
 
@@ -63,11 +65,7 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 		}
 	}
 	seedLedger(t, e, f.Ledger)
-	d, err := f.Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if answeredByReceiver(t, e, f.Expect, post(t, e, r.Keys, d)) {
+	if !deliver(t, e, f, r.Keys) {
 		return
 	}
 	e.tick(t)
@@ -95,6 +93,45 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 		if n := e.count(t, `SELECT count(*) FROM actions x `+fresh) + e.count(t, `SELECT count(*) FROM runs x `+fresh); n != 0 {
 			t.Fatalf("shadow queued %d actions and runs, want none", n)
 		}
+	}
+}
+
+// deliver stores the fixture's delivery: through the receiver, or, for a
+// synthetic one (a reconciliation's), as the worker queues its own: no
+// receiver ever stores one, nor keeps its header. False when the
+// receiver's answer ends the fixture.
+func deliver(t *testing.T, e *env, f replay.Fixture, keys auth.Keys) bool {
+	t.Helper()
+	d, err := f.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Header(event.SyntheticHeader) != "" {
+		enqueueSynthetic(t, e, d)
+		return true
+	}
+	return !answeredByReceiver(t, e, f.Expect, post(t, e, keys, d))
+}
+
+// enqueueSynthetic stores a synthetic GitHub delivery as the worker's
+// reconciliations do (store.GitHubSynthetic's keys), signature dropped.
+func enqueueSynthetic(t *testing.T, e *env, d event.Delivery) {
+	t.Helper()
+	sig, _ := auth.Header(d.Source)
+	headers := map[string]string{}
+	for k, v := range d.Headers {
+		if k != sig {
+			headers[k] = v
+		}
+	}
+	ev, err := event.ParseGitHub(event.Delivery{Source: d.Source, Headers: headers, Body: d.Body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd := store.Delivery{Source: d.Source, DeliveryKey: ev.DeliveryKey, RequestKey: ev.RequestKey, Kind: ev.Kind,
+		Scope: ev.Scope(), Headers: headers, Body: d.Body}
+	if n, err := e.store.Enqueue(context.Background(), []store.Delivery{sd}); err != nil || n != 1 {
+		t.Fatalf("Enqueue = %d, %v", n, err)
 	}
 }
 

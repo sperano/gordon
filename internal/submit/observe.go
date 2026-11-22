@@ -38,17 +38,18 @@ type ObserverStore interface {
 type Observer struct {
 	Store ObserverStore
 	Kelos TaskAPI
-	// Finished, when set, is told of each run this observer sees finish
-	// (its Task Succeeded or Failed): the lifecycle's failure notices.
-	Finished FinishHook
+	// Finished are told of each run this observer sees finish (its Task
+	// Succeeded or Failed), in order: the run's completion record, the
+	// lifecycle's failure notices.
+	Finished []FinishHook
 	Batch    int
 	Metrics  *metrics.Metrics
 	Log      *slog.Logger
 }
 
-// FinishHook handles a run that finished with phase.
+// FinishHook handles a run whose Task t finished.
 type FinishHook interface {
-	Finished(ctx context.Context, r store.ObservedRun, phase string) error
+	Finished(ctx context.Context, r store.ObservedRun, t kelos.Task) error
 }
 
 // Once observes one batch of runs against one Task list.
@@ -91,11 +92,11 @@ func (o *Observer) observe(ctx context.Context, r store.ObservedRun, tasks map[s
 		if r.Exists && r.Phase == t.Phase() && r.State != "submitting" {
 			return nil
 		}
-		return o.record(ctx, r, true, t.Phase(), state)
+		return o.record(ctx, r, &t, state)
 	case r.State == "submitting" && pendingSubmit(r.SubmitState):
 		return nil // not created yet
 	default:
-		return o.record(ctx, r, false, "", ObservedGone)
+		return o.record(ctx, r, nil, ObservedGone)
 	}
 }
 
@@ -108,14 +109,21 @@ func pendingSubmit(state string) bool {
 	return false
 }
 
-func (o *Observer) record(ctx context.Context, r store.ObservedRun, exists bool, phase, state string) error {
-	// The hook queues idempotently, so it goes first: an observation not
-	// recorded after it is observed again, and the hook's actions are
-	// not queued twice; one recorded before a failed hook would be lost.
-	if o.Finished != nil && state == ObservedFinished && r.State != store.RunFinished {
-		if err := o.Finished.Finished(ctx, r, phase); err != nil {
-			return fmt.Errorf("lifecycle of finished run %s: %w", r.Name, err)
+// record records the run's Task t as observed (nil: gone). The hooks
+// write idempotently, so they go first: an observation not recorded after
+// them is observed again, and their writes are not made twice; one
+// recorded before a failed hook would be lost.
+func (o *Observer) record(ctx context.Context, r store.ObservedRun, t *kelos.Task, state string) error {
+	if t != nil && state == ObservedFinished && r.State != store.RunFinished {
+		for _, h := range o.Finished {
+			if err := h.Finished(ctx, r, *t); err != nil {
+				return fmt.Errorf("lifecycle of finished run %s: %w", r.Name, err)
+			}
 		}
+	}
+	exists, phase := t != nil, ""
+	if exists {
+		phase = t.Phase()
 	}
 	if err := o.Store.ObserveRun(ctx, r.Name, r.InboxID, exists, phase); err != nil {
 		return err

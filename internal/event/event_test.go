@@ -290,3 +290,28 @@ func TestParseVikunjaSynthetic(t *testing.T) {
 		t.Fatalf("plain delivery %+v, %v: no marker, its own key", plain.Vikunja, err)
 	}
 }
+
+// TestParseGitHubConflict: only a synthetic delivery's Workspace counts;
+// the base SHA is kept.
+func TestParseGitHubConflict(t *testing.T) {
+	body := `{"action":"gordon-conflict","repository":{"full_name":"sperano/vigie"},"gordon":{"workspace":"vigie"},` +
+		`"pull_request":{"number":3,"state":"open","user":{"login":"sperano"},"head":{"ref":"kelos/vikunja-9","sha":"abc"},` +
+		`"base":{"ref":"main","sha":"b45e"}}}`
+	d := github("pull_request", "g5", body)
+	webhook, err := ParseGitHub(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webhook.GitHub.Synthetic || webhook.GitHub.ConflictWorkspace != "" || webhook.GitHub.PullRequest.BaseSHA != "b45e" {
+		t.Errorf("webhook %+v", webhook.GitHub)
+	}
+	d.Headers[SyntheticHeader] = "reconcile"
+	synthetic, err := ParseGitHub(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !synthetic.GitHub.Synthetic || synthetic.GitHub.ConflictWorkspace != "vigie" || synthetic.Action != ActionConflict ||
+		synthetic.RequestKey != "github/sperano/vigie/pull/3/gordon-conflict/abc" {
+		t.Errorf("synthetic %+v, request %q", synthetic.GitHub, synthetic.RequestKey)
+	}
+}

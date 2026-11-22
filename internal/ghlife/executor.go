@@ -22,6 +22,9 @@ type Executor struct {
 	Runs   lifecycle.Runs
 	Lock   lifecycle.Locker
 	Links  lifecycle.Links
+	// Messages reads a failed run's Task status message for its notice
+	// (nil: none).
+	Messages lifecycle.TaskMessages
 }
 
 // handler is one kind: applied checks whether the write is already

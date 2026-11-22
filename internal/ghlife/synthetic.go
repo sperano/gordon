@@ -82,6 +82,12 @@ type payload struct {
 	Comment     *commentJSON `json:"comment,omitempty"`
 	Review      *commentJSON `json:"review,omitempty"`
 	PullRequest *pullJSON    `json:"pull_request,omitempty"`
+	Gordon      *gordonJSON  `json:"gordon,omitempty"`
+}
+
+// gordonJSON is what a synthetic delivery adds to GitHub's payload.
+type gordonJSON struct {
+	Workspace string `json:"workspace"`
 }
 
 type issueJSON struct {

@@ -19,6 +19,8 @@ type GitHub struct {
 	// Lookback and Grace bound what it recovers: younger than Lookback,
 	// older than Grace (the webhook may still be on its way).
 	Lookback, Grace time.Duration
+	// ConflictInterval paces the conflict reconciliation (0: off).
+	ConflictInterval time.Duration
 }
 
 // GitHub reconciliation defaults (reconcile_merge_close.py's 24 h window,
@@ -29,13 +31,14 @@ const (
 )
 
 // githubWriting are the families whose actions write to GitHub.
-var githubWriting = []run.Family{run.PRFollowUp, run.PRReview}
+var githubWriting = []run.Family{run.PRFollowUp, run.PRReview, run.PRConflict}
 
 func (r *reader) github() GitHub {
 	g := GitHub{AppDir: r.str("GORDON_GITHUB_APP_DIR", ""),
 		ReconcileInterval: r.offDuration("GORDON_GITHUB_RECONCILE_INTERVAL"),
 		Lookback:          r.duration("GORDON_GITHUB_RECONCILE_LOOKBACK", DefaultGitHubLookback),
-		Grace:             r.duration("GORDON_GITHUB_RECONCILE_GRACE", DefaultGitHubGrace)}
+		Grace:             r.duration("GORDON_GITHUB_RECONCILE_GRACE", DefaultGitHubGrace),
+		ConflictInterval:  r.offDuration("GORDON_CONFLICT_RECONCILE_INTERVAL")}
 	if g.Grace >= g.Lookback {
 		r.fail("GORDON_GITHUB_RECONCILE_GRACE %s must be below GORDON_GITHUB_RECONCILE_LOOKBACK %s", g.Grace, g.Lookback)
 	}

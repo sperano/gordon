@@ -13,10 +13,14 @@ import (
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/kelos/kelostest"
+	"github.com/sperano/gordon/internal/lifecycle"
+	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/restart"
 	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store/storetest"
+	"github.com/sperano/gordon/internal/submit"
 )
 
 const kelosToken = "kelos-sa-token"
@@ -98,5 +102,38 @@ func TestServiceSubmitsToKelos(t *testing.T) {
 	}
 	if strings.Contains(svc.logs.String(), kelosToken) || strings.Contains(svc.logs.String(), "<p>earlier</p>") {
 		t.Fatal("a token or a comment reached the log")
+	}
+}
+
+// TestPassesOutsideShadow: the observer (its completion record first, then
+// the failure notices) and the limit restarts run only outside shadow.
+func TestPassesOutsideShadow(t *testing.T) {
+	cfg := config.Worker{Shadow: true, Routing: profile.Defaults(), Kelos: &config.Kelos{}, Restart: config.Restart{Max: 4, Grace: time.Minute,
+		Fallback: time.Hour}}
+	k := &kelos.Client{}
+	if got := passes(cfg, nil, k, nil, discardLog()); len(got) != 1 {
+		t.Fatalf("shadow passes %v, want the comparison only", got)
+	}
+	if got := passes(cfg, nil, nil, nil, discardLog()); got != nil {
+		t.Fatalf("passes without Kelos %v", got)
+	}
+	cfg.Shadow = false
+	got := passes(cfg, nil, k, nil, discardLog())
+	if len(got) != 3 {
+		t.Fatalf("passes %v", got)
+	}
+	obs, ok := got[1].(*submit.Observer)
+	if !ok || len(obs.Finished) != 2 {
+		t.Fatalf("observer %+v", got[1])
+	}
+	if _, ok := obs.Finished[0].(*submit.Completions); !ok {
+		t.Errorf("first hook %T, want the completion record", obs.Finished[0])
+	}
+	if f, ok := obs.Finished[1].(*lifecycle.Failures); !ok || len(f.Projects) == 0 {
+		t.Errorf("second hook %T, want the failure notices with the projects", obs.Finished[1])
+	}
+	r, ok := got[2].(*restart.Reaper)
+	if !ok || r.MaxRestarts != 4 || r.Grace != time.Minute || r.Fallback != time.Hour || len(r.Config.Projects) == 0 {
+		t.Errorf("limit restarts %+v", got[2])
 	}
 }

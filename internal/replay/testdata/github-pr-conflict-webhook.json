@@ -1,0 +1,60 @@
+{
+  "description": "A webhook never carries the conflict action: one that does is not routed, whatever its body says.",
+  "delivery": {
+    "body": {
+      "action": "gordon-conflict",
+      "gordon": {
+        "workspace": "lucarne"
+      },
+      "pull_request": {
+        "base": {
+          "ref": "main",
+          "sha": "1111111122222222333333334444444455555555"
+        },
+        "draft": false,
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "repo": {
+            "full_name": "sperano/lucarne"
+          },
+          "sha": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "html_url": "https://github.com/sperano/lucarne/pull/7",
+        "labels": [
+          {
+            "name": "kelos:claude-opus"
+          }
+        ],
+        "merged": false,
+        "number": 7,
+        "state": "open",
+        "title": "Add the inspector",
+        "user": {
+          "login": "gordon-cole-ai[bot]"
+        }
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "gordon-cole-ai[bot]"
+      }
+    },
+    "headers": {
+      "X-GitHub-Delivery": "33333333-2222-3333-4444-555555555555",
+      "X-GitHub-Event": "pull_request"
+    },
+    "source": "github"
+  },
+  "state": {},
+  "ledger": {},
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "delivery_key": "github/delivery/33333333-2222-3333-4444-555555555555",
+    "outcome": "ignore",
+    "reason": "action-not-routed",
+    "request_key": "github/sperano/lucarne/pull/7/gordon-conflict/0123456789abcdef0123456789abcdef01234567"
+  }
+}

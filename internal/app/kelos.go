@@ -9,6 +9,7 @@ import (
 	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/metrics"
+	"github.com/sperano/gordon/internal/restart"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/submit"
 	"github.com/sperano/gordon/internal/worker"
@@ -49,8 +50,9 @@ func executors(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubap
 	return out
 }
 
-// passes are the reconciler's Kelos passes: the run observer (outside
-// shadow mode, the only one with runs) and the shadow comparison.
+// passes are the reconciler's Kelos passes: the shadow comparison and,
+// outside shadow mode (the only one with runs), the run observer and the
+// limit restarts.
 func passes(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metrics, log *slog.Logger) []worker.Pass {
 	if k == nil {
 		return nil
@@ -58,8 +60,15 @@ func passes(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metri
 	out := []worker.Pass{&submit.Shadow{Store: s, Kelos: k, Window: cfg.Kelos.ShadowWindow, Metrics: m,
 		Log: log.With("pass", "shadow")}}
 	if !cfg.Shadow {
-		out = append(out, &submit.Observer{Store: s, Kelos: k, Finished: failureHook(cfg, s), Metrics: m,
-			Log: log.With("pass", "observe")})
+		out = append(out, &submit.Observer{Store: s, Kelos: k, Finished: finishHooks(cfg, s), Metrics: m,
+			Log: log.With("pass", "observe")}, limitRestarts(cfg, s, k, m, log))
 	}
 	return out
+}
+
+// limitRestarts is the limit restart pass.
+func limitRestarts(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metrics, log *slog.Logger) *restart.Reaper {
+	return &restart.Reaper{Store: s, Kelos: k, Config: cfg.Routing, Ownership: cfg.Ownership,
+		MaxRestarts: cfg.Restart.Max, Grace: cfg.Restart.Grace, Fallback: cfg.Restart.Fallback,
+		Metrics: m, Log: log.With("pass", "limit-restart")}
 }

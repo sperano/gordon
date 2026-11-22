@@ -90,6 +90,9 @@ type ObservedRun struct {
 	Family  run.Family
 	Project string
 	TaskID  int64
+	// PR is a PR follow-up's or conflict run's pull request (0 for none),
+	// for their failure notices.
+	PR int
 }
 
 // ObservedRuns takes the runs the observer follows, at most limit, the
@@ -101,10 +104,10 @@ func (s *Store) ObservedRuns(ctx context.Context, limit int) ([]ObservedRun, err
 			WHERE name IN (SELECT name FROM runs WHERE state <> 'finished' OR task_exists
 				ORDER BY observed_at, name LIMIT $1 FOR UPDATE SKIP LOCKED)
 			RETURNING name, inbox_id, state, task_exists, phase, family, project,
-				coalesce((identity->>'task_id')::bigint, 0) AS task_id)
+				coalesce((identity->>'task_id')::bigint, 0) AS task_id, coalesce((identity->>'pr')::int, 0) AS pr)
 		SELECT r.name, r.inbox_id, r.state, r.task_exists, r.phase,
 			coalesce((SELECT a.state FROM actions a WHERE a.inbox_id = r.inbox_id AND a.key = $2 || r.name), ''),
-			r.family, r.project, r.task_id
+			r.family, r.project, r.task_id, r.pr
 		FROM taken r ORDER BY r.name`, limit, submitKeyPrefix())
 	if err != nil {
 		return nil, err
@@ -112,7 +115,7 @@ func (s *Store) ObservedRuns(ctx context.Context, limit int) ([]ObservedRun, err
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ObservedRun, error) {
 		var o ObservedRun
 		var family string
-		err := r.Scan(&o.Name, &o.InboxID, &o.State, &o.Exists, &o.Phase, &o.SubmitState, &family, &o.Project, &o.TaskID)
+		err := r.Scan(&o.Name, &o.InboxID, &o.State, &o.Exists, &o.Phase, &o.SubmitState, &family, &o.Project, &o.TaskID, &o.PR)
 		o.Family = run.Family(family)
 		return o, err
 	})

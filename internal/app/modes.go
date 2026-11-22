@@ -137,6 +137,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	})
 	startVikunjaReconcile(g, cfg, s, vikunja, m, log)
 	startGitHubReconcile(g, cfg, s, github, m, log)
+	startConflictReconcile(g, cfg, s, github, m, log)
 	log.Info("worker started", "config", cfg.String())
 	return g.Wait()
 }

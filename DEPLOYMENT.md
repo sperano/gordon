@@ -94,9 +94,12 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
 | `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`, on a pull request `<sillage>/open?url=<PR URL>`, only on a private repository); unset, no link |
-| `GORDON_GITHUB_APP_DIR` | empty | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry. Without it GitHub actions stay queued (deferred); outside shadow a Gordon-owned `pr-followup` or `pr-review` is refused without it |
+| `GORDON_GITHUB_APP_DIR` | empty | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry. Without it GitHub actions stay queued (deferred); outside shadow a Gordon-owned `pr-followup`, `pr-review` or `pr-conflict` is refused without it |
 | `GORDON_GITHUB_RECONCILE_INTERVAL` | `0` (off) | pace of the GitHub reconciliation: for each configured repository's open pull requests by a pull-request author, the owner's `/gordon` comments, inline comments and reviews and each review bot's latest review with a body, not handled yet, and those pull requests closed from an agent branch, are queued as synthetic deliveries, each once |
 | `GORDON_GITHUB_RECONCILE_LOOKBACK`, `GORDON_GITHUB_RECONCILE_GRACE` | `24h`, `10m` | its window: submitted, created or closed within the first, and longer ago than the second (the webhook may still be on its way) |
+| `GORDON_CONFLICT_RECONCILE_INTERVAL` | `0` (off) | pace of the conflict reconciliation: for each Workspace of a project whose `pr-conflict` is not legacy's, the repository's open agent PRs based on the Workspace's ref (`base_ref` of its first project, `main` by default) or stacked on another such PR are read one by one, and each GitHub reports in conflict (mergeable `false`, `dirty`) whose episode has no run left is queued, once an hour. Push and `pull_request` events start no scan: this interval is the detection delay. One read-only GitHub read per candidate PR and pass |
+| `GORDON_LIMIT_RESTART_MAX` | `3` | restarts of one chain after a subscription limit; then the gave-up notice |
+| `GORDON_LIMIT_RESTART_GRACE`, `GORDON_LIMIT_RESTART_FALLBACK` | `2m`, `1h` | a limit stop restarts this long after its reset; without a known reset time, the fallback after its Task's completion |
 
 ## Dispatch configuration
 
@@ -221,11 +224,14 @@ possible: `SELECT family, state, count(*) FROM actions WHERE state NOT IN
 ('done', 'failed') GROUP BY 1, 2` empty for the scope's families; `failed`
 actions are dead-lettered (never retried), so review them separately.
 
-## GitHub lifecycle (Gordon 08)
+## GitHub lifecycle (Gordon 08, 08b)
 
 Gordon decides and executes the GitHub lifecycle the reactor, the PR
-follow-up and reviewer init containers and the pollers performed, as
-durable actions on the GitHub families. Its writes act as the GitHub App
+follow-up, conflict and reviewer init containers, the conflict
+reconcilers, the limit reaper and the pollers performed, as durable
+actions on the GitHub families. PR readiness (`reconcile_pr_ready.py`:
+ready and round-limit notices, ntfy, auto-merge, missing checks) is not
+ported yet and stays legacy. Its writes act as the GitHub App
 (`GORDON_GITHUB_APP_DIR`); its reads keep the read-only token. The
 routing configuration's `policy` carries the round caps
 (`max_rounds_per_pr`, `suggestions_max_rounds`; `0` for none,
@@ -249,6 +255,42 @@ routing configuration's `policy` carries the round caps
   pull request and reviewer created before it are deleted, a legacy
   spawner's included; a limit restart supersedes nothing. A skipped PR's
   required checks are posted completed `skipped`, once per head.
+- **Conflicts** (`pr-conflict`, Gordon 08b): the conflict reconciliation
+  queues each confirmed conflict as a synthetic `pull_request` delivery
+  (action `gordon-conflict`, which only a synthetic delivery is routed
+  with); the router re-reads the pull request and submits
+  `pr-conflict-<route hash>-<PR>-<base8>-<head8>` while it is still the
+  same open agent PR in conflict on the same base and head (a moved
+  episode is stale, mergeability still computing a retry), on the head
+  branch, in the PR's `kelos:` variant (none: ignored; two: a conflict),
+  with the follow-up execution profile, and announces it on the pull
+  request once submitted. An episode whose run finished is run again only
+  once its Task is gone (its TTL), as the legacy Task name allowed.
+- **Failed PR runs**: a Failed `pr-followup` or `pr-conflict` run of a
+  family Gordon owns gets a failure notice on its pull request (its
+  Task's status message; the run link only on a private repository); legacy
+  reported neither. A Task the subscription limit stopped is never
+  reported failed, on a pull request or a Vikunja task: the limit restarts
+  take it.
+- **Limit restarts** (`limit-restart`, Gordon 08b): each reconcile, outside
+  shadow, Gordon's failed runs of the projects it owns the family for are
+  decided once: a Task the subscription limit stopped (the agent image's
+  `limit-resets-at`/`limit-type` outputs, or the agent's "hit your ...
+  limit" answer) is restarted as `<name>-retry<n>` (its spec, labels,
+  correlation and Gordon annotations, `kelos.spe.quebec/limit-restarts`
+  and `limit-restart-of`) `GORDON_LIMIT_RESTART_GRACE` after the reset, as a
+  run of the stopped run's generation (submitted through the outbox, its
+  limits and held branch, followed by the observer, stopped by a drag),
+  once no Task of its group (the Vikunja task, the reviewer's pull
+  request, the pull request's follow-ups) is pending or running; older
+  stops of the group are superseded, and after `GORDON_LIMIT_RESTART_MAX`
+  restarts the Vikunja task gets the gave-up notice. A Vikunja run's
+  restart gets the reaper's restart notice and a start notice; a PR
+  follow-up's or conflict's a start notice on the pull request.
+- **Run completions**: the observer records every run generation it sees
+  finish in `run_completions` (family, project, Task uid, phase,
+  completion time and the Task's outputs, the agent's `response` left
+  out), once: the usage accounting's (Gordon 10) input.
 - **Recovery**: with `GORDON_GITHUB_RECONCILE_INTERVAL`, missed owner
   requests, review-bot findings and merge-closes are queued again (see
   the variable). Their request keys are the webhooks', so nothing is
@@ -274,6 +316,8 @@ a duplicate.
 | `pr-review` | the project's `pr-review-*` spawners and the reactor's skipped checks for its repository | dispatch config and Task `create`; the App; `list` and `delete` on `tasks`; Tasks without the `pr-task-dedup` and `pr-review-supersede` init containers |
 | `pr-open` | the repository's pr-open merge spawner | the Vikunja write token |
 | `merge-close` | the repository's merge-close spawner and its `merge-close-reconcile` entry | the Vikunja write token; the GitHub reconciliation |
+| `pr-conflict` | the Workspace's `pr-conflict-*` spawners and its `conflict-reconcile-event-*` and `conflict-reconcile-cron-*` reconcilers | dispatch config and Task `create`; the App; Tasks without the `announce-github-start` init container; the conflict reconciliation |
+| `limit-restart` | the limit reaper for Gordon's Tasks (`gordon.spe.quebec/managed`) of the rule's projects; it keeps every other Task | dispatch config, Task `create` and `list`; the Vikunja write token |
 
 ## Probes and metrics
 
@@ -299,14 +343,17 @@ a duplicate.
   `gordon_bodies_pruned_total`,
   `gordon_vikunja_reconcile_runs_total{result}`, `gordon_vikunja_reconcile_queued_total`,
   `gordon_github_reconcile_runs_total{result}`, `gordon_github_reconcile_queued_total`,
+  `gordon_conflict_reconcile_runs_total{result}`, `gordon_conflict_reconcile_queued_total`,
+  `gordon_limit_restart_decisions_total{result}` (`restarted`, `superseded`, `gave-up`, `name-too-long`, `none`),
   plus the Go and process collectors. `gordon_action_attempts_total`'s
   `kind` includes `assign`, `sync-label`, `cancel-run` and `supersede-reviews`.
 
 Suggested alerts: `gordon_queue_oldest_age_seconds{state="pending"}` above
 the retry cap, any `gordon_queue_depth{state="failed"}` or
 `{queue="actions",state="ambiguous"}`, reconciliation not successful for
-several intervals (`gordon_vikunja_reconcile_runs_total{result="error"}`
-and `gordon_github_reconcile_runs_total{result="error"}` too, once on), `gordon_intake_requests_total{result="unavailable"}`,
+several intervals (`gordon_vikunja_reconcile_runs_total{result="error"}`,
+`gordon_github_reconcile_runs_total{result="error"}` and
+`gordon_conflict_reconcile_runs_total{result="error"}` too, once on), `gordon_limit_restart_decisions_total{result="gave-up"}`, `gordon_intake_requests_total{result="unavailable"}`,
 `gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
 a submission's request: the lookup or the admission list before the
 create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
