@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"github.com/sperano/gordon/internal/action"
 	"testing"
 	"time"
 
@@ -66,4 +67,14 @@ func depthTotal(m *Metrics) float64 {
 		}
 	}
 	return total
+}
+
+// TestReadinessKindsAreLabelled: the readiness actions keep their own
+// kind label instead of falling into Other.
+func TestReadinessKindsAreLabelled(t *testing.T) {
+	for _, k := range []action.Kind{action.Notify, action.MergePullRequest} {
+		if got := Bound(string(k), ActionKinds); got != string(k) {
+			t.Errorf("Bound(%q) = %q", k, got)
+		}
+	}
 }

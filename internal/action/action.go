@@ -33,6 +33,15 @@ const (
 	// (supersede_reviews.py): queued submissions are cancelled, live
 	// Kelos Tasks created before the run's deleted.
 	SupersedeReviews Kind = "supersede-reviews"
+	// Notify sends a ready pull-request head to ntfy, once, with its
+	// delivery bookkept in reactions on the target Vikunja task
+	// (pr_ready_notify.py); Value is the head SHA, Detail the head
+	// (notice.Head).
+	Notify Kind = "notify"
+	// MergePullRequest merges the target pull request at the head SHA
+	// Value (auto_merge.py); Detail is the Vikunja task a refusal is
+	// reported on.
+	MergePullRequest Kind = "merge-pull-request"
 )
 
 // Target is the object an action writes to.

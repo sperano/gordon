@@ -1,0 +1,189 @@
+{
+  "description": "A completed check run on a head whose last bot review only has suggestions, after the suggestions cap took the label off: no agent will address them, so ROUND LIMIT REACHED once, the ready label off, action-needed then round-limit-reached on.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Delivery": "44444444-2222-3333-4444-000000000071",
+      "X-GitHub-Event": "check_run"
+    },
+    "body": {
+      "action": "completed",
+      "check_run": {
+        "conclusion": "success",
+        "head_sha": "0123456789abcdef0123456789abcdef01234567",
+        "id": 31,
+        "name": "review/pr-challenger",
+        "pull_requests": [
+          {
+            "number": 7
+          }
+        ],
+        "status": "completed"
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "github-actions[bot]"
+      }
+    }
+  },
+  "state": {
+    "readiness": [
+      {
+        "pull_request": {
+          "repository": "sperano/lucarne",
+          "number": 7,
+          "url": "https://github.com/sperano/lucarne/pull/7",
+          "state": "open",
+          "draft": false,
+          "merged": false,
+          "author": "gordon-cole-ai[bot]",
+          "head_ref": "kelos/vikunja-4402",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "head_repo": "sperano/lucarne",
+          "base_ref": "main",
+          "labels": [
+            "kelos:claude-opus"
+          ],
+          "files": [
+            "internal/run/run.go"
+          ],
+          "mergeable": true,
+          "mergeable_state": "clean",
+          "created_at": "2026-11-22T10:00:00Z"
+        },
+        "check_runs": [
+          {
+            "id": 11,
+            "name": "review/pr-challenger",
+            "status": "completed",
+            "conclusion": "success",
+            "completed_at": "2026-11-22T11:55:00Z"
+          },
+          {
+            "id": 12,
+            "name": "review/idiomatic-go",
+            "status": "completed",
+            "conclusion": "success",
+            "completed_at": "2026-11-22T11:55:00Z"
+          }
+        ],
+        "reviews": [
+          {
+            "id": 880001,
+            "author": "gordon-cole-ai[bot]",
+            "body": "**Review verdict: suggestions**\n\nrename it",
+            "commit_id": "0123456789abcdef0123456789abcdef01234567",
+            "submitted_at": "2026-11-22T11:40:00Z"
+          }
+        ],
+        "comments": [
+          {
+            "id": 770001,
+            "author": "gordon-cole-ai[bot]",
+            "body": "THIS PULL REQUEST HAS REACHED ITS FIX-SUGGESTIONS ROUND LIMIT: SUGGESTIONS-ONLY REVIEWS OF 4 PUSHES HAVE STARTED KELOS FOLLOW-UP AGENTS, THE CONFIGURED MAXIMUM (`followUp.fixSuggestions.maxRounds`). THE `kelos:fix-suggestions` LABEL IS REMOVED: LATER SUGGESTIONS STAY IN THE REVIEWS FOR YOU, AND ONLY BLOCKING FINDINGS START AN AGENT. ADDING THE LABEL BACK DOES NOT LIFT THE LIMIT. TO HAVE SUGGESTIONS FIXED, COMMENT ON THE PULL REQUEST WITH A REQUEST STARTING WITH `/gordon`, FOR EXAMPLE `/gordon fix the latest review's suggestions`.\n\n\u003c!-- kelos:suggestions-cap --\u003e"
+          }
+        ],
+        "threads": [],
+        "tasks": [],
+        "task": {
+          "id": 4402,
+          "project_id": 139,
+          "done": false,
+          "labels": [
+            "in progress",
+            "pr open",
+            "ready to merge"
+          ],
+          "assignees": [
+            "claude-opus"
+          ],
+          "buckets": [
+            "Review"
+          ]
+        },
+        "task_comments": [
+          {
+            "id": 900001,
+            "author": "gordon",
+            "body": "\u003cp\u003ePR CREATED: \u003ca href=\"https://github.com/sperano/lucarne/pull/7\"\u003esperano/lucarne#7\u003c/a\u003e. THE AGENT'S LOCAL CHECKS PASSED; GITHUB CHECKS AND AUTOMATED REVIEWS MAY STILL BE RUNNING. I'LL SPEAK UP AGAIN WHEN IT'S READY TO MERGE.\u003c/p\u003e\u003c!-- kelos:pr-open --\u003e"
+          }
+        ],
+        "read_at": "2026-11-22T12:00:00Z"
+      }
+    ],
+    "readiness_read": true
+  },
+  "ledger": {},
+  "ownership": {
+    "rules": [
+      {
+        "project": "lucarne",
+        "family": "pr-readiness",
+        "owner": "gordon",
+        "evidence": [
+          "replay-parity",
+          "shadow-parity",
+          "rollback-tested",
+          "legacy-disabled"
+        ]
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": [
+      "pr-ready-47d85cbe-0123456789ab"
+    ],
+    "divergence": "Gordon decides each completed check run itself: no model-free pr-ready waiter Task polling the head",
+    "writes": [
+      "post-notice:vikunja/task/4402:round-limit:sperano/lucarne#7@0123456789abcdef0123456789abcdef01234567 [{\"author\":\"gordon-cole-ai[bot]\",\"review\":880001}]",
+      "remove-label:vikunja/task/4402:ready to merge",
+      "add-label:vikunja/task/4402:action-needed",
+      "add-label:vikunja/task/4402:round-limit-reached"
+    ]
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "github/delivery/44444444-2222-3333-4444-000000000071",
+    "families": [
+      {
+        "family": "pr-readiness",
+        "project": "lucarne",
+        "owner": "gordon",
+        "execute": true,
+        "outcome": "act",
+        "reason": "round-limit",
+        "actions": [
+          {
+            "key": "post-notice:vikunja/task/4402:round-limit:sperano/lucarne#7@0123456789abcdef0123456789abcdef01234567 [{\"author\":\"gordon-cole-ai[bot]\",\"review\":880001}]",
+            "kind": "post-notice",
+            "target": "vikunja/task/4402",
+            "value": "round-limit",
+            "detail": "sperano/lucarne#7@0123456789abcdef0123456789abcdef01234567 [{\"author\":\"gordon-cole-ai[bot]\",\"review\":880001}]"
+          },
+          {
+            "key": "remove-label:vikunja/task/4402:ready to merge",
+            "kind": "remove-label",
+            "target": "vikunja/task/4402",
+            "value": "ready to merge"
+          },
+          {
+            "key": "add-label:vikunja/task/4402:action-needed",
+            "kind": "add-label",
+            "target": "vikunja/task/4402",
+            "value": "action-needed",
+            "after": "post-notice:vikunja/task/4402:round-limit:sperano/lucarne#7@0123456789abcdef0123456789abcdef01234567 [{\"author\":\"gordon-cole-ai[bot]\",\"review\":880001}]"
+          },
+          {
+            "key": "add-label:vikunja/task/4402:round-limit-reached",
+            "kind": "add-label",
+            "target": "vikunja/task/4402",
+            "value": "round-limit-reached",
+            "after": "add-label:vikunja/task/4402:action-needed"
+          }
+        ]
+      }
+    ]
+  }
+}

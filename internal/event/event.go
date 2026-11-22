@@ -120,6 +120,10 @@ type Task struct {
 	Index int64 `json:"index,omitempty"`
 	// Relations are the task's related tasks, fresh reads only.
 	Relations Relations `json:"relations,omitzero"`
+	// LabelCreators maps each label title to the usernames that created
+	// a label of that title on the task (a fresh read only): an auto-merge
+	// label counts only when its trusted creator made it.
+	LabelCreators map[string][]string `json:"label_creators,omitempty"`
 }
 
 // Comment is a Vikunja task comment.
@@ -130,6 +134,12 @@ type Comment struct {
 
 // HasLabel reports whether the task carries the label title.
 func (t Task) HasLabel(title string) bool { return contains(t.Labels, title) }
+
+// LabelBy reports whether the task carries a label titled title that
+// creator created.
+func (t Task) LabelBy(title, creator string) bool {
+	return creator != "" && contains(t.LabelCreators[title], creator)
+}
 
 // InBucket reports whether the task is in a bucket of that title.
 func (t Task) InBucket(title string) bool { return contains(t.Buckets, title) }
@@ -160,6 +170,9 @@ type GitHub struct {
 	// reconciliation found the conflict.
 	Synthetic         bool
 	ConflictWorkspace string
+	// CheckRunHeadSHA is a check_run's head_sha: the head whose pull
+	// requests the readiness family decides.
+	CheckRunHeadSHA string
 }
 
 // PullRequest is a GitHub pull-request snapshot, from a delivery or a
@@ -185,6 +198,8 @@ type PullRequest struct {
 	BaseSHA        string `json:"base_sha,omitempty"`
 	Mergeable      *bool  `json:"mergeable,omitempty"`
 	MergeableState string `json:"mergeable_state,omitempty"`
+	// CreatedAt is when the pull request was opened (a fresh read).
+	CreatedAt time.Time `json:"created_at,omitzero"`
 }
 
 // Conflicting reports a pull request GitHub found in conflict with its

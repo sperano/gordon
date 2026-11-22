@@ -84,6 +84,8 @@ func (r Router) route(ev event.Event, st State, led Ledger) Decision {
 		return r.prComment(ev, st, led)
 	case event.GitHubPullRequest:
 		return r.pullRequest(ev, st, led)
+	case event.GitHubCheckRun:
+		return r.checkRun(ev, st, led)
 	default:
 		return Decision{Outcome: Ignore, Reason: ReasonNotRouted}
 	}

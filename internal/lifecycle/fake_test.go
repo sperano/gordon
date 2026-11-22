@@ -32,15 +32,21 @@ type fakeVikunja struct {
 	users     map[int64][]User   // by project
 	comments  map[int64][]Comment
 	reactions map[int64]map[string][]User
-	nextID    int64
-	writes    []string
-	failNext  map[string]bool
+	// taskReactions are the reactions on tasks (the ntfy bookkeeping).
+	taskReactions map[int64]map[string][]User
+	nextID        int64
+	writes        []string
+	failNext      map[string]bool
+	// refuseReactions answers that many task reactions of a value 503,
+	// unapplied.
+	refuseReactions map[string]int
 }
 
 func newFake(t *testing.T) *fakeVikunja {
 	f := &fakeVikunja{tasks: map[int64]*Task{}, views: map[int64][]View{}, buckets: map[int64][]Bucket{},
 		users: map[int64][]User{}, comments: map[int64][]Comment{}, reactions: map[int64]map[string][]User{},
-		nextID: 1000, failNext: map[string]bool{}}
+		taskReactions: map[int64]map[string][]User{}, nextID: 1000, failNext: map[string]bool{},
+		refuseReactions: map[string]int{}}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f
@@ -74,6 +80,8 @@ var routes = []fakeRoute{
 	{"GET", regexp.MustCompile(`^/projects/(\d+)/projectusers$`), (*fakeVikunja).projectUsers},
 	{"GET", regexp.MustCompile(`^/comments/(\d+)/reactions$`), (*fakeVikunja).listReactions},
 	{"PUT", regexp.MustCompile(`^/comments/(\d+)/reactions$`), (*fakeVikunja).react},
+	{"GET", regexp.MustCompile(`^/tasks/(\d+)/reactions$`), (*fakeVikunja).listTaskReactions},
+	{"PUT", regexp.MustCompile(`^/tasks/(\d+)/reactions$`), (*fakeVikunja).reactTask},
 }
 
 func (f *fakeVikunja) serve(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +272,25 @@ func (f *fakeVikunja) react(w http.ResponseWriter, r *http.Request, ids []int64)
 	if !slices.Contains(f.reactions[ids[0]][body.Value], me) {
 		f.reactions[ids[0]][body.Value] = append(f.reactions[ids[0]][body.Value], me)
 	}
+	reply(w, map[string]string{})
+}
+
+func (f *fakeVikunja) listTaskReactions(w http.ResponseWriter, _ *http.Request, ids []int64) {
+	reply(w, f.taskReactions[ids[0]])
+}
+
+func (f *fakeVikunja) reactTask(w http.ResponseWriter, r *http.Request, ids []int64) {
+	var body struct{ Value string }
+	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck // test server
+	if f.refuseReactions[body.Value] > 0 {
+		f.refuseReactions[body.Value]--
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if f.taskReactions[ids[0]] == nil {
+		f.taskReactions[ids[0]] = map[string][]User{}
+	}
+	f.taskReactions[ids[0]][body.Value] = []User{{ID: 80, Username: gordon}}
 	reply(w, map[string]string{})
 }
 

@@ -69,6 +69,10 @@ type Metrics struct {
 	// reconciliation's passes and the conflicts it queued.
 	ConflictReconciles      *prometheus.CounterVec
 	ConflictReconcileQueued prometheus.Counter
+	// ReadinessReconciles and ReadinessReconcileQueued are the readiness
+	// reconciliation's passes and the heads it queued.
+	ReadinessReconciles      *prometheus.CounterVec
+	ReadinessReconcileQueued prometheus.Counter
 }
 
 // New registers Gordon's metrics, with the Go and process collectors, on
@@ -123,7 +127,8 @@ func New() *Metrics {
 		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions, m.ShadowComparisons,
 		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
 		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued,
-		m.GitHubReconciles, m.GitHubReconcileQueued, m.LimitRestarts, m.ConflictReconciles, m.ConflictReconcileQueued)
+		m.GitHubReconciles, m.GitHubReconcileQueued, m.LimitRestarts, m.ConflictReconciles, m.ConflictReconcileQueued,
+		m.ReadinessReconciles, m.ReadinessReconcileQueued)
 	return m
 }
 
@@ -140,6 +145,9 @@ func (m *Metrics) lifecycle() {
 	m.ConflictReconciles = counter("conflict_reconcile_runs_total", "Conflict reconciliation passes by result.", "result")
 	m.ConflictReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
 		Name: "conflict_reconcile_queued_total", Help: "Confirmed conflicts the conflict reconciliation queued."})
+	m.ReadinessReconciles = counter("readiness_reconcile_runs_total", "Readiness reconciliation passes by result.", "result")
+	m.ReadinessReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
+		Name: "readiness_reconcile_queued_total", Help: "Pull-request heads the readiness reconciliation queued."})
 }
 
 func counter(name, help string, labels ...string) *prometheus.CounterVec {

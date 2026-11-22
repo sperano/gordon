@@ -38,8 +38,8 @@ func TestReviewsSkipPendingAndPage(t *testing.T) {
 	if err != nil || len(got) != listPerPage || len(queries) != 2 {
 		t.Fatalf("%d reviews over %d pages, %v; want the %d submitted over 2", len(got), len(queries), err, listPerPage)
 	}
-	want := ListedReview{Review: event.Review{ID: 2, Author: "cubic-dev-ai[bot]", Body: "b", CommitID: "abc"},
-		NodeID: "N2", Submitted: time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)}
+	want := ListedReview{Review: event.Review{ID: 2, Author: "cubic-dev-ai[bot]", Body: "b", CommitID: "abc",
+		SubmittedAt: time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)}, NodeID: "N2"}
 	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("first review %+v, want %+v", got[0], want)
 	}

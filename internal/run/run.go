@@ -41,6 +41,10 @@ const (
 	// LimitRestart restarts Gordon's runs a subscription limit stopped
 	// (limit_reaper.py), once the limit reset.
 	LimitRestart Family = "limit-restart"
+	// PRReadiness announces an agent pull request's head ready to merge
+	// or at its review round limit, labels its task, notifies and merges
+	// on request (reconcile_pr_ready.py): model-free writes.
+	PRReadiness Family = "pr-readiness"
 )
 
 // Families lists every family the router decides, in a stable order.
@@ -48,7 +52,7 @@ var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
 	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure,
-	PRConflict, LimitRestart,
+	PRConflict, LimitRestart, PRReadiness,
 }
 
 // AgentFamilies are the families whose runs work on a Vikunja task as its

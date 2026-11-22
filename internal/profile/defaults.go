@@ -122,6 +122,33 @@ const (
 	defaultSuggestionsMaxRounds = 4
 )
 
+// The readiness gate's waits of values.yaml (prReadiness).
+const (
+	defaultSettleSeconds       = 30
+	defaultMissingCheckMinutes = 30
+)
+
+// readiness is values-hollingsworth.yaml's prReadiness, for the
+// repositories of the default projects.
+func readiness() Readiness {
+	return Readiness{
+		CIChecks: map[string][]string{
+			"sperano/BRIQ": {}, "sperano/cocovm": {}, "sperano/dotfiles": {}, "sperano/dummy": {},
+			"sperano/gordon": {}, "sperano/hollingsworth": {}, "sperano/lucarne": {}, "sperano/maurice-swift": {},
+			"sperano/maurice-web": {},
+			"sperano/nhl": {"Test (default)", "Test (development)", "Test (game_stats)", "Clippy (default)",
+				"Clippy (development)", "Clippy (game_stats)", "Format", "Coverage", "Build (ubuntu-latest)",
+				"Build (macos-latest)", "Build (windows-latest)"},
+			"sperano/nhl-api": {"fmt", "clippy", "test", "docs", "msrv"}, "sperano/nhl-api-go": {},
+			"sperano/puckdb": {}, "sperano/qix-rs": {}, "sperano/qix-swift": {}, "sperano/sillage": {},
+			"sperano/solitaire": {"Lint", "SolitaireKit tests"}, "sperano/vigie": {"check"},
+		},
+		CubicRepos:    []string{"sperano/gordon", "sperano/puckdb"},
+		SettleSeconds: defaultSettleSeconds, MissingCheckMinutes: defaultMissingCheckMinutes,
+		MergeMethod: DefaultMergeMethod, Notify: true,
+	}
+}
+
 func policy() Policy {
 	return Policy{
 		VikunjaOwner: "eric", GitHubOwner: "sperano", Trigger: "/gordon",
@@ -138,6 +165,7 @@ func policy() Policy {
 		VariantLabelPrefix: "kelos:", DraftLabel: "kelos:follow-up",
 		FixSuggestionsLabel: "kelos:fix-suggestions", NoReviewLabel: "kelos:no-review",
 		MaxRoundsPerPR: defaultMaxRoundsPerPR, SuggestionsMaxRounds: defaultSuggestionsMaxRounds,
+		ReadyToMergeLabel: "ready to merge", RoundLimitLabel: "round-limit-reached", Readiness: readiness(),
 		ReviewBots: []Bot{
 			{Login: "cubic-dev-ai[bot]", FindingsPattern: `\*\*[1-9][0-9]* issues? found\b`},
 			{Login: "gordon-cole-ai[bot]", FindingsPattern: `(?m)^\*\*Review verdict: blocking\*\*`,

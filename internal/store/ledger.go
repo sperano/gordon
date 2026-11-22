@@ -107,23 +107,28 @@ func (l *Ledger) TaskRuns(taskID int64, families []run.Family) []route.RunRecord
 	return out
 }
 
-// PRRuns returns the PR follow-up runs of a Workspace's pull request.
+// prFamilies are the families whose runs work on a Workspace's pull
+// request.
+var prFamilies = []string{string(run.PRFollowUp), string(run.PRReview), string(run.PRConflict)}
+
+// PRRuns returns the runs of a Workspace's pull request: its follow-ups,
+// reviews and conflict runs.
 func (l *Ledger) PRRuns(workspace string, pr int) []route.RunRecord {
 	if l.Err != nil {
 		return nil
 	}
-	rows, err := l.q.Query(l.ctx, `SELECT name, state, task_exists FROM runs
-		WHERE family = $1 AND identity->>'workspace' = $2 AND identity->>'pr' = $3 ORDER BY name`,
-		string(run.PRFollowUp), workspace, strconv.Itoa(pr))
+	rows, err := l.q.Query(l.ctx, `SELECT name, state, task_exists, family FROM runs
+		WHERE family = ANY($1) AND identity->>'workspace' = $2 AND identity->>'pr' = $3 ORDER BY name`,
+		prFamilies, workspace, strconv.Itoa(pr))
 	if err != nil {
 		l.Err = err
 		return nil
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (route.RunRecord, error) {
-		rec := route.RunRecord{Family: run.PRFollowUp, Workspace: workspace, PR: pr}
-		var state string
-		err := r.Scan(&rec.Name, &state, &rec.Exists)
-		rec.Active = state != runFinished
+		rec := route.RunRecord{Workspace: workspace, PR: pr}
+		var state, family string
+		err := r.Scan(&rec.Name, &state, &rec.Exists, &family)
+		rec.Active, rec.Family = state != runFinished, run.Family(family)
 		return rec, err
 	})
 	if err != nil {

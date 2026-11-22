@@ -187,7 +187,7 @@ func (r *Reconciler) reviews(ctx context.Context, pr upstream.ListedPR) ([]store
 		case rv.Author == p.GitHubOwner && route.IsGitHubRequest(rv.Body, p.Trigger):
 			picked = append(picked, rv)
 		case r.bot(rv.Author) && rv.Body != "":
-			if prev, ok := latest[rv.Author]; !ok || !rv.Submitted.Before(prev.Submitted) {
+			if prev, ok := latest[rv.Author]; !ok || !rv.SubmittedAt.Before(prev.SubmittedAt) {
 				latest[rv.Author] = rv
 			}
 		}
@@ -198,7 +198,7 @@ func (r *Reconciler) reviews(ctx context.Context, pr upstream.ListedPR) ([]store
 	slices.SortFunc(picked, func(a, b upstream.ListedReview) int { return cmp.Compare(a.ID, b.ID) })
 	var out []store.Delivery
 	for _, rv := range picked {
-		if !r.window(rv.Submitted) {
+		if !r.window(rv.SubmittedAt) {
 			continue
 		}
 		d, err := reviewDelivery(pr, rv)

@@ -108,6 +108,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	// writer reads through its own client, under the outbox's limiter).
 	vikunja, github := vikunjaReader(cfg, m), githubReader(cfg, m)
 	proc := processor(cfg, s, m, log, projects, vikunja, github)
+	proc.State.Readiness = readinessReaders(cfg, k, app, vikunja, github)
 	g := newGroup(ctx)
 	if err := start(g, log, ServerAdmin, cfg.AdminAddr, adminServer(admin.Handler()), cfg.ShutdownGrace, onListen); err != nil {
 		g.cancel()
@@ -138,6 +139,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	startVikunjaReconcile(g, cfg, s, vikunja, m, log)
 	startGitHubReconcile(g, cfg, s, github, m, log)
 	startConflictReconcile(g, cfg, s, github, m, log)
+	startReadinessReconcile(g, cfg, s, github, m, log)
 	log.Info("worker started", "config", cfg.String())
 	return g.Wait()
 }

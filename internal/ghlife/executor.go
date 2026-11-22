@@ -29,6 +29,9 @@ type Executor struct {
 	// none); MaxRestarts is the restarts it names (0: the default).
 	Limits      lifecycle.TaskLimits
 	MaxRestarts int
+	// Vikunja posts a refused merge's notice on its task (nil: a refused
+	// merge fails).
+	Vikunja worker.Executor
 }
 
 // handler is one kind: applied checks whether the write is already
@@ -52,6 +55,8 @@ func (e *Executor) handler(k action.Kind) (handler, bool) {
 		return handler{e.checkApplied, e.postCheck}, true
 	case action.PostNotice:
 		return handler{e.noticeApplied, e.postNotice}, true // checks again under the target lock
+	case action.MergePullRequest:
+		return handler{e.mergeApplied, e.merge}, true
 	}
 	return handler{}, false
 }

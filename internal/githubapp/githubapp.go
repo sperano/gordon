@@ -62,6 +62,9 @@ var (
 	// enough, GitHub takes it or Pull requests: write) and reads the
 	// repository's visibility.
 	Comments = map[string]string{"issues": "write", "metadata": "read"}
+	// Merge merges a pull request (auto_merge.MERGE_PERMISSIONS); without
+	// Workflows, a PR touching .github/workflows is refused.
+	Merge = map[string]string{"contents": "write", "pull_requests": "write"}
 )
 
 // App mints and caches the installation tokens of one App installation.

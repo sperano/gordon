@@ -81,7 +81,10 @@ func TestMalformedAndUnsupported(t *testing.T) {
 	expect(t, r.Decide(other, route.State{}, replay.Ledger{}), route.Ignore, route.ReasonUnsupported)
 	check := signed(t, event.SourceGitHub, map[string]string{event.GitHubEventHeader: "check_run", event.GitHubDeliveryHeader: "g"},
 		map[string]any{"action": "completed", "repository": map[string]any{"full_name": "sperano/vigie"}})
-	expect(t, r.Decide(check, route.State{}, replay.Ledger{}), route.Ignore, route.ReasonNotRouted)
+	expect(t, r.Decide(check, route.State{}, replay.Ledger{}), route.Reject, route.ReasonMalformed)
+	push := signed(t, event.SourceGitHub, map[string]string{event.GitHubEventHeader: "push", event.GitHubDeliveryHeader: "g"},
+		map[string]any{"ref": "refs/heads/main", "repository": map[string]any{"full_name": "sperano/vigie"}})
+	expect(t, r.Decide(push, route.State{}, replay.Ledger{}), route.Ignore, route.ReasonNotRouted)
 }
 
 func TestShadowOwnershipRecordsWithoutExecuting(t *testing.T) {

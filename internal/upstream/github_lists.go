@@ -82,7 +82,6 @@ func checkPR(repo string, number int) error {
 type ListedReview struct {
 	event.Review
 	NodeID, URL string
-	Submitted   time.Time
 }
 
 // Reviews lists a pull request's submitted reviews, oldest first.
@@ -100,7 +99,7 @@ func (g GitHub) Reviews(ctx context.Context, repo string, number int) ([]ListedR
 			continue
 		}
 		out = append(out, ListedReview{Review: event.Review{ID: r.ID, Author: r.User.Login, Body: r.Body,
-			CommitID: r.CommitID}, NodeID: r.NodeID, URL: r.HTMLURL, Submitted: r.SubmittedAt})
+			CommitID: r.CommitID, SubmittedAt: r.SubmittedAt}, NodeID: r.NodeID, URL: r.HTMLURL})
 	}
 	return out, nil
 }

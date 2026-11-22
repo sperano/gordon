@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
+	"github.com/sperano/gordon/internal/upstream"
 )
 
 const replaySlots = 8
@@ -64,6 +66,7 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 			e.prs.history[fmt.Sprintf("%s#%d", pr.Repository, pr.Number)] = *h
 		}
 	}
+	serveReadiness(e, f.State.Readiness)
 	seedLedger(t, e, f.Ledger)
 	if !deliver(t, e, f, r.Keys) {
 		return
@@ -94,6 +97,76 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 			t.Fatalf("shadow queued %d actions and runs, want none", n)
 		}
 	}
+}
+
+// serveReadiness puts the fixture's readiness state behind the readers.
+func serveReadiness(e *env, rds []route.Readiness) {
+	if len(rds) == 0 {
+		return
+	}
+	fr := &fixtureReadiness{byHead: map[string]route.Readiness{}}
+	for _, rd := range rds {
+		pr := rd.PullRequest
+		key := fmt.Sprintf("%s#%d", pr.Repository, pr.Number)
+		e.prs.prs[key] = pr
+		e.prs.history[key] = route.PRHistory{Reviews: rd.Reviews, Comments: rd.Comments}
+		e.tasks.tasks[rd.Task.ID] = rd.Task
+		e.tasks.comments[rd.Task.ID] = rd.TaskComments
+		fr.byHead[pr.Repository+"@"+pr.HeadSHA] = rd
+		fr.open = append(fr.open, upstream.ListedPR{PullRequest: pr})
+		fr.now = rd.ReadAt
+	}
+	e.proc.State.Readiness = Readiness{GitHub: fr, Kelos: fr, Reactions: fr, Open: fr, Now: func() time.Time { return fr.now }}
+}
+
+// fixtureReadiness serves a fixture's readiness state.
+type fixtureReadiness struct {
+	byHead map[string]route.Readiness
+	open   []upstream.ListedPR
+	now    time.Time
+}
+
+func (f *fixtureReadiness) CheckRuns(_ context.Context, repo, sha string) ([]event.CheckRun, error) {
+	return f.byHead[repo+"@"+sha].CheckRuns, nil
+}
+
+func (f *fixtureReadiness) Committed(_ context.Context, repo, sha string) (time.Time, error) {
+	return f.byHead[repo+"@"+sha].HeadCommitted, nil
+}
+
+func (f *fixtureReadiness) ReviewThreads(_ context.Context, repo string, n int) ([]event.ReviewThread, error) {
+	for _, rd := range f.byHead {
+		if rd.PullRequest.Repository == repo && rd.PullRequest.Number == n {
+			return rd.Threads, nil
+		}
+	}
+	return nil, nil
+}
+
+// Tasks serves every fixture Task for the Workspace selector, none for
+// the task's: the union is the fixture's list.
+func (f *fixtureReadiness) Tasks(_ context.Context, selector string) ([]route.KelosTask, error) {
+	if !strings.HasPrefix(selector, route.WorkspaceLabel+" in ") {
+		return nil, nil
+	}
+	var out []route.KelosTask
+	for _, rd := range f.byHead {
+		out = append(out, rd.Tasks...)
+	}
+	return out, nil
+}
+
+func (f *fixtureReadiness) TaskReactions(_ context.Context, id int64) ([]string, error) {
+	for _, rd := range f.byHead {
+		if rd.Task.ID == id {
+			return rd.Reactions, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fixtureReadiness) OpenPullRequests(context.Context, string) ([]upstream.ListedPR, error) {
+	return f.open, nil
 }
 
 // deliver stores the fixture's delivery: through the receiver, or, for a
