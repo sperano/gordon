@@ -116,7 +116,7 @@ func (r *reader) secretFile(name string) string {
 		return ""
 	}
 	v := strings.TrimRight(string(b), "\r\n")
-	if v == "" {
+	if strings.TrimSpace(v) == "" {
 		r.fail("%s: %s is empty", name, path)
 	}
 	return v

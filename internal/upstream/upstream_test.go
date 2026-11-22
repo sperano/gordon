@@ -145,11 +145,41 @@ func TestTokenFileIsReReadEachRequestForRotation(t *testing.T) {
 }
 
 func TestTokenFileUnreadableIsUnavailableNotUnauthorized(t *testing.T) {
-	c := &Client{Provider: ProviderVikunja, BaseURL: "http://unused.invalid", TokenFile: filepath.Join(t.TempDir(), "missing"),
-		HTTP: http.DefaultClient}
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		fmt.Fprint(w, `{"id":1}`)
+	}))
+	defer srv.Close()
+	c := &Client{Provider: ProviderVikunja, BaseURL: srv.URL, TokenFile: filepath.Join(t.TempDir(), "missing"),
+		HTTP: srv.Client()}
 	_, err := (Vikunja{c}).Task(ctx, 1)
 	if ClassOf(err) != Unavailable {
-		t.Fatalf("missing token file = %v, want unavailable (no request was ever sent)", err)
+		t.Fatalf("missing token file = %v, want unavailable", err)
+	}
+	if requests != 0 {
+		t.Fatalf("missing token file sent %d requests, want 0 (no request was ever sent)", requests)
+	}
+}
+
+func TestTokenFileEmptyIsUnavailableNotUnauthorized(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("   \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		fmt.Fprint(w, `{"id":1}`)
+	}))
+	defer srv.Close()
+	c := &Client{Provider: ProviderVikunja, BaseURL: srv.URL, TokenFile: path, HTTP: srv.Client()}
+	_, err := (Vikunja{c}).Task(ctx, 1)
+	if ClassOf(err) != Unavailable {
+		t.Fatalf("whitespace-only token file = %v, want unavailable", err)
+	}
+	if requests != 0 {
+		t.Fatalf("whitespace-only token file sent %d requests, want 0 (no request was ever sent)", requests)
 	}
 }
 

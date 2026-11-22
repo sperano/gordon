@@ -38,10 +38,40 @@ func TestWriterTokenFileIsReReadEachRequestForRotation(t *testing.T) {
 	}
 }
 
-func TestWriterTokenFileUnreadableIsAPlainRetryableError(t *testing.T) {
-	w := &Writer{BaseURL: "http://unused.invalid", TokenFile: filepath.Join(t.TempDir(), "missing"), HTTP: http.DefaultClient}
+func TestWriterTokenFileEmptyIsAPlainRetryableError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("   \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+	w := &Writer{BaseURL: srv.URL, TokenFile: path, HTTP: srv.Client()}
 	_, _, err := w.LabelID(ctx, "x")
 	if err == nil || worker.IsPermanent(err) || worker.IsAmbiguous(err) {
-		t.Fatalf("missing token file = %v, want a plain error (no request was ever sent)", err)
+		t.Fatalf("whitespace-only token file = %v, want a plain error", err)
+	}
+	if requests != 0 {
+		t.Fatalf("whitespace-only token file sent %d requests, want 0 (no request was ever sent)", requests)
+	}
+}
+
+func TestWriterTokenFileUnreadableIsAPlainRetryableError(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+	w := &Writer{BaseURL: srv.URL, TokenFile: filepath.Join(t.TempDir(), "missing"), HTTP: srv.Client()}
+	_, _, err := w.LabelID(ctx, "x")
+	if err == nil || worker.IsPermanent(err) || worker.IsAmbiguous(err) {
+		t.Fatalf("missing token file = %v, want a plain error", err)
+	}
+	if requests != 0 {
+		t.Fatalf("missing token file sent %d requests, want 0 (no request was ever sent)", requests)
 	}
 }
