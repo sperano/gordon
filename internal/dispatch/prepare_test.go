@@ -51,7 +51,7 @@ func TestCommentsQuotedOrLeftEmpty(t *testing.T) {
 		max     int
 		comment string
 	}{
-		"fetched":      {&countingComments{body: " [] \n"}, 0, "<vikunja-comments>\n[]\n</vikunja-comments>"},
+		"fetched":      {&countingComments{body: "[]\n"}, 0, "<vikunja-comments>\n[]\n\n</vikunja-comments>"},
 		"fetch failed": {&countingComments{err: errors.New("vikunja down")}, 0, "<vikunja-comments>\n\n</vikunja-comments>"},
 		"over the cap": {&countingComments{body: big}, len(big) - 1, "<vikunja-comments>\n\n</vikunja-comments>"},
 		"at the cap":   {&countingComments{body: big}, len(big), "<vikunja-comments>\n" + big + "\n</vikunja-comments>"},

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/sperano/gordon/internal/kelos"
@@ -75,6 +76,34 @@ func TestDiffListsAndCap(t *testing.T) {
 	}
 	if _, err := kelos.Diff(kelos.Task{}, json.RawMessage(`[]`)); err == nil {
 		t.Fatal("a non-object Task compared")
+	}
+}
+
+func TestDiffKelosTypedDefaults(t *testing.T) {
+	want := kelos.Task{Spec: kelos.Spec{
+		PodFailurePolicy: json.RawMessage(`{"rules":[{"onPodConditions":[{"type":"DisruptionTarget"}]}]}`),
+		Worker: &kelos.Worker{Type: "claude-code", PodOverrides: &kelos.PodOverrides{
+			ExtraInitContainers: []json.RawMessage{json.RawMessage(`{"name":"wait"}`)},
+			VolumeMounts:        []json.RawMessage{json.RawMessage(`{"name":"skip","mountPath":"/kelos-skip"}`)},
+		}},
+	}}
+	base := `{"spec":{"prompt":"","podFailurePolicy":{"rules":[{"onPodConditions":[{"type":"DisruptionTarget","status":""}]}]},"worker":{"type":"claude-code","podOverrides":{"extraInitContainers":[{"name":"wait","resources":{}}],"volumeMounts":[{"name":"skip","mountPath":"/kelos-skip","readOnly":false}]}}}}`
+	if diff, err := kelos.Diff(want, json.RawMessage(base)); err != nil || len(diff) != 0 {
+		t.Fatalf("typed defaults: Diff = %v, %v", diff, err)
+	}
+	for _, tc := range []struct {
+		name, old, new, path string
+	}{
+		{"condition status", `"status":""`, `"status":"True"`, "spec.podFailurePolicy.rules[0].onPodConditions[0].status"},
+		{"init resources", `"resources":{}`, `"resources":{"requests":{"cpu":"10m"}}`, "spec.worker.podOverrides.extraInitContainers[0].resources"},
+		{"mount readOnly", `"readOnly":false`, `"readOnly":true`, "spec.worker.podOverrides.volumeMounts[mountPath=/kelos-skip].readOnly"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := json.RawMessage(strings.Replace(base, tc.old, tc.new, 1))
+			if diff, err := kelos.Diff(want, got); err != nil || !slices.Equal(diff, []string{tc.path}) {
+				t.Fatalf("Diff = %v, %v; want %s", diff, err, tc.path)
+			}
+		})
 	}
 }
 

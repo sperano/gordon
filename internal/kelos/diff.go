@@ -109,6 +109,9 @@ var unorderedLists = map[string]string{"env": "name", "volumes": "name", "volume
 // into the unorderedLists by their merge key, into other arrays of equal
 // length index by index, else the whole value.
 func walk(path string, a, b any, out *[]string) {
+	if equivalentKelosDefault(path, a, b) {
+		return
+	}
 	am, aok := a.(map[string]any)
 	bm, bok := b.(map[string]any)
 	if aok && bok {
@@ -149,6 +152,31 @@ func walk(path string, a, b any, out *[]string) {
 	if !reflect.DeepEqual(a, b) {
 		*out = append(*out, path)
 	}
+}
+
+// Kelos round-trips spawner Tasks through Kubernetes typed structs. These
+// zero values acquire JSON fields even when the spawner and Gordon omit them.
+func equivalentKelosDefault(path string, a, b any) bool {
+	if field(path) == "status" && strings.Contains(path, ".onPodConditions[") {
+		return absentOrEmptyString(a) && absentOrEmptyString(b)
+	}
+	if field(path) == "resources" && strings.Contains(path, ".extraInitContainers[") {
+		return absentOrEmptyMap(a) && absentOrEmptyMap(b)
+	}
+	if field(path) == "readOnly" && strings.Contains(path, ".volumeMounts[") {
+		return absentOrFalse(a) && absentOrFalse(b)
+	}
+	return false
+}
+
+func absentOrEmptyString(v any) bool { return v == nil || v == "" }
+func absentOrFalse(v any) bool       { return v == nil || v == false }
+func absentOrEmptyMap(v any) bool {
+	if v == nil {
+		return true
+	}
+	m, ok := v.(map[string]any)
+	return ok && len(m) == 0
 }
 
 // envReference starts a dependent environment variable reference.
