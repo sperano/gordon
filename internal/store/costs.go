@@ -113,7 +113,8 @@ func (s *Store) CostCheck(ctx context.Context, n CostNotice, next time.Time, fai
 // row; the notice is checked again at next. The task's newest posted
 // notice carries the task total and is live until liveUntil: a first
 // publication freezes the task's live notices of older runs, and is
-// itself posted frozen when a newer run's notice was posted already.
+// itself posted frozen when a newer run's notice was posted already
+// (any revision; a notice settled unposted does not count).
 // The task's notices are locked first, so two first publications of one
 // task are ordered. Fenced like CostCheck.
 func (s *Store) CostPublish(ctx context.Context, n CostNotice, body, digest string, now, liveUntil, next time.Time) (bool, error) {
@@ -126,7 +127,7 @@ func (s *Store) CostPublish(ctx context.Context, n CostNotice, body, digest stri
 		var rev int
 		err := tx.QueryRow(ctx, `UPDATE cost_notices c SET rev = rev + 1, body = $5, digest = $6,
 				state = CASE WHEN c.state = 'waiting' AND EXISTS (SELECT 1 FROM cost_notices o
-					WHERE o.task_id = c.task_id AND o.state <> 'waiting'
+					WHERE o.task_id = c.task_id AND o.rev > 0
 					AND (o.finished_at, o.name, o.inbox_id) > (c.finished_at, c.name, c.inbox_id))
 				THEN 'frozen' ELSE 'live' END,
 				published_at = $7, live_until = $8, next_check = $9, failures = 0, last_error = '', updated_at = now()

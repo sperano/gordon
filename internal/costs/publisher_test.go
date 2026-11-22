@@ -109,7 +109,7 @@ func (f *fakeStore) CostPublish(_ context.Context, n store.CostNotice, body, dig
 			if o.State == store.CostLive && o.Finished.Before(r.Finished) {
 				o.State = store.CostFrozen
 			}
-			if o.State != store.CostWaiting && o.Finished.After(r.Finished) {
+			if o.Rev > 0 && o.Finished.After(r.Finished) {
 				r.State = store.CostFrozen
 			}
 		}

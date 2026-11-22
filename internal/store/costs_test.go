@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -377,4 +378,64 @@ func waitForRowLockWaiter(t *testing.T, dbURL string) {
 		time.Sleep(admissionPoll)
 	}
 	t.Fatal("no session waits on a row lock")
+}
+
+// TestCostPublishAfterANewerSettledUnposted: a newer run's notice that
+// settled without ever being posted does not make an older run's first
+// publication frozen; the older carries the task total live.
+func TestCostPublishAfterANewerSettledUnposted(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := failedRun(t, s)
+	older, newer := costRun(id, runName), costRun(id, "vikunja-fu-gordon-5-c2")
+	newer.Finished = costNow.Add(-30 * time.Minute)
+	for _, c := range []store.CostRun{older, newer} {
+		if err := s.RecordCostRun(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	due := costDue(t, s, costNow)
+	if ok, err := s.CostSettle(ctx, due[1]); err != nil || !ok {
+		t.Fatalf("CostSettle = %v, %v", ok, err)
+	}
+	publishCost(t, s, due[0], "older")
+	if n := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE name = $1 AND state = 'live' AND rev = 1`,
+		older.Name); n != 1 {
+		t.Error("older notice not posted live")
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE name = $1 AND state = 'settled' AND rev = 0`,
+		newer.Name); n != 1 {
+		t.Error("newer notice no longer settled unposted")
+	}
+}
+
+// TestCostDueOrder: due notices come oldest run first, then by name and
+// generation, whatever order they were recorded in.
+func TestCostDueOrder(t *testing.T) {
+	s, _ := storetest.Open(t)
+	id := failedRun(t, s)
+	id2 := recorded(t, s, "k2", "vikunja/comment/2", withTask("p"))
+	if id2 <= id {
+		t.Fatalf("inbox ids %d, %d; want ascending", id, id2)
+	}
+	newer := costRun(id, "vikunja-n")
+	newer.Finished = costNow.Add(-30 * time.Minute)
+	recordedOrder := []store.CostRun{newer, costRun(id2, "vikunja-b"), costRun(id, "vikunja-b"), costRun(id, "vikunja-a")}
+	for _, c := range recordedOrder {
+		if err := s.RecordCostRun(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type key struct {
+		name string
+		id   int64
+	}
+	want := []key{{"vikunja-a", id}, {"vikunja-b", id}, {"vikunja-b", id2}, {"vikunja-n", id}}
+	due := costDue(t, s, costNow)
+	got := make([]key, 0, len(due))
+	for _, n := range due {
+		got = append(got, key{n.Name, n.InboxID})
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("due %v, want %v", got, want)
+	}
 }
