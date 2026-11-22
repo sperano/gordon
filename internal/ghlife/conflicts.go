@@ -46,7 +46,7 @@ type ConflictStore interface {
 // lists the repository's open pull requests, picks the agent PRs based
 // on the Workspace's ref or stacked on another such PR, reads each fresh
 // and, for each GitHub confirms in conflict (mergeable false, dirty)
-// whose episode has no run taken (none running, or its Task gone),
+// whose episode has no run taken (not running and its Task gone),
 // queues a synthetic delivery the router
 // decides from the fresh state. A PR whose mergeability GitHub has not
 // computed yet is left to the next pass (the read asks GitHub for it).

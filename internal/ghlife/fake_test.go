@@ -194,6 +194,9 @@ func (f *fakeGitHub) rest(w http.ResponseWriter, r *http.Request) {
 	case p == commentsPath:
 		f.issueComments(w, r)
 	case r.Method == http.MethodGet && p == "/repos/sperano/vigie":
+		if f.fail(w, "repo") {
+			return
+		}
 		reply(w, map[string]any{"private": f.private, "html_url": "https://github.com/sperano/vigie"})
 	default:
 		w.WriteHeader(http.StatusNotFound)

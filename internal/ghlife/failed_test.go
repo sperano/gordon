@@ -3,6 +3,7 @@ package ghlife
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/sperano/gordon/internal/action"
@@ -56,9 +57,9 @@ func TestFailedNotices(t *testing.T) {
 	}
 }
 
-// TestFailedNoticeWaitsForItsReads: a failed message read posts nothing,
-// so the action retries instead of losing the last word; without a
-// reader the notice has none.
+// TestFailedNoticeWaitsForItsReads: a failed message or visibility read
+// posts nothing, so the action retries instead of losing the last word;
+// without a reader the notice has none.
 func TestFailedNoticeWaitsForItsReads(t *testing.T) {
 	f := newFake(t)
 	f.private = true
@@ -78,6 +79,12 @@ func TestFailedNoticeWaitsForItsReads(t *testing.T) {
 		notice.ActionMarker(a.Key)
 	if len(f.comments) != 1 || f.comments[0].Body != want {
 		t.Fatalf("comments %+v, want one %q", f.comments, want)
+	}
+	f.failNext["repo"] = true
+	var st *ErrStatus
+	if err := e.Execute(ctx, action.Notice(pr4, notice.Failed, conflictRun)); !errors.As(err, &st) ||
+		st.Status != http.StatusInternalServerError || len(f.comments) != 1 {
+		t.Fatalf("failed visibility read: %v, %d comments", err, len(f.comments))
 	}
 	if err := e.Execute(ctx, action.Notice(pr4, notice.Failed, "pr-followup-vigie-4-c1")); !errors.Is(err, store.ErrUnknownRun) {
 		t.Errorf("unknown run: %v", err)
