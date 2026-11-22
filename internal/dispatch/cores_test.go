@@ -36,7 +36,7 @@ func TestCoreLabelsLeaveDefaultsAndEquivalentLabelsAlone(t *testing.T) {
 	configured := fixture(t)
 	configured.CoreLabels = map[string]int{"cores:4": 4, "kelos:cores:4": 4}
 
-	s := taskUpdated(vikunjaTask(gordonID), "claude-opus")
+	s := taskUpdated(vikunjaTask(gordonID, "cores:16"), "claude-opus")
 	defaultRun, _ := prepared(t, plain, s, run.VikunjaImplement)
 	configuredRun, _ := prepared(t, configured, s, run.VikunjaImplement)
 	if got, want := string(configuredRun.Task.Spec.Worker.PodOverrides.Resources), string(defaultRun.Task.Spec.Worker.PodOverrides.Resources); got != want {
@@ -46,6 +46,37 @@ func TestCoreLabelsLeaveDefaultsAndEquivalentLabelsAlone(t *testing.T) {
 	s = taskUpdated(vikunjaTask(gordonID, "cores:4", "kelos:cores:4"), "claude-opus")
 	equivalentRun, _ := prepared(t, configured, s, run.VikunjaImplement)
 	assertResources(t, equivalentRun.Task.Spec.Worker.PodOverrides.Resources, "4", "4Gi", "8Gi")
+}
+
+func TestCoreLabelAddsMissingRequests(t *testing.T) {
+	cfg := fixture(t)
+	cfg.CoreLabels = map[string]int{"cores:4": 4}
+	setVariantResources(&cfg, json.RawMessage(`{"limits":{"memory":"8Gi"}}`))
+
+	s := taskUpdated(vikunjaTask(gordonID, "cores:4"), "claude-opus")
+	rn, _ := prepared(t, cfg, s, run.VikunjaImplement)
+	assertResourcesEqual(t, rn.Task.Spec.Worker.PodOverrides.Resources, map[string]map[string]string{
+		"requests": {"cpu": "4"},
+		"limits":   {"memory": "8Gi"},
+	})
+}
+
+func TestCoreLabelPreservesOtherResourceKeys(t *testing.T) {
+	cfg := fixture(t)
+	cfg.CoreLabels = map[string]int{"cores:4": 4}
+	setVariantResources(&cfg, json.RawMessage(`{
+		"requests":{"cpu":"1","memory":"4Gi","ephemeral-storage":"2Gi","example.com/gpu":"1"},
+		"limits":{"cpu":"7","memory":"8Gi","ephemeral-storage":"3Gi"}
+	}`))
+
+	s := taskUpdated(vikunjaTask(gordonID, "cores:4"), "claude-opus")
+	rn, _ := prepared(t, cfg, s, run.VikunjaImplement)
+	assertResourcesEqual(t, rn.Task.Spec.Worker.PodOverrides.Resources, map[string]map[string]string{
+		"requests": {
+			"cpu": "4", "memory": "4Gi", "ephemeral-storage": "2Gi", "example.com/gpu": "1",
+		},
+		"limits": {"cpu": "7", "memory": "8Gi", "ephemeral-storage": "3Gi"},
+	})
 }
 
 func TestConflictingCoreLabelsRefuseTask(t *testing.T) {
@@ -82,6 +113,12 @@ func preparedCoreDecision(t *testing.T, cfg dispatch.Config, s sample) route.Fam
 	return dec.Families[0]
 }
 
+func setVariantResources(cfg *dispatch.Config, resources json.RawMessage) {
+	variant := cfg.Variants["claude-opus"]
+	variant.Pod.Resources = resources
+	cfg.Variants["claude-opus"] = variant
+}
+
 func assertResources(t *testing.T, raw json.RawMessage, cpu, memoryRequest, memoryLimit string) {
 	t.Helper()
 	var got struct {
@@ -93,5 +130,18 @@ func assertResources(t *testing.T, raw json.RawMessage, cpu, memoryRequest, memo
 	}
 	if got.Requests["cpu"] != cpu || got.Requests["memory"] != memoryRequest || got.Limits["memory"] != memoryLimit {
 		t.Fatalf("resources = %s, want cpu %s, memory request %s, memory limit %s", raw, cpu, memoryRequest, memoryLimit)
+	}
+}
+
+func assertResourcesEqual(t *testing.T, raw json.RawMessage, want map[string]map[string]string) {
+	t.Helper()
+	var got map[string]map[string]string
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	gotJSON, _ := json.Marshal(got)
+	wantJSON, _ := json.Marshal(want)
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("resources = %s, want %s", gotJSON, wantJSON)
 	}
 }

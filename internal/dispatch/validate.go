@@ -29,8 +29,12 @@ func (c Config) Validate() error {
 		return fmt.Errorf("dispatch config: comments_max_bytes %d is negative", c.CommentsMaxBytes)
 	}
 	for _, label := range slices.Sorted(maps.Keys(c.CoreLabels)) {
-		if strings.TrimSpace(label) == "" {
+		trimmed := strings.TrimSpace(label)
+		if trimmed == "" {
 			return fmt.Errorf("dispatch config: core_labels contains an empty label")
+		}
+		if trimmed != label {
+			return fmt.Errorf("dispatch config: core label %q has leading or trailing whitespace", label)
 		}
 		if cores := c.CoreLabels[label]; cores <= 0 {
 			return fmt.Errorf("dispatch config: core label %q has %d cores, want a positive number", label, cores)

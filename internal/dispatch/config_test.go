@@ -21,6 +21,8 @@ func TestValidateRefusals(t *testing.T) {
 		"negative cap":    {func(c *dispatch.Config) { c.CommentsMaxBytes = -1 }, "comments_max_bytes -1 is negative"},
 		"empty core label": {func(c *dispatch.Config) { c.CoreLabels = map[string]int{" ": 2} },
 			"core_labels contains an empty label"},
+		"padded core label": {func(c *dispatch.Config) { c.CoreLabels = map[string]int{" cores:2 ": 2} },
+			`core label " cores:2 " has leading or trailing whitespace`},
 		"zero cores": {func(c *dispatch.Config) { c.CoreLabels = map[string]int{"cores:0": 0} },
 			`core label "cores:0" has 0 cores, want a positive number`},
 		"negative cores": {func(c *dispatch.Config) { c.CoreLabels = map[string]int{"cores:-2": -2} },
@@ -59,6 +61,16 @@ func TestValidateRefusals(t *testing.T) {
 				t.Fatalf("Validate = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestConfigDecodesCoreLabels(t *testing.T) {
+	var cfg dispatch.Config
+	if err := json.Unmarshal([]byte(`{"core_labels":{"cores:2":2,"cores:8":8}}`), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.CoreLabels; len(got) != 2 || got["cores:2"] != 2 || got["cores:8"] != 8 {
+		t.Fatalf("core_labels = %v, want cores:2=2 and cores:8=8", got)
 	}
 }
 
