@@ -297,8 +297,14 @@ func TestAssignIfUnassigned(t *testing.T) {
 	a := action.New(action.AssignIfUnassigned, action.VikunjaTask(5), "claude-opus")
 	a.Detail = "3"
 	f.put(Task{ID: 5, ProjectID: 3})
+	if applied, err := ex.Recover(ctx, a); err != nil || applied {
+		t.Fatalf("recover unassigned task: applied %v, err %v", applied, err)
+	}
 	if err := ex.Execute(ctx, a); err != nil || len(f.get(5).Assignees) != 1 || f.get(5).Assignees[0].Username != "claude-opus" {
 		t.Fatalf("assign-if-unassigned: %v, %+v", err, f.get(5).Assignees)
+	}
+	if applied, err := ex.Recover(ctx, a); err != nil || !applied {
+		t.Fatalf("recover assigned task: applied %v, err %v", applied, err)
 	}
 	for _, task := range []Task{
 		{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}},

@@ -40,10 +40,11 @@ func TestTaskMessages(t *testing.T) {
 }
 
 func TestResolveAutoAssignUsers(t *testing.T) {
+	requestErrors := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/3/projectusers" || r.URL.Query().Get("s") != "claude-opus" ||
 			r.Header.Get("Authorization") != "Bearer write-token" {
-			t.Fatalf("request %s?%s auth %q", r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization"))
+			requestErrors <- "request " + r.URL.Path + "?" + r.URL.RawQuery + " auth " + r.Header.Get("Authorization")
 		}
 		_, _ = w.Write([]byte(`[{"id":7,"username":"claude-opus"}]`))
 	}))
@@ -55,6 +56,11 @@ func TestResolveAutoAssignUsers(t *testing.T) {
 	got, err := resolveAutoAssignUsers(context.Background(), cfg)
 	if err != nil || got[3] != 7 || len(got) != 1 {
 		t.Fatalf("users %v, err %v", got, err)
+	}
+	select {
+	case requestError := <-requestErrors:
+		t.Fatal(requestError)
+	default:
 	}
 }
 
@@ -70,6 +76,30 @@ func TestResolveAutoAssignUsersRefusesUnknownUser(t *testing.T) {
 	_, err := resolveAutoAssignUsers(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), `auto-assign user "missing" has no access to project hollingsworth`) {
 		t.Fatalf("error %v", err)
+	}
+}
+
+func TestResolveAutoAssignUsersReturnsUpstreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	cfg := config.Worker{VikunjaURL: srv.URL, UpstreamTimeout: time.Second,
+		Lifecycle: config.Lifecycle{WriteToken: "write-token"},
+		Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
+			AutoAssignVariant: "claude-opus"}}}}
+	_, err := resolveAutoAssignUsers(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "resolve auto-assign user for project hollingsworth") {
+		t.Fatalf("error %v", err)
+	}
+}
+
+func TestResolveAutoAssignUsersWithoutWriteTokenSkipsReads(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
+		AutoAssignVariant: "claude-opus"}}}}
+	got, err := resolveAutoAssignUsers(context.Background(), cfg)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("users %v, err %v, want no users and no error", got, err)
 	}
 }
 

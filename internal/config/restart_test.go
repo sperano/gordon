@@ -43,16 +43,17 @@ func TestRestartRefusals(t *testing.T) {
 	}
 }
 
-// TestNewFamiliesNeedTheirWriters: limit restarts post Vikunja notices,
-// conflict runs GitHub ones.
+// TestNewFamiliesNeedTheirWriters: limit restarts and auto-assignment write
+// to Vikunja; conflict runs write to GitHub.
 func TestNewFamiliesNeedTheirWriters(t *testing.T) {
 	owns := func(family string) string {
 		return `{"rules":[{"project":"gordon","family":"` + family + `","owner":"gordon",
 			"evidence":["replay-parity","shadow-parity","rollback-tested","legacy-disabled"]}]}`
 	}
 	cases := map[string]string{
-		"limit-restart": "ownership rule gordon/limit-restart writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required",
-		"pr-conflict":   "ownership rule gordon/pr-conflict writes to GitHub: GORDON_GITHUB_APP_DIR is required",
+		"limit-restart":       "ownership rule gordon/limit-restart writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required",
+		"pr-conflict":         "ownership rule gordon/pr-conflict writes to GitHub: GORDON_GITHUB_APP_DIR is required",
+		"vikunja-auto-assign": "ownership rule gordon/vikunja-auto-assign writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required",
 	}
 	for family, want := range cases {
 		env := workerEnv(t)

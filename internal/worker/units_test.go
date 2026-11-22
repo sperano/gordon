@@ -179,6 +179,10 @@ func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 		tasks []int64
 		prs   []string
 	}{
+		{"task.created configured", event.Event{Kind: event.VikunjaTaskCreated,
+			Vikunja: &event.Vikunja{Task: event.Task{ID: 4, ProjectID: cfg.Projects[0].VikunjaID}}}, nil, []int64{4}, nil},
+		{"task.created unconfigured", event.Event{Kind: event.VikunjaTaskCreated,
+			Vikunja: &event.Vikunja{Task: event.Task{ID: 4, ProjectID: -1}}}, nil, nil, nil},
 		{"task.updated configured", event.Event{Kind: event.VikunjaTaskUpdated,
 			Vikunja: &event.Vikunja{Task: event.Task{ID: 5, ProjectID: cfg.Projects[0].VikunjaID}}}, nil, []int64{5}, nil},
 		{"task.updated unconfigured", event.Event{Kind: event.VikunjaTaskUpdated,
@@ -228,6 +232,9 @@ func TestStateReaderReadsWhatTheRouterUses(t *testing.T) {
 			history := slices.Contains(tc.prs, repo+"+history")
 			if (st.Task != nil) != (len(tc.tasks) > 0) || (st.PullRequest != nil) != (len(tc.prs) > 0) || (st.History != nil) != history {
 				t.Fatalf("state %+v does not hold what was read", st)
+			}
+			if tc.name == "task.created configured" && !st.ParentsRead {
+				t.Fatalf("state %+v does not record the parent read", st)
 			}
 		})
 	}

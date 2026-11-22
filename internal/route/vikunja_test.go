@@ -47,6 +47,23 @@ func TestTaskCreatedAutoAssign(t *testing.T) {
 	}
 }
 
+func TestTaskCreatedAutoAssignRetriesUnreadState(t *testing.T) {
+	r := router()
+	cases := map[string]route.State{
+		"task":    {},
+		"parents": {Task: fresh(5, 136, nil)},
+	}
+	for name, state := range cases {
+		t.Run(name, func(t *testing.T) {
+			d := r.Decide(created(t, task(5, 136, nil)), state, replay.Ledger{})
+			expect(t, d, route.Retry, route.ReasonStateUnavailable)
+			if len(d.Families) != 0 {
+				t.Fatalf("retry decision has families: %+v", d)
+			}
+		})
+	}
+}
+
 func TestTaskCreatedAutoAssignGuards(t *testing.T) {
 	r := router()
 	cases := []struct {
