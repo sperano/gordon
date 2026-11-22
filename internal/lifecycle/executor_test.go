@@ -306,23 +306,26 @@ func TestAssignIfUnassigned(t *testing.T) {
 	if applied, err := ex.Recover(ctx, a); err != nil || !applied {
 		t.Fatalf("recover assigned task: applied %v, err %v", applied, err)
 	}
-	f.put(Task{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}})
-	before := len(f.writes)
-	if applied, err := ex.Recover(ctx, a); err != nil || !applied || len(f.writes) != before {
-		t.Fatalf("recover task assigned to another user: applied %v, err %v, writes %d, want %d", applied, err, len(f.writes), before)
-	}
-	for _, task := range []Task{
-		{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}},
-		{ID: 5, ProjectID: 4},
-		{ID: 5, ProjectID: 3, Labels: []Label{{Title: "no-agent"}}},
-		{ID: 5, ProjectID: 3, Labels: []Label{{Title: "chain"}}},
-		{ID: 5, ProjectID: 3, Labels: []Label{{Title: "discuss"}}},
+	for _, tc := range []struct {
+		name string
+		task Task
+	}{
+		{name: "assigned to another user", task: Task{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}}},
+		{name: "moved to another project", task: Task{ID: 5, ProjectID: 4}},
+		{name: "no-agent label", task: Task{ID: 5, ProjectID: 3, Labels: []Label{{Title: "no-agent"}}}},
+		{name: "chain label", task: Task{ID: 5, ProjectID: 3, Labels: []Label{{Title: "chain"}}}},
+		{name: "discuss label", task: Task{ID: 5, ProjectID: 3, Labels: []Label{{Title: "discuss"}}}},
 	} {
-		f.put(task)
-		before := len(f.writes)
-		if err := ex.Execute(ctx, a); err != nil || len(f.writes) != before {
-			t.Fatalf("stale task %+v: err %v writes %d, want %d", task, err, len(f.writes), before)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			f.put(tc.task)
+			before := len(f.writes)
+			if applied, err := ex.Recover(ctx, a); err != nil || !applied || len(f.writes) != before {
+				t.Fatalf("recover: applied %v, err %v, writes %d, want %d", applied, err, len(f.writes), before)
+			}
+			if err := ex.Execute(ctx, a); err != nil || len(f.writes) != before {
+				t.Fatalf("execute: err %v, writes %d, want %d", err, len(f.writes), before)
+			}
+		})
 	}
 }
 
