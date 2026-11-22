@@ -21,7 +21,7 @@ import (
 
 func TestReadinessKindsAreRouted(t *testing.T) {
 	cfg := config.Worker{Routing: profile.Defaults(), GitHubAPIURL: "https://api.example"}
-	cfg.Lifecycle.WriteToken = "w"
+	cfg.Lifecycle.WriteTokenFile = "w"
 	cfg.Readiness = config.Readiness{NtfyURL: "https://ntfy.example", NtfyTopic: "t", NtfyToken: "n"}
 	app, err := githubapp.Load(appDir(t), cfg.GitHubAPIURL, nil)
 	if err != nil {
@@ -45,7 +45,7 @@ func TestReadinessKindsAreRouted(t *testing.T) {
 	}
 	// Without a Vikunja writer, a refused merge has nothing to report
 	// through: the field stays a nil interface, not a typed nil.
-	cfg.Lifecycle.WriteToken = ""
+	cfg.Lifecycle.WriteTokenFile = ""
 	out = map[action.Kind]worker.Executor{}
 	lifecycleExecutors(out, cfg, nil, nil, app, nil)
 	gh = out[action.MergePullRequest].(worker.ByProvider).Executors[upstream.ProviderGitHub].(*ghlife.Executor)

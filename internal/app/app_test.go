@@ -173,7 +173,8 @@ func startService(t *testing.T, edits ...func(*config.Worker)) *service {
 		ListenAddr: "127.0.0.1:0", KeyFiles: map[event.Source]string{event.SourceVikunja: writeFile(t, dir, "vk", string(svc.key))},
 		MaxInFlight: config.DefaultMaxInFlight, RequestDeadline: config.DefaultRequestDeadline, ShutdownGrace: testGrace}
 	wcfg := config.Worker{Common: config.Common{DatabaseURL: workerURL, AdminAddr: "127.0.0.1:0"}, Shadow: true, ID: "e2e",
-		VikunjaURL: vikunja.URL, VikunjaToken: "vt", GitHubAPIURL: github.URL, GitHubToken: "gt",
+		VikunjaURL: vikunja.URL, VikunjaTokenFile: writeFile(t, dir, "vikunja-token", "vt"),
+		GitHubAPIURL: github.URL, GitHubTokenFile: writeFile(t, dir, "github-token", "gt"),
 		UpstreamLimit: map[string]int{"vikunja": 1, "github": 1}, Concurrency: 2, LeaseTTL: time.Minute,
 		PollInterval: pollEvery, MaxAttempts: 3, ProjectLimit: 1, DeferDelay: time.Second,
 		ReconcileInterval: pollEvery, BodyRetention: time.Hour, UpstreamTimeout: 5 * time.Second, ShutdownGrace: testGrace,

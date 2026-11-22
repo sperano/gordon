@@ -40,15 +40,18 @@ func workerEnv(t *testing.T) map[string]string {
 }
 
 func TestWorkerDefaults(t *testing.T) {
-	c, err := LoadWorker(envOf(workerEnv(t)))
+	env := workerEnv(t)
+	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !c.Shadow {
 		t.Fatal("worker executes by default; shadow must be the default")
 	}
-	if c.DatabaseURL != "postgres://worker:pw@db/gordon" || c.VikunjaToken != "vtoken" || c.GitHubToken != "gtoken" {
-		t.Fatalf("secrets read as %q %q %q, want trimmed file contents", c.DatabaseURL, c.VikunjaToken, c.GitHubToken)
+	if c.DatabaseURL != "postgres://worker:pw@db/gordon" || c.VikunjaTokenFile != env["GORDON_VIKUNJA_TOKEN_FILE"] ||
+		c.GitHubTokenFile != env["GORDON_GITHUB_TOKEN_FILE"] {
+		t.Fatalf("secrets read as %q %q %q, want the database URL's content and the tokens' paths",
+			c.DatabaseURL, c.VikunjaTokenFile, c.GitHubTokenFile)
 	}
 	if c.VikunjaURL != "https://vikunja.example/api/v1" || c.GitHubAPIURL != DefaultGitHubAPIURL {
 		t.Fatalf("urls %q %q", c.VikunjaURL, c.GitHubAPIURL)
@@ -124,32 +127,33 @@ func TestWorkerRefusals(t *testing.T) {
 		set  map[string]string
 		want string
 	}{
-		"missing database": {map[string]string{"GORDON_DATABASE_URL_FILE": ""}, "GORDON_DATABASE_URL_FILE is required"},
-		"unreadable token": {map[string]string{"GORDON_GITHUB_TOKEN_FILE": "/nonexistent"}, "GORDON_GITHUB_TOKEN_FILE: open /nonexistent"},
-		"empty token":      {map[string]string{"GORDON_VIKUNJA_TOKEN_FILE": "EMPTY"}, "GORDON_VIKUNJA_TOKEN_FILE: "},
-		"bad duration":     {map[string]string{"GORDON_LEASE_TTL": "soon"}, `GORDON_LEASE_TTL="soon"`},
-		"zero concurrency": {map[string]string{"GORDON_WORKER_CONCURRENCY": "0"}, `GORDON_WORKER_CONCURRENCY="0"`},
-		"bad bool":         {map[string]string{"GORDON_SHADOW": "maybe"}, `GORDON_SHADOW="maybe"`},
-		"unknown provider": {map[string]string{"GORDON_UPSTREAM_LIMITS": "gitlab=2"}, `"gitlab=2"`},
-		"zero limit":       {map[string]string{"GORDON_UPSTREAM_LIMITS": "vikunja=0"}, `"vikunja=0": want vikunja=<n>`},
-		"limit without n":  {map[string]string{"GORDON_UPSTREAM_LIMITS": "github"}, `"github": want vikunja=<n>`},
-		"provider twice":   {map[string]string{"GORDON_UPSTREAM_LIMITS": "github=2,github=9"}, "GORDON_UPSTREAM_LIMITS: github given twice"},
-		"zero lease":       {map[string]string{"GORDON_LEASE_TTL": "0s"}, `GORDON_LEASE_TTL="0s"`},
-		"trailing json":    {map[string]string{"GORDON_OWNERSHIP_FILE": "TRAILING"}, "content after the JSON value"},
-		"null json":        {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "NULL"}, "null is not a configuration"},
-		"root vikunja url": {map[string]string{"GORDON_VIKUNJA_URL": "/"}, `GORDON_VIKUNJA_URL="": want an http or https URL`},
-		"no scheme":        {map[string]string{"GORDON_GITHUB_API_URL": "api.github.com"}, `GORDON_GITHUB_API_URL="api.github.com"`},
-		"ftp url":          {map[string]string{"GORDON_VIKUNJA_URL": "ftp://vikunja"}, `GORDON_VIKUNJA_URL="ftp://vikunja"`},
-		"url with query":   {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?x=1"}, "GORDON_VIKUNJA_URL: want a base URL without a query or fragment"},
-		"url with bare ?":  {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?"}, "without a query or fragment"},
-		"url fragment":     {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#top"}, "GORDON_GITHUB_API_URL: want a base URL without a query or fragment"},
-		"url bare #":       {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#"}, "without a query or fragment"},
-		"backoff inverted": {map[string]string{"GORDON_RETRY_BASE": "1m", "GORDON_RETRY_MAX": "1s"}, "below GORDON_RETRY_BASE"},
-		"lease too short":  {map[string]string{"GORDON_LEASE_TTL": "5s"}, "must exceed GORDON_UPSTREAM_TIMEOUT"},
-		"bad log level":    {map[string]string{"GORDON_LOG_LEVEL": "loud"}, "GORDON_LOG_LEVEL"},
-		"no vikunja url":   {map[string]string{"GORDON_VIKUNJA_URL": ""}, "GORDON_VIKUNJA_URL is required"},
-		"unknown field":    {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "ROUTING"}, "unknown field"},
-		"ungated owner":    {map[string]string{"GORDON_OWNERSHIP_FILE": "OWNERSHIP"}, "lacks gate"},
+		"missing database":      {map[string]string{"GORDON_DATABASE_URL_FILE": ""}, "GORDON_DATABASE_URL_FILE is required"},
+		"unreadable token":      {map[string]string{"GORDON_GITHUB_TOKEN_FILE": "/nonexistent"}, "GORDON_GITHUB_TOKEN_FILE: open /nonexistent"},
+		"empty token":           {map[string]string{"GORDON_VIKUNJA_TOKEN_FILE": "EMPTY"}, "GORDON_VIKUNJA_TOKEN_FILE: "},
+		"whitespace-only token": {map[string]string{"GORDON_VIKUNJA_TOKEN_FILE": "BLANK"}, "GORDON_VIKUNJA_TOKEN_FILE: "},
+		"bad duration":          {map[string]string{"GORDON_LEASE_TTL": "soon"}, `GORDON_LEASE_TTL="soon"`},
+		"zero concurrency":      {map[string]string{"GORDON_WORKER_CONCURRENCY": "0"}, `GORDON_WORKER_CONCURRENCY="0"`},
+		"bad bool":              {map[string]string{"GORDON_SHADOW": "maybe"}, `GORDON_SHADOW="maybe"`},
+		"unknown provider":      {map[string]string{"GORDON_UPSTREAM_LIMITS": "gitlab=2"}, `"gitlab=2"`},
+		"zero limit":            {map[string]string{"GORDON_UPSTREAM_LIMITS": "vikunja=0"}, `"vikunja=0": want vikunja=<n>`},
+		"limit without n":       {map[string]string{"GORDON_UPSTREAM_LIMITS": "github"}, `"github": want vikunja=<n>`},
+		"provider twice":        {map[string]string{"GORDON_UPSTREAM_LIMITS": "github=2,github=9"}, "GORDON_UPSTREAM_LIMITS: github given twice"},
+		"zero lease":            {map[string]string{"GORDON_LEASE_TTL": "0s"}, `GORDON_LEASE_TTL="0s"`},
+		"trailing json":         {map[string]string{"GORDON_OWNERSHIP_FILE": "TRAILING"}, "content after the JSON value"},
+		"null json":             {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "NULL"}, "null is not a configuration"},
+		"root vikunja url":      {map[string]string{"GORDON_VIKUNJA_URL": "/"}, `GORDON_VIKUNJA_URL="": want an http or https URL`},
+		"no scheme":             {map[string]string{"GORDON_GITHUB_API_URL": "api.github.com"}, `GORDON_GITHUB_API_URL="api.github.com"`},
+		"ftp url":               {map[string]string{"GORDON_VIKUNJA_URL": "ftp://vikunja"}, `GORDON_VIKUNJA_URL="ftp://vikunja"`},
+		"url with query":        {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?x=1"}, "GORDON_VIKUNJA_URL: want a base URL without a query or fragment"},
+		"url with bare ?":       {map[string]string{"GORDON_VIKUNJA_URL": "https://v/api/v1?"}, "without a query or fragment"},
+		"url fragment":          {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#top"}, "GORDON_GITHUB_API_URL: want a base URL without a query or fragment"},
+		"url bare #":            {map[string]string{"GORDON_GITHUB_API_URL": "https://api.github.com#"}, "without a query or fragment"},
+		"backoff inverted":      {map[string]string{"GORDON_RETRY_BASE": "1m", "GORDON_RETRY_MAX": "1s"}, "below GORDON_RETRY_BASE"},
+		"lease too short":       {map[string]string{"GORDON_LEASE_TTL": "5s"}, "must exceed GORDON_UPSTREAM_TIMEOUT"},
+		"bad log level":         {map[string]string{"GORDON_LOG_LEVEL": "loud"}, "GORDON_LOG_LEVEL"},
+		"no vikunja url":        {map[string]string{"GORDON_VIKUNJA_URL": ""}, "GORDON_VIKUNJA_URL is required"},
+		"unknown field":         {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "ROUTING"}, "unknown field"},
+		"ungated owner":         {map[string]string{"GORDON_OWNERSHIP_FILE": "OWNERSHIP"}, "lacks gate"},
 		"execute, no dispatch": {map[string]string{"GORDON_SHADOW": "false"},
 			"GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE"},
 		"dispatch namespace": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_NS"},
@@ -185,6 +189,8 @@ func TestWorkerRefusals(t *testing.T) {
 				switch v {
 				case "EMPTY":
 					v = file(t, "empty", "\n")
+				case "BLANK":
+					v = file(t, "blank", "   \t  \n")
 				case "ROUTING":
 					v = file(t, "r.json", `{"versoin":"x"}`)
 				case "OWNERSHIP":

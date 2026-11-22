@@ -15,7 +15,7 @@ func TestLifecycleDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := c.Lifecycle
-	if l.WriteToken != "" || l.ReconcileInterval != 0 || l.Lookback != DefaultFollowUpLookback ||
+	if l.WriteTokenFile != "" || l.ReconcileInterval != 0 || l.Lookback != DefaultFollowUpLookback ||
 		l.RedispatchAfter != DefaultRedispatchAfter || l.LucarneURL != "" || l.SillageURL != "" {
 		t.Fatalf("lifecycle defaults %+v: no writer, no reconciliation, the legacy window", l)
 	}
@@ -24,6 +24,7 @@ func TestLifecycleDefaults(t *testing.T) {
 func TestLifecycleOverrides(t *testing.T) {
 	env := workerEnv(t)
 	env["GORDON_VIKUNJA_WRITE_TOKEN_FILE"] = file(t, "w", "wtoken\n")
+	writeTokenFile := env["GORDON_VIKUNJA_WRITE_TOKEN_FILE"]
 	env["GORDON_VIKUNJA_RECONCILE_INTERVAL"] = "5m"
 	env["GORDON_FOLLOWUP_LOOKBACK"] = "6h"
 	env["GORDON_FOLLOWUP_REDISPATCH_AFTER"] = "1m"
@@ -35,7 +36,7 @@ func TestLifecycleOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := c.Lifecycle
-	if l.WriteToken != "wtoken" || l.ReconcileInterval != 5*time.Minute || l.Lookback != 6*time.Hour ||
+	if l.WriteTokenFile != writeTokenFile || l.ReconcileInterval != 5*time.Minute || l.Lookback != 6*time.Hour ||
 		l.RedispatchAfter != time.Minute || l.LucarneURL != "https://lucarne.example" || l.LucarneCluster != "hollingsworth" ||
 		l.SillageURL != "https://sillage.example" {
 		t.Fatalf("lifecycle overrides %+v", l)
@@ -69,8 +70,8 @@ func TestLifecycleOwnedWithAWriterLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executing worker with a Gordon rule and a writer: %v", err)
 	}
-	if c.Shadow || c.Lifecycle.WriteToken != "wtoken" {
-		t.Fatalf("shadow %v, write token %q: want executing with the writer", c.Shadow, c.Lifecycle.WriteToken)
+	if c.Shadow || c.Lifecycle.WriteTokenFile != env["GORDON_VIKUNJA_WRITE_TOKEN_FILE"] {
+		t.Fatalf("shadow %v, write token file %q: want executing with the writer", c.Shadow, c.Lifecycle.WriteTokenFile)
 	}
 }
 

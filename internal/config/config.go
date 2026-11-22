@@ -116,7 +116,7 @@ func (r *reader) secretFile(name string) string {
 		return ""
 	}
 	v := strings.TrimRight(string(b), "\r\n")
-	if v == "" {
+	if strings.TrimSpace(v) == "" {
 		r.fail("%s: %s is empty", name, path)
 	}
 	return v
@@ -129,6 +129,29 @@ func (r *reader) requiredSecret(name string) string {
 		return ""
 	}
 	return r.secretFile(name)
+}
+
+// requiredSecretFile is requiredSecret for a client that re-reads the
+// file on every use (a rotated Secret then applies without a restart):
+// it validates the file is set, readable and non-empty now, and returns
+// its path rather than its contents.
+func (r *reader) requiredSecretFile(name string) string {
+	path := r.str(name, "")
+	if path == "" {
+		r.fail("%s is required", name)
+		return ""
+	}
+	r.secretFile(name)
+	return path
+}
+
+// optionalSecretFile is requiredSecretFile for a variable that may be
+// unset ("" disables the feature it backs).
+func (r *reader) optionalSecretFile(name string) string {
+	if r.str(name, "") == "" {
+		return ""
+	}
+	return r.requiredSecretFile(name)
 }
 
 // jsonFile decodes the file named by name's value into out, refusing

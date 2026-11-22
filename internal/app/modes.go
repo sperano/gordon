@@ -159,7 +159,7 @@ func upstreamObserver(m *metrics.Metrics) upstream.Observer {
 // vikunjaReader is the GET-only Vikunja client of the worker's token.
 func vikunjaReader(cfg config.Worker, m *metrics.Metrics) upstream.Vikunja {
 	return upstream.Vikunja{Client: &upstream.Client{Provider: upstream.ProviderVikunja, BaseURL: cfg.VikunjaURL,
-		Authorization: "Bearer " + cfg.VikunjaToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout},
+		TokenFile: cfg.VikunjaTokenFile, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout},
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderVikunja]), Observe: upstreamObserver(m)}}
 }
 
@@ -168,7 +168,7 @@ func vikunjaReader(cfg config.Worker, m *metrics.Metrics) upstream.Vikunja {
 // upstream limit bounds their reads together.
 func githubReader(cfg config.Worker, m *metrics.Metrics) upstream.GitHub {
 	return upstream.GitHub{Client: &upstream.Client{Provider: upstream.ProviderGitHub, BaseURL: cfg.GitHubAPIURL,
-		Authorization: "Bearer " + cfg.GitHubToken, Headers: upstream.GitHubHeaders,
+		TokenFile: cfg.GitHubTokenFile, Headers: upstream.GitHubHeaders,
 		HTTP:  &http.Client{Timeout: cfg.UpstreamTimeout},
 		Limit: upstream.NewLimit(cfg.UpstreamLimit[upstream.ProviderGitHub]), Observe: upstreamObserver(m)}}
 }

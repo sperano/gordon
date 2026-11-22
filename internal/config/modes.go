@@ -86,11 +86,11 @@ type Worker struct {
 	Routing   profile.Config
 	Ownership rollout.Table
 
-	VikunjaURL    string
-	VikunjaToken  string
-	GitHubAPIURL  string
-	GitHubToken   string
-	UpstreamLimit map[string]int
+	VikunjaURL       string
+	VikunjaTokenFile string
+	GitHubAPIURL     string
+	GitHubTokenFile  string
+	UpstreamLimit    map[string]int
 
 	Concurrency       int
 	LeaseTTL          time.Duration
@@ -141,16 +141,16 @@ func LoadWorker(env Getenv) (Worker, error) {
 	r := &reader{env: env}
 	host, _ := os.Hostname()
 	c := Worker{Common: r.common(), Shadow: r.boolean("GORDON_SHADOW", true), ID: r.str("GORDON_WORKER_ID", host),
-		Routing:       profile.Defaults(),
-		VikunjaURL:    r.baseURL("GORDON_VIKUNJA_URL", ""),
-		VikunjaToken:  r.requiredSecret("GORDON_VIKUNJA_TOKEN_FILE"),
-		GitHubAPIURL:  r.baseURL("GORDON_GITHUB_API_URL", DefaultGitHubAPIURL),
-		GitHubToken:   r.requiredSecret("GORDON_GITHUB_TOKEN_FILE"),
-		UpstreamLimit: r.limits("GORDON_UPSTREAM_LIMITS"),
-		Concurrency:   r.integer("GORDON_WORKER_CONCURRENCY", DefaultConcurrency, 1),
-		LeaseTTL:      r.duration("GORDON_LEASE_TTL", DefaultLeaseTTL),
-		PollInterval:  r.duration("GORDON_POLL_INTERVAL", DefaultPollInterval),
-		MaxAttempts:   r.integer("GORDON_MAX_ATTEMPTS", DefaultMaxAttempts, 1),
+		Routing:          profile.Defaults(),
+		VikunjaURL:       r.baseURL("GORDON_VIKUNJA_URL", ""),
+		VikunjaTokenFile: r.requiredSecretFile("GORDON_VIKUNJA_TOKEN_FILE"),
+		GitHubAPIURL:     r.baseURL("GORDON_GITHUB_API_URL", DefaultGitHubAPIURL),
+		GitHubTokenFile:  r.requiredSecretFile("GORDON_GITHUB_TOKEN_FILE"),
+		UpstreamLimit:    r.limits("GORDON_UPSTREAM_LIMITS"),
+		Concurrency:      r.integer("GORDON_WORKER_CONCURRENCY", DefaultConcurrency, 1),
+		LeaseTTL:         r.duration("GORDON_LEASE_TTL", DefaultLeaseTTL),
+		PollInterval:     r.duration("GORDON_POLL_INTERVAL", DefaultPollInterval),
+		MaxAttempts:      r.integer("GORDON_MAX_ATTEMPTS", DefaultMaxAttempts, 1),
 		Backoff: worker.Backoff{Base: r.duration("GORDON_RETRY_BASE", DefaultRetryBase),
 			Max: r.duration("GORDON_RETRY_MAX", DefaultRetryMax)},
 		ProjectLimit:      r.integer("GORDON_PROJECT_LIMIT", DefaultProjectLimit, 0),
@@ -253,6 +253,6 @@ func (c Worker) String() string {
 		c.Shadow, c.ID, c.Concurrency,
 		c.LeaseTTL, c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
 		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL,
-		c.Lifecycle.WriteToken != "", c.Lifecycle.ReconcileInterval, c.GitHub.AppDir != "", c.GitHub.ReconcileInterval,
+		c.Lifecycle.WriteTokenFile != "", c.Lifecycle.ReconcileInterval, c.GitHub.AppDir != "", c.GitHub.ReconcileInterval,
 		c.GitHub.ConflictInterval, c.Readiness.ReconcileInterval, c.Readiness.NtfyToken != "", c.Costs.APIURL != "")
 }
