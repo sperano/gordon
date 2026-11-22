@@ -16,13 +16,14 @@ import (
 // Error codes of a Task that cannot be built; a family whose run fails to
 // build is a reject with ReasonPrefix and the code.
 const (
-	CodeNoTemplate       = "no-task-template"
-	CodeUnknownProject   = "unknown-project"
-	CodeUnknownVariant   = "unknown-variant"
-	CodeUnknownProfile   = "unknown-profile"
-	CodeTemplate         = "task-template-invalid"
-	CodePod              = "pod-invalid"
-	CodeSecretNotGranted = "secret-not-granted"
+	CodeNoTemplate        = "no-task-template"
+	CodeUnknownProject    = "unknown-project"
+	CodeUnknownVariant    = "unknown-variant"
+	CodeUnknownProfile    = "unknown-profile"
+	CodeTemplate          = "task-template-invalid"
+	CodePod               = "pod-invalid"
+	CodeSecretNotGranted  = "secret-not-granted"
+	CodeCoreLabelConflict = "core-label-conflict"
 )
 
 // ReasonPrefix starts the family reason of a run whose Task cannot be built.
@@ -78,6 +79,10 @@ func (b Builder) Build(in Input) (kelos.Task, error) {
 		return kelos.Task{}, err
 	}
 	pod, err := b.pod(fam, proj, prof, variant, d)
+	if err != nil {
+		return kelos.Task{}, err
+	}
+	pod, err = b.applyCoreLabel(in, pod)
 	if err != nil {
 		return kelos.Task{}, err
 	}
