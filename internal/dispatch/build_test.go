@@ -22,7 +22,9 @@ import (
 // (claude-opus, the pr-challenger reviewer) and the puckdb profile, with
 // the project, variant, model, effort and repository turned into template
 // variables; testdata/legacy/ holds the Task each legacy spawner makes for
-// the sample requests below, rendered from the same chart.
+// the sample requests below, rendered from the same chart. The pr-conflict
+// family and its legacy Task come from the conflict spawner Hollingsworth
+// e60c284 renders for the gordon Workspace and claude-opus.
 const (
 	inboxID   = 42
 	taskID    = 1624
@@ -32,6 +34,7 @@ const (
 	commentID = 9001
 	prNumber  = 7
 	headSHA   = "0123456789abcdef0123456789abcdef01234567"
+	baseSHA   = "89abcdef0123456789abcdef0123456789abcdef"
 	comments  = `[{"id":1,"comment":"<p>earlier</p>","author":{"username":"eric"}}]`
 	title     = "Ship the thing"
 	desc      = "<p>Make it so.</p>"
@@ -153,6 +156,28 @@ func prOpenedIn(repo string) sample {
 			"base": map[string]any{"ref": "main"}}}), route.State{PullRequest: &pr}}
 }
 
+// conflicted is the conflict reconciliation's delivery of a confirmed
+// conflict on the sample PR, in the gordon Workspace.
+func conflicted() sample { return conflictedTitled(freshPR().Title) }
+
+// conflictedTitled is conflicted whose delivery names the PR title,
+// the fresh state keeping the sample's.
+func conflictedTitled(title string) sample {
+	pr := freshPR()
+	pr.BaseSHA, pr.MergeableState, pr.Labels = baseSHA, event.MergeableDirty, []string{"kelos:claude-opus"}
+	mergeable := false
+	pr.Mergeable = &mergeable
+	d := github("pull_request", map[string]any{"action": event.ActionConflict, "sender": map[string]string{"login": pr.Author},
+		"gordon": map[string]string{"workspace": "gordon"},
+		"pull_request": map[string]any{"number": prNumber, "title": title, "html_url": pr.URL, "state": "open",
+			"user":   map[string]string{"login": pr.Author},
+			"head":   map[string]any{"ref": pr.HeadRef, "sha": headSHA, "repo": map[string]string{"full_name": pr.HeadRepo}},
+			"base":   map[string]any{"ref": "main", "sha": baseSHA},
+			"labels": []map[string]string{{"name": "kelos:claude-opus"}}}})
+	d.Headers[event.SyntheticHeader] = "reconcile"
+	return sample{d, route.State{PullRequest: &pr}}
+}
+
 // prepared routes and prepares a sample, returning its one run.
 func prepared(t *testing.T, cfg dispatch.Config, s sample, family run.Family) (route.Run, route.FamilyDecision) {
 	t.Helper()
@@ -196,6 +221,7 @@ func TestTasksMatchLegacySpawners(t *testing.T) {
 		{"followup-discuss", commentCreated(vikunjaTask(gordonID, "discuss")), run.VikunjaFollowUpDiscuss, profile.ModeDiscuss},
 		{"pr-followup", prComment(), run.PRFollowUp, profile.ModeFollowUp},
 		{"pr-review", prOpened(), run.PRReview, profile.ModeReview},
+		{"pr-conflict", conflicted(), run.PRConflict, profile.ModeFollowUp},
 	}
 	for _, tc := range cases {
 		t.Run(tc.legacy, func(t *testing.T) {
@@ -227,6 +253,20 @@ func TestTasksMatchLegacySpawners(t *testing.T) {
 				t.Fatalf("Gordon keys %v %v", labels, rn.Task.Metadata.Annotations)
 			}
 		})
+	}
+}
+
+// TestConflictReadsTheFreshPullRequest: a conflict Task renders the
+// fresh pull request, not the delivery's stale copy of it.
+func TestConflictReadsTheFreshPullRequest(t *testing.T) {
+	cfg := fixture(t)
+	fresh, _ := prepared(t, cfg, conflicted(), run.PRConflict)
+	stale, _ := prepared(t, cfg, conflictedTitled("Stale title"), run.PRConflict)
+	if stale.Task == nil || fresh.Task == nil {
+		t.Fatal("run has no Task")
+	}
+	if stale.Task.Spec.Prompt != fresh.Task.Spec.Prompt || !strings.Contains(stale.Task.Spec.Prompt, ": "+freshPR().Title+"\n") {
+		t.Errorf("prompt %q, want the fresh one %q", stale.Task.Spec.Prompt, fresh.Task.Spec.Prompt)
 	}
 }
 

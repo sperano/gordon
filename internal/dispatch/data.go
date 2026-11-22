@@ -36,7 +36,9 @@ type Input struct {
 //     pull_request), Action, CommentURL, CommentBody and
 //     Payload.Comment.ID, Payload.Comment.PullRequestReviewID,
 //     Payload.Review.ID, Payload.PullRequest.Head.SHA (and .GetSHA),
-//     Payload.PullRequest.Head.Ref, Payload.PullRequest.Base.Ref.
+//     Payload.PullRequest.Head.Ref, Payload.PullRequest.Base.Ref;
+//   - pr-conflict, the conflict dispatch's fields: id and ID (the
+//     episode), number, title, url, base_ref, base_sha, head_sha.
 type Data map[string]any
 
 func (b Builder) data(in Input, proj profile.Project) Data {
@@ -52,8 +54,23 @@ func (b Builder) data(in Input, proj profile.Project) Data {
 		vikunjaData(d, in)
 	case in.Event.GitHub != nil:
 		githubData(d, in)
+		if id.Family == run.PRConflict {
+			conflictData(d, in)
+		}
 	}
 	return d
+}
+
+// conflictData are the conflict dispatch's fields
+// (reconcile_conflicts.conflict_payload), from the fresh pull request.
+func conflictData(d Data, in Input) {
+	pr := in.Event.GitHub.PullRequest
+	if in.State.PullRequest != nil {
+		pr = *in.State.PullRequest
+	}
+	d["id"], d["ID"] = in.Run.Identity.Episode, in.Run.Identity.Episode
+	d["number"], d["title"], d["url"] = strconv.Itoa(pr.Number), pr.Title, pr.URL
+	d["base_ref"], d["base_sha"], d["head_sha"] = pr.BaseRef, pr.BaseSHA, pr.HeadSHA
 }
 
 func vikunjaData(d Data, in Input) {

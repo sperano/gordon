@@ -1,0 +1,157 @@
+{
+  "description": "The conflict scan's confirmed conflict on an agent PR, still dirty on the same base and head: one conflict run of the episode, announced on the PR once submitted.",
+  "delivery": {
+    "body": {
+      "action": "gordon-conflict",
+      "gordon": {
+        "workspace": "lucarne"
+      },
+      "pull_request": {
+        "base": {
+          "ref": "main",
+          "sha": "1111111122222222333333334444444455555555"
+        },
+        "draft": false,
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "repo": {
+            "full_name": "sperano/lucarne"
+          },
+          "sha": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "html_url": "https://github.com/sperano/lucarne/pull/7",
+        "labels": [
+          {
+            "name": "kelos:claude-opus"
+          }
+        ],
+        "merged": false,
+        "number": 7,
+        "state": "open",
+        "title": "Add the inspector",
+        "user": {
+          "login": "gordon-cole-ai[bot]"
+        }
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "gordon-cole-ai[bot]"
+      }
+    },
+    "headers": {
+      "X-GitHub-Delivery": "gordon-conflict/sperano/lucarne/lucarne/x/1",
+      "X-GitHub-Event": "pull_request",
+      "X-Gordon-Synthetic": "reconcile"
+    },
+    "source": "github"
+  },
+  "state": {
+    "pull_request": {
+      "author": "gordon-cole-ai[bot]",
+      "base_ref": "main",
+      "base_sha": "1111111122222222333333334444444455555555",
+      "draft": false,
+      "files": null,
+      "head_ref": "kelos/vikunja-4401",
+      "head_repo": "sperano/lucarne",
+      "head_sha": "0123456789abcdef0123456789abcdef01234567",
+      "labels": [
+        "kelos:claude-opus"
+      ],
+      "mergeable": false,
+      "mergeable_state": "dirty",
+      "merged": false,
+      "number": 7,
+      "repository": "sperano/lucarne",
+      "state": "open",
+      "title": "Add the inspector",
+      "url": "https://github.com/sperano/lucarne/pull/7"
+    }
+  },
+  "ledger": {},
+  "ownership": {
+    "rules": [
+      {
+        "evidence": [
+          "replay-parity",
+          "shadow-parity",
+          "rollback-tested",
+          "legacy-disabled"
+        ],
+        "family": "pr-conflict",
+        "owner": "gordon",
+        "project": "lucarne"
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": [
+      "pr-conflict-22fa40d7-7-11111111-01234567"
+    ]
+  },
+  "expect": {
+    "delivery_key": "github/delivery/gordon-conflict/sperano/lucarne/lucarne/x/1",
+    "families": [
+      {
+        "actions": [
+          {
+            "key": "submit-task:kelos/kelos-agents/pr-conflict-22fa40d7-7-11111111-01234567",
+            "kind": "submit-task",
+            "target": "kelos/kelos-agents/pr-conflict-22fa40d7-7-11111111-01234567"
+          },
+          {
+            "after": "submit-task:kelos/kelos-agents/pr-conflict-22fa40d7-7-11111111-01234567",
+            "detail": "pr-conflict-22fa40d7-7-11111111-01234567",
+            "key": "post-notice:github/sperano/lucarne/pull/7:start:pr-conflict-22fa40d7-7-11111111-01234567",
+            "kind": "post-notice",
+            "target": "github/sperano/lucarne/pull/7",
+            "value": "start"
+          }
+        ],
+        "execute": true,
+        "family": "pr-conflict",
+        "outcome": "dispatch",
+        "owner": "gordon",
+        "project": "lucarne",
+        "runs": [
+          {
+            "branch": "kelos/vikunja-4401",
+            "identity": {
+              "episode": "22fa40d7-7-11111111-01234567",
+              "family": "pr-conflict",
+              "head_ref": "kelos/vikunja-4401",
+              "pr": 7,
+              "project": "lucarne",
+              "variant": "claude-opus",
+              "workspace": "lucarne"
+            },
+            "name": "pr-conflict-22fa40d7-7-11111111-01234567",
+            "profile": {
+              "agent": "claude-code",
+              "capabilities": [
+                "github-write",
+                "github-readonly"
+              ],
+              "config_version": "hollingsworth-bf18aa5",
+              "credential_secret": "claude-oauth",
+              "credential_type": "oauth",
+              "effort": "medium",
+              "image": "ericsperano/kelos-claude-code:0.64.0-20261120-031945-6f37b61",
+              "mode": "followup",
+              "model": "claude-opus-5-5[1m]",
+              "profile": "default",
+              "read_only": false,
+              "service_account": "",
+              "variant": "claude-opus",
+              "workspace": "lucarne"
+            }
+          }
+        ]
+      }
+    ],
+    "outcome": "dispatch",
+    "request_key": "github/sperano/lucarne/pull/7/gordon-conflict/0123456789abcdef0123456789abcdef01234567"
+  }
+}

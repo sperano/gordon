@@ -11,6 +11,11 @@ const (
 		"or `announce-github-start` init container (Gordon deduplicates, caps and announces)"
 	needNoReviewHooks = "a dispatch config whose Tasks of the family carry no `pr-task-dedup` " +
 		"or `pr-review-supersede` init container (Gordon deduplicates and supersedes)"
+	needNoConflictHooks = "a dispatch config whose Tasks of the family carry no `announce-github-start` " +
+		"init container (Gordon announces)"
+	needConflictReconcile = "`GORDON_CONFLICT_RECONCILE_INTERVAL` > 0 (the scan that finds conflicts: " +
+		"push and pull_request events start none)"
+	needList = "`list` on `tasks` in `kelos-agents`"
 )
 
 // GitHubSwitches lists the GitHub families' contracts, in run.Families
@@ -37,5 +42,14 @@ func GitHubSwitches() []Switch {
 			"scripts/reconcile_merge_close.py", "templates/merge-close-reconcile.yaml"),
 			"the repository's merge-close merge spawner and its `merge-close-reconcile` CronJob entry",
 			[]string{needWriter, needGitHubReconcile}},
+		{run.PRConflict, chartPath("templates/conflictspawners.yaml", "templates/_conflict.tpl", "scripts/reconcile_conflicts.py",
+			"templates/conflictreconcilers.yaml", "templates/conflict-reconcile.yaml", "scripts/announce_github_start.py"),
+			"the Workspace's `pr-conflict-<workspace>-<variant>` spawners and its `conflict-reconcile-event-<workspace>` " +
+				"and `conflict-reconcile-cron-<workspace>` reconcilers",
+			[]string{needKelos, needApp, needNoConflictHooks, needConflictReconcile}},
+		{run.LimitRestart, chartPath("scripts/limit_reaper.py", "templates/limit-reaper.yaml"),
+			"the limit reaper for Gordon's Tasks: it must skip Tasks labelled `gordon.spe.quebec/managed` of the rule's " +
+				"projects (Gordon restarts them, and its failure notices skip limit stops); it keeps every other Task",
+			[]string{needKelos, needList, needWriter}},
 	}
 }

@@ -61,6 +61,9 @@ func (r Router) Reads(ev event.Event) Reads {
 		if _, ok := r.Config.PRProject(ev.GitHub.Repository); !ok {
 			return Reads{}
 		}
+		if ev.Action == event.ActionConflict {
+			return Reads{PullRequest: ev.GitHub.Synthetic}
+		}
 		reviews, links := slices.Contains(reviewActions, ev.Action), r.linksTask(ev)
 		out := Reads{PullRequest: reviews || links, Files: reviews}
 		if id, ok := run.TaskIDFromBranch(ev.GitHub.PullRequest.HeadRef); ok && links {

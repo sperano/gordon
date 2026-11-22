@@ -1,0 +1,100 @@
+{
+  "description": "The episode's run finished but its Task is still there: the episode is not run again, as the legacy Task name deduplicated it until its TTL.",
+  "delivery": {
+    "body": {
+      "action": "gordon-conflict",
+      "gordon": {
+        "workspace": "lucarne"
+      },
+      "pull_request": {
+        "base": {
+          "ref": "main",
+          "sha": "1111111122222222333333334444444455555555"
+        },
+        "draft": false,
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "repo": {
+            "full_name": "sperano/lucarne"
+          },
+          "sha": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "html_url": "https://github.com/sperano/lucarne/pull/7",
+        "labels": [
+          {
+            "name": "kelos:claude-opus"
+          }
+        ],
+        "merged": false,
+        "number": 7,
+        "state": "open",
+        "title": "Add the inspector",
+        "user": {
+          "login": "gordon-cole-ai[bot]"
+        }
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "gordon-cole-ai[bot]"
+      }
+    },
+    "headers": {
+      "X-GitHub-Delivery": "gordon-conflict/sperano/lucarne/lucarne/z/1",
+      "X-GitHub-Event": "pull_request",
+      "X-Gordon-Synthetic": "reconcile"
+    },
+    "source": "github"
+  },
+  "state": {
+    "pull_request": {
+      "author": "gordon-cole-ai[bot]",
+      "base_ref": "main",
+      "base_sha": "1111111122222222333333334444444455555555",
+      "draft": false,
+      "files": null,
+      "head_ref": "kelos/vikunja-4401",
+      "head_repo": "sperano/lucarne",
+      "head_sha": "0123456789abcdef0123456789abcdef01234567",
+      "labels": [
+        "kelos:claude-opus"
+      ],
+      "mergeable": false,
+      "mergeable_state": "dirty",
+      "merged": false,
+      "number": 7,
+      "repository": "sperano/lucarne",
+      "state": "open",
+      "title": "Add the inspector",
+      "url": "https://github.com/sperano/lucarne/pull/7"
+    }
+  },
+  "ledger": {
+    "runs": [
+      {
+        "active": false,
+        "exists": true,
+        "name": "pr-conflict-22fa40d7-7-11111111-01234567"
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": []
+  },
+  "expect": {
+    "delivery_key": "github/delivery/gordon-conflict/sperano/lucarne/lucarne/z/1",
+    "families": [
+      {
+        "execute": false,
+        "family": "pr-conflict",
+        "outcome": "duplicate",
+        "owner": "legacy",
+        "project": "lucarne",
+        "reason": "run-exists"
+      }
+    ],
+    "outcome": "duplicate",
+    "request_key": "github/sperano/lucarne/pull/7/gordon-conflict/0123456789abcdef0123456789abcdef01234567"
+  }
+}

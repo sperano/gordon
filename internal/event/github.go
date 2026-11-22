@@ -9,7 +9,15 @@ import (
 const (
 	GitHubEventHeader    = "X-GitHub-Event"
 	GitHubDeliveryHeader = "X-GitHub-Delivery"
+	// SyntheticHeader marks a delivery the worker queued itself; no
+	// webhook carries it (the receiver stores none it does not set).
+	SyntheticHeader = "X-Gordon-Synthetic"
 )
+
+// ActionConflict is the pull_request action of the conflict
+// reconciliation's synthetic delivery: a conflict it confirmed. GitHub
+// sends no such action, and only a synthetic delivery is routed with it.
+const ActionConflict = "gordon-conflict"
 
 // Legacy follow-up Task-name letters by comment kind.
 const (
@@ -37,6 +45,11 @@ type githubBody struct {
 	Comment     *githubComment     `json:"comment"`
 	Review      *githubComment     `json:"review"`
 	PullRequest *githubPullRequest `json:"pull_request"`
+	// Gordon is what a synthetic delivery adds: the Workspace whose
+	// conflict reconciliation found the conflict.
+	Gordon *struct {
+		Workspace string `json:"workspace"`
+	} `json:"gordon"`
 }
 
 // githubComment is a comment or a submitted review.
@@ -107,7 +120,10 @@ func ParseGitHub(d Delivery) (Event, error) {
 	if raw.Repository.FullName == "" {
 		return Event{}, fmt.Errorf("%w: repository.full_name missing", ErrMalformed)
 	}
-	gh := &GitHub{Repository: raw.Repository.FullName}
+	gh := &GitHub{Repository: raw.Repository.FullName, Synthetic: d.Header(SyntheticHeader) != ""}
+	if gh.Synthetic && raw.Gordon != nil {
+		gh.ConflictWorkspace = raw.Gordon.Workspace
+	}
 	ev := Event{
 		Source: SourceGitHub, Kind: kind, Action: raw.Action,
 		DeliveryKey: "github/delivery/" + guid, Actor: raw.Sender.Login, GitHub: gh,
@@ -129,7 +145,7 @@ func pullRequest(repo string, p *githubPullRequest) PullRequest {
 	pr := PullRequest{
 		Repository: repo, Number: p.Number, Title: p.Title, URL: p.HTMLURL, State: p.State, Draft: p.Draft,
 		Merged: p.Merged != nil && *p.Merged, Author: p.User.Login, HeadRef: p.Head.Ref,
-		HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref,
+		HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref, BaseSHA: p.Base.SHA,
 	}
 	if p.Head.Repo != nil {
 		pr.HeadRepo = p.Head.Repo.FullName

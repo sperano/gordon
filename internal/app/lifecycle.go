@@ -58,7 +58,7 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 		register(upstream.ProviderVikunja, ex, vikunjaKinds)
 	}
 	if app != nil {
-		register(upstream.ProviderGitHub, githubExecutor(cfg, s, app), githubKinds)
+		register(upstream.ProviderGitHub, githubExecutor(cfg, s, k, app), githubKinds)
 	}
 	for kind, byProvider := range providers {
 		out[kind] = worker.ByProvider{Executors: byProvider, Delay: cfg.Backoff.Max}
@@ -75,13 +75,29 @@ func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client) *lifecy
 	ex := &lifecycle.Executor{
 		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + l.WriteToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
 		Policy: cfg.Routing.Policy, Agents: agentUsers(cfg), Runs: s, Lock: s, Namespace: route.KelosNamespace,
+		MaxRestarts: cfg.Restart.Max,
 		Links: lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
 			Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL},
 	}
 	if k != nil {
-		ex.Messages = taskMessages(k)
+		ex.Messages, ex.Limits = taskMessages(k), taskLimits(k)
 	}
 	return ex
+}
+
+// taskLimits reads the limit that stopped a Task for its restart notices:
+// "" for a Task gone or without a status, the error of a failed read.
+func taskLimits(k *kelos.Client) lifecycle.TaskLimits {
+	return func(ctx context.Context, name string) (string, error) {
+		t, _, err := k.Get(ctx, name)
+		switch {
+		case kelos.IsNotFound(err):
+			return "", nil
+		case err != nil:
+			return "", fmt.Errorf("limit of Task %s: %w", name, err)
+		}
+		return t.LimitType(), nil
+	}
 }
 
 // taskMessages reads a Task's status message for its failure notice: ""
@@ -102,9 +118,11 @@ func taskMessages(k *kelos.Client) lifecycle.TaskMessages {
 	}
 }
 
-// failureHook is the observer's lifecycle hook.
-func failureHook(cfg config.Worker, s *store.Store) submit.FinishHook {
-	return &lifecycle.Failures{Store: s, Policy: cfg.Routing.Policy, Ownership: cfg.Ownership}
+// finishHooks are the observer's hooks: the completion record, then the
+// lifecycle's failure notices.
+func finishHooks(cfg config.Worker, s *store.Store) []submit.FinishHook {
+	return []submit.FinishHook{&submit.Completions{Store: s},
+		&lifecycle.Failures{Store: s, Policy: cfg.Routing.Policy, Ownership: cfg.Ownership, Projects: cfg.Routing.Projects}}
 }
 
 // vikunjaReconciler is the Vikunja reconciliation, nil when it is off.

@@ -25,6 +25,336 @@
     "vikunja-agent-qwen-coder"
   ],
   "families": {
+    "pr-conflict": {
+      "prompt": "Resolve the confirmed merge conflict on pull request #{{.number}} in {{.repository}}: {{.title}}\n\nPR: {{.url}}\nBranch: {{.branch}}\nBase ref: {{.base_ref}}\nExpected PR base SHA (GitHub base.sha, not the base branch tip): {{.base_sha}}\nExpected head SHA: {{.head_sha}}\nExpected mergeability: false / dirty\nExpected variant: {{.variant}}\nLabel prefix: kelos:\nCurrent variants: claude-opus, claude-sonnet, claude-fable, claude-haiku, gpt-sol, gpt-astra, deepseek, qwen-coder\nDefault variant: claude-opus\nOwner: sperano\nPR authors: sperano, gordon-cole-ai[bot]\n\nFollow the PR conflict-resolution procedure in your instructions.\n",
+      "labels": {
+        "vikunja.spe.quebec/workspace": "{{.workspace}}",
+        "vikunja.spe.quebec/pr": "{{.number}}",
+        "vikunja.spe.quebec/role": "pr-conflict"
+      },
+      "annotations": {
+        "vikunja.spe.quebec/delivery": "{{.ID}}",
+        "vikunja.spe.quebec/pr": "{{.number}}",
+        "vikunja.spe.quebec/repository": "{{.repository}}",
+        "vikunja.spe.quebec/source": "github",
+        "vikunja.spe.quebec/source-instance": "github.com"
+      },
+      "agent_configs": [
+        "base",
+        "@project",
+        "@vikunja",
+        "pr-conflict"
+      ],
+      "ttl_seconds_after_finished": 604800,
+      "pod": {
+        "resources": {
+          "limits": {
+            "memory": "8Gi"
+          },
+          "requests": {
+            "cpu": "3",
+            "memory": "4Gi"
+          }
+        },
+        "affinity": {
+          "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "node-role.kubernetes.io/control-plane",
+                      "operator": "DoesNotExist"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "podAntiAffinity": {
+            "preferredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "podAffinityTerm": {
+                  "labelSelector": {
+                    "matchExpressions": [
+                      {
+                        "key": "kelos.dev/component",
+                        "operator": "In",
+                        "values": [
+                          "task"
+                        ]
+                      }
+                    ]
+                  },
+                  "topologyKey": "kubernetes.io/hostname"
+                },
+                "weight": 100
+              }
+            ]
+          }
+        },
+        "env": [
+          {
+            "name": "KELOS_AGENT",
+            "value": "{{.variant}}"
+          },
+          {
+            "name": "AGENT_MODEL",
+            "value": "{{.model}}"
+          },
+          {
+            "name": "AGENT_EFFORT",
+            "value": "{{.effort}}"
+          },
+          {
+            "name": "CARGO_BUILD_JOBS",
+            "value": "8"
+          },
+          {
+            "name": "GIT_AUTHOR_NAME",
+            "value": "\u00c9ric Sp\u00e9rano"
+          },
+          {
+            "name": "GIT_AUTHOR_EMAIL",
+            "value": "eric.sperano@gmail.com"
+          },
+          {
+            "name": "GIT_COMMITTER_NAME",
+            "value": "\u00c9ric Sp\u00e9rano"
+          },
+          {
+            "name": "GIT_COMMITTER_EMAIL",
+            "value": "eric.sperano@gmail.com"
+          },
+          {
+            "name": "WIKI_PASSWORD",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "password",
+                "name": "authentik-agent-{{.variant}}"
+              }
+            }
+          },
+          {
+            "name": "WIKI_USERNAME",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "username",
+                "name": "authentik-agent-{{.variant}}"
+              }
+            }
+          },
+          {
+            "name": "VIKUNJA_URL",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "url",
+                "name": "vikunja-agent-{{.variant}}"
+              }
+            }
+          },
+          {
+            "name": "VIKUNJA_API_TOKEN",
+            "valueFrom": {
+              "secretKeyRef": {
+                "key": "token",
+                "name": "vikunja-agent-{{.variant}}"
+              }
+            }
+          }
+        ],
+        "extraInitContainers": [
+          {
+            "command": [
+              "python3",
+              "/opt/announce-github-start/announce_github_start.py"
+            ],
+            "env": [
+              {
+                "name": "GITHUB_API_URL",
+                "value": "https://api.github.com"
+              },
+              {
+                "name": "GITHUB_TOKEN",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "GITHUB_TOKEN",
+                    "name": "github-token"
+                  }
+                }
+              },
+              {
+                "name": "GITHUB_REPOSITORY",
+                "value": "{{.repository}}"
+              },
+              {
+                "name": "KELOS_TASK_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['kelos.dev/task']"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_JOB_UID",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['batch.kubernetes.io/controller-uid']"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_TASK_NAMESPACE",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.namespace"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_NODE_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "spec.nodeName"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_AGENT",
+                "value": "{{.variant}}"
+              },
+              {
+                "name": "AGENT_MODEL",
+                "value": "{{.model}}"
+              },
+              {
+                "name": "AGENT_EFFORT",
+                "value": "{{.effort}}"
+              },
+              {
+                "name": "LUCARNE_URL",
+                "value": "https://lucarne.spe.quebec"
+              },
+              {
+                "name": "LUCARNE_CLUSTER",
+                "value": "hollingsworth"
+              },
+              {
+                "name": "KELOS_JOB_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.labels['batch.kubernetes.io/job-name']"
+                  }
+                }
+              },
+              {
+                "name": "KELOS_POD_UID",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.uid"
+                  }
+                }
+              },
+              {
+                "name": "RUN_LINK_TOKEN_DIR",
+                "value": "/var/run/kelos-run-link"
+              },
+              {
+                "name": "SILLAGE_URL",
+                "value": "https://sillage.spe.quebec"
+              },
+              {
+                "name": "REQUIRE_MARKER",
+                "value": "false"
+              },
+              {
+                "name": "GITHUB_TOKEN_FILE",
+                "value": "/kelos/github-token/GITHUB_TOKEN"
+              }
+            ],
+            "image": "python:3.15-alpine3.24",
+            "name": "announce-github-start",
+            "resources": {
+              "limits": {
+                "memory": "128Mi"
+              },
+              "requests": {
+                "cpu": "50m",
+                "memory": "64Mi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/opt/announce-github-start",
+                "name": "announce-github-start",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/kelos/github-token",
+                "name": "kelos-github-token",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/var/run/kelos-run-link",
+                "name": "run-link-token",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "configMap": {
+              "name": "announce-github-start"
+            },
+            "name": "announce-github-start"
+          },
+          {
+            "name": "run-link-token",
+            "secret": {
+              "items": [
+                {
+                  "key": "token",
+                  "path": "token"
+                },
+                {
+                  "key": "ca.crt",
+                  "path": "ca.crt"
+                }
+              ],
+              "optional": true,
+              "secretName": "kelos-run-link-token"
+            }
+          },
+          {
+            "configMap": {
+              "name": "wiki-gql",
+              "optional": true
+            },
+            "name": "wiki-gql"
+          },
+          {
+            "configMap": {
+              "name": "agent-tools",
+              "optional": true
+            },
+            "name": "agent-tools"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "mountPath": "/opt/wiki",
+            "name": "wiki-gql",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/opt/kelos-tools",
+            "name": "agent-tools",
+            "readOnly": true
+          }
+        ]
+      }
+    },
     "pr-followup": {
       "agent_configs": [
         "base",

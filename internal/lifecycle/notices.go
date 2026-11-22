@@ -13,6 +13,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/notice"
+	"github.com/sperano/gordon/internal/restart"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -74,6 +75,10 @@ func (e *Executor) legacyPosted(a action.Action, body string) bool {
 		return err == nil && notice.AboutTask(body, a.Value, e.Policy.VikunjaWebURL, sub)
 	case notice.ChainNoAgent, notice.ChainDone:
 		return notice.HasKind(body, a.Value, "")
+	case notice.Restart:
+		return notice.HasKind(body, notice.Restart, a.Detail)
+	case notice.RestartGaveUp:
+		return notice.GaveUpPosted(body, a.Detail)
 	case notice.PROpen, notice.Merged:
 		url, err := notice.PRURL(a.Detail)
 		if err != nil {
@@ -180,6 +185,12 @@ func (e *Executor) render(ctx context.Context, a action.Action, task int64) (str
 	case notice.PROpen, notice.Merged:
 		text, err := e.pullRequestText(a)
 		return text, 0, err
+	case notice.Restart:
+		text, err := e.restartText(ctx, a.Detail)
+		return text, 0, err
+	case notice.RestartGaveUp:
+		lt, err := e.limitType(ctx, a.Detail)
+		return notice.GaveUpText(a.Detail, lt, e.maxRestarts()), 0, err
 	}
 	text, err := e.chainText(ctx, a, task)
 	return text, 0, err
@@ -249,6 +260,37 @@ func (e *Executor) failedText(ctx context.Context, name string) (string, error) 
 	return notice.FailedText(notice.FailedInfo{Task: name, Message: msg, InProgressLabel: e.Policy.InProgressLabel,
 		ErrorLabel: e.Policy.AgentErrorLabel, Namespace: e.Namespace, FollowUp: slices.Contains(followUps, r.Family),
 		RunURL: e.Links.Run(r.TaskUID)}), nil
+}
+
+// maxRestarts is the restarts a chain may take, the pass's default
+// unless configured.
+func (e *Executor) maxRestarts() int { return cmp.Or(e.MaxRestarts, restart.DefaultMaxRestarts) }
+
+func (e *Executor) limitType(ctx context.Context, name string) (string, error) {
+	if e.Limits == nil {
+		return "", nil
+	}
+	return e.Limits(ctx, name)
+}
+
+// restartText is the restart notice of the restart run name: the Task it
+// restarts is the run's previous attempt.
+func (e *Executor) restartText(ctx context.Context, name string) (string, error) {
+	r, err := e.Runs.RunInfo(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if r.Identity.Retry <= 0 {
+		return "", worker.Permanent(fmt.Errorf("restart notice of %s, which restarts nothing", name))
+	}
+	prev := r.Identity
+	prev.Retry--
+	lt, err := e.limitType(ctx, prev.Name())
+	if err != nil {
+		return "", err
+	}
+	return notice.RestartText(notice.RestartInfo{Stopped: prev.Name(), Restart: name, LimitType: lt,
+		Attempt: r.Identity.Retry, Max: e.maxRestarts(), RunURL: e.Links.Run(r.TaskUID)}), nil
 }
 
 func (e *Executor) chain() notice.Chain {

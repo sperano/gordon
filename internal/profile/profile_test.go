@@ -245,3 +245,20 @@ func TestProjectsDoNotShareProfileMaps(t *testing.T) {
 		t.Errorf("a later Defaults() vigie implement profile %q, want %q", got, ProfileDefault)
 	}
 }
+
+func TestWorkspaceProjectAndBase(t *testing.T) {
+	c := Defaults()
+	p, ok := c.WorkspaceProject("sperano/cocovm", "cocovm-3d")
+	if !ok || p.Name != "cocovm-3d" || p.Base() != "feature/3d" {
+		t.Errorf("cocovm-3d: %+v, %v, base %q", p, ok, p.Base())
+	}
+	// A shared Workspace's first project is its conflicts' project.
+	if p, ok := c.WorkspaceProject("sperano/hollingsworth", "hollingsworth"); !ok || p.Name != "hollingsworth" || p.Base() != DefaultBaseRef {
+		t.Errorf("hollingsworth: %+v, %v", p, ok)
+	}
+	for _, miss := range [][2]string{{"sperano/cocovm", "vigie"}, {"sperano/vigie", "cocovm"}, {"", ""}} {
+		if p, ok := c.WorkspaceProject(miss[0], miss[1]); ok {
+			t.Errorf("%v: %+v", miss, p)
+		}
+	}
+}

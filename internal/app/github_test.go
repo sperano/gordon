@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -18,7 +19,10 @@ import (
 	"github.com/sperano/gordon/internal/config"
 	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/kelos"
+	"github.com/sperano/gordon/internal/kelos/kelostest"
+	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/submit"
 	"github.com/sperano/gordon/internal/upstream"
 	"github.com/sperano/gordon/internal/worker"
@@ -118,3 +122,56 @@ func TestGitHubReconcilerIsOptIn(t *testing.T) {
 }
 
 func discardLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+func TestConflictReconcilerIsOptIn(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Defaults()}
+	if r := conflictReconciler(cfg, nil, upstream.GitHub{}, nil, discardLog()); r != nil {
+		t.Fatalf("conflict reconciler %+v with no interval", r)
+	}
+	cfg.GitHub.ConflictInterval = time.Minute
+	if r := conflictReconciler(cfg, nil, upstream.GitHub{}, nil, discardLog()); r == nil || len(r.Config.Projects) == 0 {
+		t.Fatalf("conflict reconciler %+v", r)
+	}
+}
+
+// TestWritersGetTheirReaders: with Kelos, both writers read a failed
+// Task's message and a stopped Task's limit from it and name the
+// configured restarts; without Kelos, the GitHub writer reads neither.
+func TestWritersGetTheirReaders(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Defaults(), GitHubAPIURL: "https://api.example", Restart: config.Restart{Max: 5}}
+	cfg.Lifecycle.WriteToken = "w"
+	app, err := githubapp.Load(appDir(t), cfg.GitHubAPIURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := kelostest.New(route.KelosNamespace)
+	defer srv.Close()
+	srv.Put(kelos.Task{Metadata: kelos.Metadata{Name: "stopped"}, Status: &kelos.Status{Phase: kelos.PhaseFailed,
+		Message: "backoff limit", Results: map[string]string{kelos.ResultLimitType: "weekly"}}})
+	k := &kelos.Client{BaseURL: srv.URL, Namespace: route.KelosNamespace, HTTP: srv.Client()}
+	gh := githubExecutor(cfg, nil, k, app)
+	checkReaders(t, "GitHub writer", gh.Messages, gh.Limits, gh.MaxRestarts)
+	vk := vikunjaExecutor(cfg, nil, k)
+	checkReaders(t, "Vikunja writer", vk.Messages, vk.Limits, vk.MaxRestarts)
+	if ex := githubExecutor(cfg, nil, nil, app); ex.Messages != nil || ex.Limits != nil {
+		t.Error("GitHub writer reads Tasks without Kelos")
+	}
+}
+
+// checkReaders reads the "stopped" Task through a writer's readers.
+func checkReaders(t *testing.T, writer string, messages lifecycle.TaskMessages, limits lifecycle.TaskLimits, restarts int) {
+	t.Helper()
+	if messages == nil || limits == nil {
+		t.Fatalf("%s: messages %v limits %v", writer, messages != nil, limits != nil)
+	}
+	ctx := context.Background()
+	if msg, err := messages(ctx, "stopped"); err != nil || msg != "backoff limit" {
+		t.Errorf("%s message %q, %v", writer, msg, err)
+	}
+	if lt, err := limits(ctx, "stopped"); err != nil || lt != "weekly" {
+		t.Errorf("%s limit %q, %v", writer, lt, err)
+	}
+	if restarts != 5 {
+		t.Errorf("%s restarts %d, want 5", writer, restarts)
+	}
+}

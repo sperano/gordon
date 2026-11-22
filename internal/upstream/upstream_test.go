@@ -423,3 +423,30 @@ func TestVikunjaCommentsRefusals(t *testing.T) {
 		t.Fatalf("Comments(0) = %v after %d requests, want invalid without a request", err, len(o.results))
 	}
 }
+
+func TestGitHubPullRequestMergeability(t *testing.T) {
+	cases := map[string]struct {
+		body      string
+		mergeable *bool
+		state     string
+		conflict  bool
+	}{
+		"in conflict": {`"mergeable":false,"mergeable_state":"dirty"`, new(false), "dirty", true},
+		"computing":   {`"mergeable":null,"mergeable_state":"unknown"`, nil, "unknown", false},
+		"clean":       {`"mergeable":true,"mergeable_state":"clean"`, new(true), "clean", false},
+		"blocked":     {`"mergeable":false,"mergeable_state":"blocked"`, new(false), "blocked", false},
+	}
+	for name, tc := range cases {
+		c, _ := client(t, ProviderGitHub, func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprint(w, `{"number":7,"state":"open","base":{"ref":"main","sha":"b45e"},`+tc.body+`}`)
+		})
+		pr, err := GitHub{c}.PullRequest(ctx, "sperano/gordon", 7, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(pr.Mergeable, tc.mergeable) || pr.MergeableState != tc.state || pr.BaseSHA != "b45e" ||
+			pr.Conflicting() != tc.conflict {
+			t.Errorf("%s: mergeable %v state %q base %q conflicting %v", name, pr.Mergeable, pr.MergeableState, pr.BaseSHA, pr.Conflicting())
+		}
+	}
+}

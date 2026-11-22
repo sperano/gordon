@@ -85,10 +85,13 @@ type Profile struct {
 type Project struct {
 	Name string `json:"name"`
 	// Title is the Vikunja project's display name the prompts quote.
-	Title        string   `json:"title,omitempty"`
-	VikunjaID    int64    `json:"vikunja_id"`
-	Workspace    string   `json:"workspace"`
-	Repository   string   `json:"repository"`
+	Title      string `json:"title,omitempty"`
+	VikunjaID  int64  `json:"vikunja_id"`
+	Workspace  string `json:"workspace"`
+	Repository string `json:"repository"`
+	// BaseRef is the Workspace's ref, the base its pull requests merge
+	// into ("" for DefaultBaseRef).
+	BaseRef      string   `json:"base_ref,omitempty"`
 	AgentConfigs []string `json:"agent_configs,omitempty"`
 	// Profiles maps a mode to its default profile name; Allowed lists
 	// further profiles a trusted override may pick per mode.
@@ -173,6 +176,18 @@ type Bot struct {
 	SuggestionsPattern string `json:"suggestions_pattern,omitempty"`
 }
 
+// DefaultBaseRef is a Workspace's ref when its project names none
+// (kelos.workspaceRef's default).
+const DefaultBaseRef = "main"
+
+// Base is the project's Workspace ref.
+func (p Project) Base() string {
+	if p.BaseRef == "" {
+		return DefaultBaseRef
+	}
+	return p.BaseRef
+}
+
 // Project returns the project of a Vikunja project id.
 func (c Config) Project(vikunjaID int64) (Project, bool) {
 	for _, p := range c.Projects {
@@ -189,6 +204,18 @@ func (c Config) Project(vikunjaID int64) (Project, bool) {
 func (c Config) PRProject(repository string) (Project, bool) {
 	for _, p := range c.Projects {
 		if p.Repository == repository {
+			return p, true
+		}
+	}
+	return Project{}, false
+}
+
+// WorkspaceProject returns the first project whose runs use the
+// Workspace on the repository: the project a Workspace's conflict runs
+// count against.
+func (c Config) WorkspaceProject(repository, workspace string) (Project, bool) {
+	for _, p := range c.Projects {
+		if p.Repository == repository && p.Workspace == workspace {
 			return p, true
 		}
 	}

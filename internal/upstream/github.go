@@ -70,10 +70,15 @@ type githubPR struct {
 	} `json:"head"`
 	Base struct {
 		Ref string `json:"ref"`
+		SHA string `json:"sha"`
 	} `json:"base"`
 	Labels []struct {
 		Name string `json:"name"`
 	} `json:"labels"`
+	// Mergeable is null while GitHub computes it (a single pull request's
+	// read only: listings never carry it).
+	Mergeable      *bool  `json:"mergeable"`
+	MergeableState string `json:"mergeable_state"`
 }
 
 // PullRequest reads a pull request; withFiles also lists its changed
@@ -97,7 +102,7 @@ func (g GitHub) PullRequest(ctx context.Context, repo string, number int, withFi
 	pr := event.PullRequest{Repository: repo, Number: raw.Number, Title: raw.Title, URL: raw.HTMLURL,
 		State: raw.State, Draft: raw.Draft,
 		Merged: raw.Merged, Author: raw.User.Login, HeadRef: raw.Head.Ref, HeadSHA: raw.Head.SHA,
-		BaseRef: raw.Base.Ref}
+		BaseRef: raw.Base.Ref, BaseSHA: raw.Base.SHA, Mergeable: raw.Mergeable, MergeableState: raw.MergeableState}
 	if raw.Head.Repo != nil {
 		pr.HeadRepo = raw.Head.Repo.FullName
 	}

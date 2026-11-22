@@ -12,7 +12,7 @@ import (
 
 // SyntheticHeader marks an inbox row the worker queued itself; the
 // receiver strips nothing it does not store, and no sender sets it.
-const SyntheticHeader = "X-Gordon-Synthetic"
+const SyntheticHeader = event.SyntheticHeader
 
 // Synthetic kinds, the header's value.
 const (

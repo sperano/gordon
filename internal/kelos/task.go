@@ -97,6 +97,11 @@ type PodOverrides struct {
 type Status struct {
 	Phase   string `json:"phase,omitempty"`
 	Message string `json:"message,omitempty"`
+	// CompletionTime is when the Task finished (RFC 3339).
+	CompletionTime string `json:"completionTime,omitempty"`
+	// Results are the agent's outputs: the base64 `response`, and the
+	// agent image's `limit-resets-at` and `limit-type` at a limit stop.
+	Results map[string]string `json:"results,omitempty"`
 }
 
 // Phase is the Task's phase, "" before the controller set one.

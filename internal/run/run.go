@@ -29,12 +29,18 @@ const (
 	PRReview               Family = "pr-review"
 	PROpen                 Family = "pr-open"
 	MergeClose             Family = "merge-close"
+	// PRConflict resolves a confirmed merge conflict of an agent pull
+	// request, one run per base and head pair (conflictspawners.yaml).
+	PRConflict Family = "pr-conflict"
 	// The Vikunja lifecycle families (Gordon 06): model-free writes, each
 	// the successor of one legacy hook or reconciler with its own switch.
 	VikunjaDragCancel  Family = "vikunja-drag-cancel"
 	VikunjaDoneCleanup Family = "vikunja-done-cleanup"
 	VikunjaChain       Family = "vikunja-chain"
 	VikunjaFailure     Family = "vikunja-failure"
+	// LimitRestart restarts Gordon's runs a subscription limit stopped
+	// (limit_reaper.py), once the limit reset.
+	LimitRestart Family = "limit-restart"
 )
 
 // Families lists every family the router decides, in a stable order.
@@ -42,6 +48,7 @@ var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
 	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure,
+	PRConflict, LimitRestart,
 }
 
 // AgentFamilies are the families whose runs work on a Vikunja task as its
@@ -72,10 +79,25 @@ type Identity struct {
 	PR          int    `json:"pr,omitempty"`
 	HeadSHA     string `json:"head_sha,omitempty"`
 	HeadRef     string `json:"head_ref,omitempty"`
+	// Episode is a conflict's base and head pair
+	// (reconcile_conflicts.conflict_payload's id).
+	Episode string `json:"episode,omitempty"`
+	// Retry is the limit restart this run is (limit_reaper.restart_name),
+	// 0 for the original run.
+	Retry int `json:"retry,omitempty"`
 }
 
-// Name is the Kelos Task name, or "" for a family that submits no Task.
+// Name is the Kelos Task name, or "" for a family that submits no Task;
+// a limit restart's is its original's with -retry<n>.
 func (i Identity) Name() string {
+	name := i.baseName()
+	if name != "" && i.Retry > 0 {
+		name += fmt.Sprintf("-retry%d", i.Retry)
+	}
+	return name
+}
+
+func (i Identity) baseName() string {
 	switch i.Family {
 	case VikunjaImplement:
 		return fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
@@ -89,6 +111,8 @@ func (i Identity) Name() string {
 		return fmt.Sprintf("pr-followup-%s-%d-%s%d", i.Workspace, i.PR, i.CommentKind, i.CommentID)
 	case PRReview:
 		return fmt.Sprintf("review-%s-%s-%d-%s", i.Workspace, i.Reviewer, i.PR, short(i.HeadSHA))
+	case PRConflict:
+		return "pr-conflict-" + i.Episode
 	default:
 		return ""
 	}
@@ -101,7 +125,7 @@ func (i Identity) Branch() string {
 	switch i.Family {
 	case VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp:
 		return BranchPrefix + strconv.FormatInt(i.TaskID, 10)
-	case PRFollowUp:
+	case PRFollowUp, PRConflict:
 		return i.HeadRef
 	default:
 		return ""
