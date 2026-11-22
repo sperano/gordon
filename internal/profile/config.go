@@ -93,6 +93,9 @@ type Project struct {
 	// into ("" for DefaultBaseRef).
 	BaseRef      string   `json:"base_ref,omitempty"`
 	AgentConfigs []string `json:"agent_configs,omitempty"`
+	// AutoAssignVariant is the agent username assigned to new unassigned
+	// tasks in this project; empty disables automatic assignment.
+	AutoAssignVariant string `json:"auto_assign_variant,omitempty"`
 	// Profiles maps a mode to its default profile name; Allowed lists
 	// further profiles a trusted override may pick per mode.
 	Profiles map[Mode]string   `json:"profiles"`

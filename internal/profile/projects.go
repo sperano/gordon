@@ -23,7 +23,7 @@ var (
 // Profiles changes no other project or later Defaults().
 func project(name, title string, id int64, profiles map[Mode]string, configs ...string) Project {
 	return Project{Name: name, Title: title, VikunjaID: id, Workspace: name, Repository: "sperano/" + name,
-		AgentConfigs: configs, Profiles: maps.Clone(profiles)}
+		AgentConfigs: configs, AutoAssignVariant: defaultVariant, Profiles: maps.Clone(profiles)}
 }
 
 // projects lists vikunjaSpawners.projects in their legacy order, which

@@ -356,6 +356,7 @@ func (noLock) WithTargetLock(ctx context.Context, _ string, fn func(context.Cont
 func executor(f *fakeVikunja, rs runs) *Executor {
 	p := profile.Defaults().Policy
 	p.VikunjaWebURL = "https://vikunja.example"
-	return &Executor{W: f.writer(), Policy: p, Agents: []string{"claude-opus", "gpt-sol"}, Runs: rs, Lock: noLock{},
+	return &Executor{W: f.writer(), Policy: p, Agents: []string{"claude-opus", "gpt-sol"},
+		AutoAssignUsers: map[int64]int64{3: 7}, Runs: rs, Lock: noLock{},
 		Namespace: "kelos-agents"}
 }

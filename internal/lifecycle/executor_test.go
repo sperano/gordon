@@ -290,6 +290,31 @@ func TestAssign(t *testing.T) {
 	}
 }
 
+func TestAssignIfUnassigned(t *testing.T) {
+	f := newFake(t)
+	f.board()
+	ex := executor(f, nil)
+	a := action.New(action.AssignIfUnassigned, action.VikunjaTask(5), "claude-opus")
+	a.Detail = "3"
+	f.put(Task{ID: 5, ProjectID: 3})
+	if err := ex.Execute(ctx, a); err != nil || len(f.get(5).Assignees) != 1 || f.get(5).Assignees[0].Username != "claude-opus" {
+		t.Fatalf("assign-if-unassigned: %v, %+v", err, f.get(5).Assignees)
+	}
+	for _, task := range []Task{
+		{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}},
+		{ID: 5, ProjectID: 4},
+		{ID: 5, ProjectID: 3, Labels: []Label{{Title: "no-agent"}}},
+		{ID: 5, ProjectID: 3, Labels: []Label{{Title: "chain"}}},
+		{ID: 5, ProjectID: 3, Labels: []Label{{Title: "discuss"}}},
+	} {
+		f.put(task)
+		before := len(f.writes)
+		if err := ex.Execute(ctx, a); err != nil || len(f.writes) != before {
+			t.Fatalf("stale task %+v: err %v writes %d, want %d", task, err, len(f.writes), before)
+		}
+	}
+}
+
 // TestSyncLabelKeepsProvenance: the subtask gets exactly the parent's
 // auto-merge label made by the trusted creator, and loses a lookalike.
 func TestSyncLabelKeepsProvenance(t *testing.T) {

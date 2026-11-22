@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/replay"
 	"github.com/sperano/gordon/internal/route"
@@ -27,6 +28,68 @@ func fresh(id, project int64, labels []string, assignees ...string) *event.Task 
 
 func updated(t *testing.T, tk map[string]any) event.Delivery {
 	return signed(t, event.SourceVikunja, nil, map[string]any{"event_name": "task.updated", "data": map[string]any{"task": tk}})
+}
+
+func created(t *testing.T, tk map[string]any) event.Delivery {
+	return signed(t, event.SourceVikunja, nil, map[string]any{"event_name": "task.created", "data": map[string]any{"task": tk}})
+}
+
+func TestTaskCreatedAutoAssign(t *testing.T) {
+	r := router()
+	state := route.State{Task: fresh(5, 136, nil), ParentsRead: true}
+	d := r.Decide(created(t, task(5, 136, nil)), state, replay.Ledger{})
+	fd := family(t, d)
+	expectFamily(t, fd, run.VikunjaAutoAssign, route.Act, "")
+	want := action.Action{Key: "assign-if-unassigned:vikunja/task/5:claude-opus", Kind: action.AssignIfUnassigned,
+		Target: action.VikunjaTask(5), Value: "claude-opus", Detail: "136"}
+	if len(fd.Actions) != 1 || fd.Actions[0] != want {
+		t.Fatalf("actions %+v, want %+v", fd.Actions, want)
+	}
+}
+
+func TestTaskCreatedAutoAssignGuards(t *testing.T) {
+	r := router()
+	cases := []struct {
+		name    string
+		sent    *event.Task
+		fresh   *event.Task
+		parents []event.Task
+		outcome route.Outcome
+		reason  string
+	}{
+		{"sent assignee", fresh(5, 136, nil, "eric"), fresh(5, 136, nil), nil, route.Ignore, route.ReasonAlreadyAssigned},
+		{"fresh assignee", fresh(5, 136, nil), fresh(5, 136, nil, "eric"), nil, route.Stale, route.ReasonAlreadyAssigned},
+		{"sent no-agent", fresh(5, 136, []string{"no-agent"}), fresh(5, 136, nil), nil, route.Ignore, route.ReasonSkipLabel},
+		{"fresh no-agent", fresh(5, 136, nil), fresh(5, 136, []string{"no-agent"}), nil, route.Stale, route.ReasonSkipLabel},
+		{"sent discuss", fresh(5, 136, []string{"discuss"}), fresh(5, 136, nil), nil, route.Ignore, route.ReasonSkipLabel},
+		{"fresh discuss", fresh(5, 136, nil), fresh(5, 136, []string{"discuss"}), nil, route.Stale, route.ReasonSkipLabel},
+		{"sent chain", fresh(5, 136, []string{"chain"}), fresh(5, 136, nil), nil, route.Ignore, route.ReasonSkipLabel},
+		{"fresh chain", fresh(5, 136, nil), fresh(5, 136, []string{"chain"}), nil, route.Stale, route.ReasonSkipLabel},
+		{"chain parent", fresh(5, 136, nil), fresh(5, 136, nil), []event.Task{{Labels: []string{"chain"}}}, route.Ignore, route.ReasonChainSubtask},
+		{"moved", fresh(5, 136, nil), fresh(5, 139, nil), nil, route.Stale, route.ReasonProjectNotConfigured},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := r.Decide(created(t, task(c.sent.ID, c.sent.ProjectID, c.sent.Labels, c.sent.Assignees...)),
+				route.State{Task: c.fresh, Parents: c.parents, ParentsRead: true}, replay.Ledger{})
+			fd := family(t, d)
+			expectFamily(t, fd, run.VikunjaAutoAssign, c.outcome, c.reason)
+			if len(fd.Actions) != 0 {
+				t.Fatalf("guarded decision actions %+v", fd.Actions)
+			}
+		})
+	}
+}
+
+func TestTaskCreatedAutoAssignOptOut(t *testing.T) {
+	r := router()
+	for i := range r.Config.Projects {
+		if r.Config.Projects[i].VikunjaID == 136 {
+			r.Config.Projects[i].AutoAssignVariant = ""
+		}
+	}
+	d := r.Decide(created(t, task(5, 136, nil)), route.State{}, replay.Ledger{})
+	expect(t, d, route.Ignore, route.ReasonAutoAssignDisabled)
 }
 
 func comment(t *testing.T, tk map[string]any, id int64, text, doer string) event.Delivery {

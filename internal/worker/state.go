@@ -75,10 +75,34 @@ func (s StateReader) Read(ctx context.Context, ev event.Event, led route.Ledger)
 			st.Task = &t
 		}
 	}
+	if need.Parents && st.Task != nil {
+		errs = append(errs, s.readParents(ctx, &st))
+	}
 	if need.Chain && st.Task != nil && (route.Router{Config: s.Config}).ChainTask(*st.Task) {
 		errs = append(errs, s.readChain(ctx, &st))
 	}
 	return st, errors.Join(errs...)
+}
+
+func (s StateReader) readParents(ctx context.Context, st *route.State) error {
+	parents, err := s.readRelated(ctx, st.Task.Relations.Parents)
+	if err != nil {
+		return err
+	}
+	st.Parents, st.ParentsRead = parents, true
+	return nil
+}
+
+func (s StateReader) readRelated(ctx context.Context, rels []event.Related) ([]event.Task, error) {
+	tasks := make([]event.Task, len(rels))
+	for i, rel := range rels {
+		t, err := s.Tasks.Task(ctx, rel.ID)
+		if err != nil {
+			return nil, err
+		}
+		tasks[i] = t
+	}
+	return tasks, nil
 }
 
 // readHistory reads the pull request's reviews and comments; a failure

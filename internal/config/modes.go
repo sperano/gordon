@@ -167,6 +167,12 @@ func LoadWorker(env Getenv) (Worker, error) {
 		r.fail("GORDON_LEASE_TTL %s must exceed GORDON_UPSTREAM_TIMEOUT %s", c.LeaseTTL, c.UpstreamTimeout)
 	}
 	r.jsonFile("GORDON_ROUTING_CONFIG_FILE", &c.Routing)
+	for _, project := range c.Routing.Projects {
+		if project.AutoAssignVariant != "" && !c.Routing.IsAgent(project.AutoAssignVariant) {
+			r.fail("GORDON_ROUTING_CONFIG_FILE project %s: auto_assign_variant %q is not in variants",
+				project.Name, project.AutoAssignVariant)
+		}
+	}
 	if p := c.Routing.Policy; p.MaxRoundsPerPR < 0 || p.SuggestionsMaxRounds < 0 {
 		r.fail("GORDON_ROUTING_CONFIG_FILE policy max_rounds_per_pr and suggestions_max_rounds must not be negative")
 	}

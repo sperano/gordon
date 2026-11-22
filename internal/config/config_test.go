@@ -109,6 +109,16 @@ func TestWorkerOverrides(t *testing.T) {
 	}
 }
 
+func TestWorkerRefusesUnknownAutoAssignVariant(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json",
+		`{"projects":[{"name":"hollingsworth","auto_assign_variant":"missing"}]}`)
+	_, err := LoadWorker(envOf(env))
+	if err == nil || !strings.Contains(err.Error(), `project hollingsworth: auto_assign_variant "missing" is not in variants`) {
+		t.Fatalf("error %v", err)
+	}
+}
+
 func TestWorkerRefusals(t *testing.T) {
 	cases := map[string]struct {
 		set  map[string]string

@@ -22,6 +22,9 @@ const (
 	// Assign assigns a Vikunja task to the user Value unless an agent
 	// user already has it.
 	Assign Kind = "assign"
+	// AssignIfUnassigned assigns a newly created Vikunja task only while
+	// it is still unassigned, in its original project and without a skip label.
+	AssignIfUnassigned Kind = "assign-if-unassigned"
 	// SyncLabel makes the target carry the Value label of the task
 	// Detail names, exactly as created by the configured creator.
 	SyncLabel Kind = "sync-label"

@@ -12,7 +12,7 @@ import (
 // without updating this list fails.
 var wantIDs = []string{
 	"vikunja-implement", "vikunja-discuss", "vikunja-followup", "vikunja-followup-answer", "vikunja-followup-discuss",
-	"webhook-enricher", "vikunja-followup-reconciler", "drag-cancel", "discuss-fallback", "unanswered-notice",
+	"webhook-enricher", "vikunja-followup-reconciler", "auto-assign", "drag-cancel", "discuss-fallback", "unanswered-notice",
 	"followup-reaction", "done-unlabel", "action-needed-unlabel", "subtask-chain", "wait-for-blockers",
 	"announce-start", "sillage-blocker-span", "run-link", "failure-reporter", "fetch-attachments", "claim-task",
 	"pr-followup", "github-reactor", "review-skip", "pr-review", "pr-task-dedup", "pr-review-supersede",

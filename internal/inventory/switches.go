@@ -56,6 +56,9 @@ func Switches() []Switch {
 		{run.VikunjaFailure, chartPath("scripts/report_failures.py", "templates/failure-reporter.yaml"),
 			"the failure reporter for Gordon's Tasks: it must skip Tasks labelled `gordon.spe.quebec/managed` (failed notices, agent-error, answered discussions); it keeps every other Task",
 			[]string{needWriter}},
+		{run.VikunjaAutoAssign, []string{"helm/kelos/scripts/webhook_enricher.py", "scripts/vikunja_sync.py"},
+			"no writer is disabled; retain the `task.created` webhook relay",
+			[]string{needWriter}},
 	}
 }
 

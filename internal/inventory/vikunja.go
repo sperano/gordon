@@ -42,6 +42,11 @@ func vikunjaDispatch() []Entry {
 
 func vikunjaLifecycle() []Entry {
 	return []Entry{
+		{ID: "auto-assign", Kind: EnricherHook, Owner: Gordon, Decision: Migrate,
+			Legacy:    []string{"helm/kelos/scripts/webhook_enricher.py", "scripts/vikunja_sync.py"},
+			Trigger:   "task.created in an opted-in project, unassigned and without no-agent, chain or discuss",
+			Implement: StageVikunja, Cutover: StageVikunjaCut, Families: []run.Family{run.VikunjaAutoAssign},
+			Note: "assigns the project's configured variant; chain subtasks wait for chain handoff"},
 		withFamilies(hook("drag-cancel", "task.updated: card back in To-Do without pr open", "scripts/drag_cancel.py",
 			"cancels the task's queued runs, deletes its live Tasks, removes in progress, posts the stop notice"),
 			run.VikunjaDragCancel),

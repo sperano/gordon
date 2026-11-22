@@ -76,6 +76,8 @@ func (r Router) DecideAuthenticated(d event.Delivery, st State, led Ledger) Deci
 
 func (r Router) route(ev event.Event, st State, led Ledger) Decision {
 	switch ev.Kind {
+	case event.VikunjaTaskCreated:
+		return r.taskCreated(ev, st)
 	case event.VikunjaTaskUpdated:
 		return r.taskUpdated(ev, st, led)
 	case event.VikunjaTaskCommentCreated:

@@ -41,6 +41,22 @@ func TestParseVikunjaTaskUpdated(t *testing.T) {
 	}
 }
 
+func TestParseVikunjaTaskCreated(t *testing.T) {
+	body := []byte(`{"event_name":"task.created","data":{"task":{"id":7,"project_id":3}}}`)
+	ev, err := ParseVikunja(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Kind != VikunjaTaskCreated || ev.DeliveryKey != "vikunja/task.created/7" ||
+		ev.RequestKey != "vikunja/task.created/7" {
+		t.Fatalf("created event %+v", ev)
+	}
+	changed, err := ParseVikunja([]byte(`{"event_name":"task.created","data":{"task":{"id":7,"project_id":9,"title":"changed"}}}`))
+	if err != nil || changed.DeliveryKey != ev.DeliveryKey || changed.RequestKey != ev.RequestKey {
+		t.Fatalf("changed snapshot keys %q/%q err %v", changed.DeliveryKey, changed.RequestKey, err)
+	}
+}
+
 func TestParseVikunjaTaskTitleAndDescription(t *testing.T) {
 	ev, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3,` +
 		`"title":"Ship it","description":"<p>now</p>"}}}`))

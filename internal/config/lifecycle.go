@@ -32,7 +32,7 @@ const (
 // vikunjaWriting are the families whose actions write to Vikunja.
 var vikunjaWriting = []run.Family{run.VikunjaImplement, run.VikunjaDiscuss, run.VikunjaFollowUp,
 	run.VikunjaFollowUpAnswer, run.VikunjaFollowUpDiscuss, run.VikunjaDragCancel, run.VikunjaDoneCleanup,
-	run.VikunjaChain, run.VikunjaFailure, run.PROpen, run.MergeClose, run.LimitRestart, run.PRReadiness}
+	run.VikunjaChain, run.VikunjaFailure, run.VikunjaAutoAssign, run.PROpen, run.MergeClose, run.LimitRestart, run.PRReadiness}
 
 func (r *reader) lifecycle() Lifecycle {
 	l := Lifecycle{WriteToken: r.secretFile("GORDON_VIKUNJA_WRITE_TOKEN_FILE"),
@@ -80,7 +80,7 @@ func (r *reader) checkWriter(c Worker) {
 		if c.Lifecycle.WriteToken == "" {
 			r.fail("ownership rule %s/%s writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required", rule.Project, rule.Family)
 		}
-		if !policyChecked {
+		if rule.Family != run.VikunjaAutoAssign && !policyChecked {
 			r.checkLifecyclePolicy(c.Routing.Policy, rule)
 			policyChecked = true
 		}

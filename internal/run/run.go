@@ -38,6 +38,8 @@ const (
 	VikunjaDoneCleanup Family = "vikunja-done-cleanup"
 	VikunjaChain       Family = "vikunja-chain"
 	VikunjaFailure     Family = "vikunja-failure"
+	// VikunjaAutoAssign assigns opted-in projects' new unassigned tasks.
+	VikunjaAutoAssign Family = "vikunja-auto-assign"
 	// LimitRestart restarts Gordon's runs a subscription limit stopped
 	// (limit_reaper.py), once the limit reset.
 	LimitRestart Family = "limit-restart"
@@ -51,7 +53,7 @@ const (
 var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
-	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure,
+	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure, VikunjaAutoAssign,
 	PRConflict, LimitRestart, PRReadiness,
 }
 

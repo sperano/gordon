@@ -103,6 +103,10 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	if err != nil {
 		return err
 	}
+	autoAssignUsers, err := resolveAutoAssignUsers(ctx, cfg)
+	if err != nil {
+		return err
+	}
 	// One Vikunja reader for the router and the reconciliation, so the
 	// Vikunja upstream limit bounds their reads together (the lifecycle
 	// writer reads through its own client, under the outbox's limiter).
@@ -124,7 +128,7 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		return nil
 	})
 	if !cfg.Shadow {
-		out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, app, m, log))
+		out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, app, m, log, autoAssignUsers))
 		g.Go(func(ctx context.Context) error {
 			worker.Loop(ctx, store.QueueActions, cfg.ShutdownGrace, cfg.PollInterval, log, out.Tick)
 			return nil

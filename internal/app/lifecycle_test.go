@@ -5,10 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/sperano/gordon/internal/config"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/kelos/kelostest"
+	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
 )
 
@@ -32,6 +36,40 @@ func TestTaskMessages(t *testing.T) {
 	var kerr *kelos.Error
 	if got, err := read(context.Background(), "failed"); !errors.As(err, &kerr) || kerr.Status != http.StatusServiceUnavailable || got != "" {
 		t.Errorf("Kelos unavailable: %q, %v, want the HTTP 503 error", got, err)
+	}
+}
+
+func TestResolveAutoAssignUsers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/3/projectusers" || r.URL.Query().Get("s") != "claude-opus" ||
+			r.Header.Get("Authorization") != "Bearer write-token" {
+			t.Fatalf("request %s?%s auth %q", r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`[{"id":7,"username":"claude-opus"}]`))
+	}))
+	defer srv.Close()
+	cfg := config.Worker{VikunjaURL: srv.URL, UpstreamTimeout: time.Second,
+		Lifecycle: config.Lifecycle{WriteToken: "write-token"},
+		Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
+			AutoAssignVariant: "claude-opus"}}}}
+	got, err := resolveAutoAssignUsers(context.Background(), cfg)
+	if err != nil || got[3] != 7 || len(got) != 1 {
+		t.Fatalf("users %v, err %v", got, err)
+	}
+}
+
+func TestResolveAutoAssignUsersRefusesUnknownUser(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	cfg := config.Worker{VikunjaURL: srv.URL, UpstreamTimeout: time.Second,
+		Lifecycle: config.Lifecycle{WriteToken: "write-token"},
+		Routing: profile.Config{Projects: []profile.Project{{Name: "hollingsworth", VikunjaID: 3,
+			AutoAssignVariant: "missing"}}}}
+	_, err := resolveAutoAssignUsers(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), `auto-assign user "missing" has no access to project hollingsworth`) {
+		t.Fatalf("error %v", err)
 	}
 }
 

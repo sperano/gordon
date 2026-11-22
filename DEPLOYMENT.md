@@ -164,6 +164,13 @@ buckets and labels (`backlog_bucket`, `agent_error_label`,
 `cancel_reaction`, and `pr_readiness`, legacy `PR_READINESS_ENABLED`: the
 pr-open notice promises a ready-to-merge one).
 
+- **New-task assignment** (`vikunja-auto-assign`): a project's
+  `auto_assign_variant` opts it in. A `task.created` snapshot and the fresh
+  task must both be unassigned and lack `no-agent`, `chain`, and `discuss`;
+  a subtask of a `chain` parent waits for chain handoff. The worker resolves
+  each configured username to a project user id at startup and refuses an
+  unknown or inaccessible user. The executor rechecks assignment, labels,
+  and project before writing, so a retry never adds a second assignee.
 - **Blockers and claims** (`vikunja-implement`, `vikunja-discuss`): a run
   waits, unsubmitted, while a task blocking it (any project) is open; a
   blocker getting done requeues the tasks it blocked. Once submitted, the
@@ -205,6 +212,7 @@ both agent families.
 
 | Family | Off when Gordon owns it | Gordon needs |
 |---|---|---|
+| `vikunja-auto-assign` | no writer; retain the `task.created` webhook relay | the write token and each configured user must have project access |
 | `vikunja-implement`, `vikunja-discuss` | the project's implementation (discuss) TaskSpawners | dispatch config and Task `create`; the write token; Tasks without the `wait-for-blockers`, `announce-start` and `sillage-marker` init containers; the reconciliation |
 | `vikunja-followup`, `-answer`, `-discuss` | the project's `vikunja-fu-*` comment TaskSpawners, the enricher's 👀 reaction, unanswered notice and (discuss) fallback for its requests, the `vikunja-followup-reconciler` | as above |
 | `vikunja-drag-cancel` | the enricher's drag-cancel hook (`BACKLOG_BUCKET`) | the write token; `list` and `delete` on `tasks` |
