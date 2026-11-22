@@ -83,7 +83,7 @@ func ownsRestarts(projects ...string) rollout.Table {
 	return t
 }
 
-// now is the tests' clock; resetAt is an hour before it.
+// now is the tests' clock; most stops' limits reset an hour before it.
 var now = time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 
 func formatInt(n int64) string { return strconv.FormatInt(n, 10) }
@@ -203,6 +203,38 @@ func TestRestartWithoutAKnownReset(t *testing.T) {
 	}
 }
 
+// TestRestartAfterTheFallback: a stop that tells no reset but its
+// completion time restarts the fallback time after it.
+func TestRestartAfterTheFallback(t *testing.T) {
+	name := "vikunja-gordon-claude-opus-5"
+	completed := now.Add(-DefaultFallback / 2)
+	cases := []struct {
+		name    string
+		at      time.Time
+		decided bool
+	}{
+		{"before the fallback", now, false},
+		{"after the fallback and the grace", completed.Add(DefaultFallback + DefaultGrace), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			task := stopTask(name, 9, implLabels("5"), "", now)
+			task.Status.CompletionTime = completed.Format(time.RFC3339)
+			delete(task.Status.Results, kelos.ResultLimitResetsAt)
+			st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}}
+			r, _ := reaper(st, []kelos.Task{task}, ownsRestarts("gordon"))
+			r.Now = func() time.Time { return c.at }
+			if err := r.Once(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			restarted := len(st.decisions) == 1 && st.decisions[0].mark == store.LimitRestarted
+			if c.decided && !restarted || !c.decided && len(st.decisions) != 0 {
+				t.Errorf("decisions %+v, want restarted %v", st.decisions, c.decided)
+			}
+		})
+	}
+}
+
 func TestNoRestartWhereLegacyOwnsThem(t *testing.T) {
 	st := &fakeStore{failed: []store.FailedRun{implRun("vikunja-gordon-claude-opus-5", 9, 5, 0)}}
 	r, _ := reaper(st, nil, ownsRestarts("vigie"))
@@ -283,6 +315,38 @@ func TestGiveUpAfterTheLastRestart(t *testing.T) {
 	}
 }
 
+// TestPullRequestGiveUp: a PR follow-up or conflict run gives up on its
+// pull request; a review, announced nowhere, gives up silently.
+func TestPullRequestGiveUp(t *testing.T) {
+	cases := []struct {
+		name string
+		id   run.Identity
+		want []string
+	}{
+		{"follow-up", run.Identity{Family: run.PRFollowUp, Workspace: "gordon", PR: 7, CommentKind: "r", CommentID: 9, Retry: 3},
+			[]string{"post-notice:github/sperano/gordon/pull/7:restart-gave-up:stopped<"}},
+		{"conflict", run.Identity{Family: run.PRConflict, Workspace: "gordon", PR: 7, Retry: 3},
+			[]string{"post-notice:github/sperano/gordon/pull/7:restart-gave-up:stopped<"}},
+		{"review", run.Identity{Family: run.PRReview, Workspace: "gordon", Reviewer: "pr-challenger", PR: 7, Retry: 3}, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st := &fakeStore{failed: []store.FailedRun{{Name: "stopped", InboxID: 3, Project: "gordon", Identity: c.id}}}
+			task := stopTask("stopped", 3, map[string]string{"vikunja.spe.quebec/role": "pr-followup"}, "", now.Add(-time.Hour))
+			r, _ := reaper(st, []kelos.Task{task}, ownsRestarts("gordon"))
+			if err := r.Once(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if len(st.decisions) != 1 || st.decisions[0].mark != store.LimitGaveUp {
+				t.Fatalf("decisions %+v", st.decisions)
+			}
+			if got := keys(st.decisions[0].fd.Actions); !slices.Equal(got, c.want) {
+				t.Errorf("actions %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestRestartNameTooLong(t *testing.T) {
 	f := implRun("", 9, 5, 0)
 	f.Identity.Project = strings.Repeat("p", run.MaxNameLength-len("vikunja--claude-opus-5")-len("-retry1")+1)
@@ -319,16 +383,19 @@ func TestNotALimitStop(t *testing.T) {
 }
 
 func TestPullRequestRestarts(t *testing.T) {
-	fuName, reviewName := "pr-followup-gordon-7-r9", "review-gordon-pr-challenger-7-01234567"
+	fuName, reviewName, conflictName := "pr-followup-gordon-7-r9", "review-gordon-pr-challenger-7-01234567", "pr-conflict-gordon-7"
 	fu := store.FailedRun{Name: fuName, InboxID: 3, Project: "gordon", Identity: run.Identity{Family: run.PRFollowUp,
 		Workspace: "gordon", PR: 7, CommentKind: "r", CommentID: 9, HeadRef: "kelos/vikunja-5"}}
 	rv := store.FailedRun{Name: reviewName, InboxID: 4, Project: "gordon", Identity: run.Identity{Family: run.PRReview,
 		Workspace: "gordon", Reviewer: "pr-challenger", PR: 7, HeadSHA: "0123456789"}}
 	reviewLabels := map[string]string{"vikunja.spe.quebec/role": "pr-review", "vikunja.spe.quebec/workspace": "gordon",
 		"vikunja.spe.quebec/reviewer": "pr-challenger", "vikunja.spe.quebec/pr": "7"}
-	st := &fakeStore{failed: []store.FailedRun{fu, rv}}
+	cf := store.FailedRun{Name: conflictName, InboxID: 5, Project: "gordon", Identity: run.Identity{Family: run.PRConflict,
+		Workspace: "gordon", PR: 8}}
+	st := &fakeStore{failed: []store.FailedRun{fu, rv, cf}}
 	tasks := []kelos.Task{stopTask(fuName, 3, map[string]string{"vikunja.spe.quebec/role": "pr-followup"}, "", now.Add(-time.Hour)),
-		stopTask(reviewName, 4, reviewLabels, "", now.Add(-time.Hour))}
+		stopTask(reviewName, 4, reviewLabels, "", now.Add(-time.Hour)),
+		stopTask(conflictName, 5, map[string]string{"vikunja.spe.quebec/role": "pr-conflict", "vikunja.spe.quebec/pr": "8"}, "", now.Add(-time.Hour))}
 	r, _ := reaper(st, tasks, ownsRestarts("gordon"))
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
@@ -338,8 +405,12 @@ func TestPullRequestRestarts(t *testing.T) {
 		got[d.name] = keys(d.fd.Actions)
 	}
 	fuSubmit := "submit-task:kelos/kelos-agents/" + fuName + "-retry1"
+	cfRestart := cf.Identity
+	cfRestart.Retry = 1
+	cfSubmit := "submit-task:kelos/kelos-agents/" + cfRestart.Name()
 	want := map[string][]string{
-		fuName: {fuSubmit + "<", "post-notice:github/sperano/gordon/pull/7:start:" + fuName + "-retry1<" + fuSubmit},
+		conflictName: {cfSubmit + "<", "post-notice:github/sperano/gordon/pull/8:start:" + cfRestart.Name() + "<" + cfSubmit},
+		fuName:       {fuSubmit + "<", "post-notice:github/sperano/gordon/pull/7:start:" + fuName + "-retry1<" + fuSubmit},
 		// A review restart announces nothing and supersedes nothing.
 		reviewName: {"submit-task:kelos/kelos-agents/" + reviewName + "-retry1<"},
 	}

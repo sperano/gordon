@@ -268,7 +268,7 @@ routing configuration's `policy` carries the round caps
   once its Task is gone (its TTL), as the legacy Task name allowed.
 - **Failed PR runs**: a Failed `pr-followup` or `pr-conflict` run of a
   family Gordon owns gets a failure notice on its pull request (its
-  Task's status message; the run link only on a private repository); legacy
+  Task's status message and the run link only on a private repository); legacy
   reported neither. A Task the subscription limit stopped is never
   reported failed, on a pull request or a Vikunja task: the limit restarts
   take it.
@@ -284,7 +284,8 @@ routing configuration's `policy` carries the round caps
   once no Task of its group (the Vikunja task, the reviewer's pull
   request, the pull request's follow-ups) is pending or running; older
   stops of the group are superseded, and after `GORDON_LIMIT_RESTART_MAX`
-  restarts the Vikunja task gets the gave-up notice. A Vikunja run's
+  restarts the Vikunja task, or the pull request of a PR follow-up or
+  conflict (where legacy posted none), gets the gave-up notice. A Vikunja run's
   restart gets the reaper's restart notice and a start notice; a PR
   follow-up's or conflict's a start notice on the pull request.
 - **Run completions**: the observer records every run generation it sees

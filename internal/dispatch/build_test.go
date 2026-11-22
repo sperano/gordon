@@ -158,14 +158,18 @@ func prOpenedIn(repo string) sample {
 
 // conflicted is the conflict reconciliation's delivery of a confirmed
 // conflict on the sample PR, in the gordon Workspace.
-func conflicted() sample {
+func conflicted() sample { return conflictedTitled(freshPR().Title) }
+
+// conflictedTitled is conflicted whose delivery names the PR title,
+// the fresh state keeping the sample's.
+func conflictedTitled(title string) sample {
 	pr := freshPR()
 	pr.BaseSHA, pr.MergeableState, pr.Labels = baseSHA, event.MergeableDirty, []string{"kelos:claude-opus"}
 	mergeable := false
 	pr.Mergeable = &mergeable
 	d := github("pull_request", map[string]any{"action": event.ActionConflict, "sender": map[string]string{"login": pr.Author},
 		"gordon": map[string]string{"workspace": "gordon"},
-		"pull_request": map[string]any{"number": prNumber, "title": pr.Title, "html_url": pr.URL, "state": "open",
+		"pull_request": map[string]any{"number": prNumber, "title": title, "html_url": pr.URL, "state": "open",
 			"user":   map[string]string{"login": pr.Author},
 			"head":   map[string]any{"ref": pr.HeadRef, "sha": headSHA, "repo": map[string]string{"full_name": pr.HeadRepo}},
 			"base":   map[string]any{"ref": "main", "sha": baseSHA},
@@ -249,6 +253,20 @@ func TestTasksMatchLegacySpawners(t *testing.T) {
 				t.Fatalf("Gordon keys %v %v", labels, rn.Task.Metadata.Annotations)
 			}
 		})
+	}
+}
+
+// TestConflictReadsTheFreshPullRequest: a conflict Task renders the
+// fresh pull request, not the delivery's stale copy of it.
+func TestConflictReadsTheFreshPullRequest(t *testing.T) {
+	cfg := fixture(t)
+	fresh, _ := prepared(t, cfg, conflicted(), run.PRConflict)
+	stale, _ := prepared(t, cfg, conflictedTitled("Stale title"), run.PRConflict)
+	if stale.Task == nil || fresh.Task == nil {
+		t.Fatal("run has no Task")
+	}
+	if stale.Task.Spec.Prompt != fresh.Task.Spec.Prompt || !strings.Contains(stale.Task.Spec.Prompt, ": "+freshPR().Title+"\n") {
+		t.Errorf("prompt %q, want the fresh one %q", stale.Task.Spec.Prompt, fresh.Task.Spec.Prompt)
 	}
 }
 

@@ -70,19 +70,34 @@ func (r *Reaper) restartWrites(f store.FailedRun, rn route.Run) []action.Action 
 		out = append(out, action.Notice(target, notice.Restart, rn.Name).WaitFor(submit),
 			action.Notice(target, notice.Start, rn.Name).WaitFor(submit))
 	}
-	if repo := r.repository(f.Project); repo != "" && id.PR > 0 && slices.Contains(prFamilies, id.Family) {
-		out = append(out, action.Notice(action.PullRequest(repo, id.PR), notice.Start, rn.Name).WaitFor(submit))
+	if target, ok := r.pullRequest(f); ok {
+		out = append(out, action.Notice(target, notice.Start, rn.Name).WaitFor(submit))
 	}
 	return out
 }
 
-// gaveUp is the gave-up notice on the stopped run's Vikunja task, none
-// for a run of none.
+// gaveUp is the gave-up notice on the stopped run's Vikunja task and, for
+// a run announced on its pull request, on that pull request (legacy
+// reported a PR run's give-up nowhere); none for a run of neither.
 func (r *Reaper) gaveUp(f store.FailedRun) []action.Action {
-	if f.Identity.TaskID <= 0 {
-		return nil
+	var out []action.Action
+	if f.Identity.TaskID > 0 {
+		out = append(out, action.Notice(action.VikunjaTask(f.Identity.TaskID), notice.RestartGaveUp, f.Name))
 	}
-	return []action.Action{action.Notice(action.VikunjaTask(f.Identity.TaskID), notice.RestartGaveUp, f.Name)}
+	if target, ok := r.pullRequest(f); ok {
+		out = append(out, action.Notice(target, notice.RestartGaveUp, f.Name))
+	}
+	return out
+}
+
+// pullRequest is the pull request a run of prFamilies is announced on.
+func (r *Reaper) pullRequest(f store.FailedRun) (action.Target, bool) {
+	id := f.Identity
+	repo := r.repository(f.Project)
+	if repo == "" || id.PR <= 0 || !slices.Contains(prFamilies, id.Family) {
+		return "", false
+	}
+	return action.PullRequest(repo, id.PR), true
 }
 
 func (r *Reaper) repository(project string) string {

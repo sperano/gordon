@@ -25,6 +25,10 @@ type Executor struct {
 	// Messages reads a failed run's Task status message for its notice
 	// (nil: none).
 	Messages lifecycle.TaskMessages
+	// Limits reads a stopped run's limit for its gave-up notice (nil:
+	// none); MaxRestarts is the restarts it names (0: the default).
+	Limits      lifecycle.TaskLimits
+	MaxRestarts int
 }
 
 // handler is one kind: applied checks whether the write is already

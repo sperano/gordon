@@ -32,17 +32,18 @@ func newGitHubApp(cfg config.Worker) (*githubapp.App, error) {
 }
 
 // githubExecutor is the GitHub writer's executor, acting as the App; with
-// Kelos, its failure notices quote the Task's status message.
+// Kelos, its failure notices quote the Task's status message and its
+// gave-up notices name the limit.
 func githubExecutor(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubapp.App) *ghlife.Executor {
 	l := cfg.Lifecycle
 	ex := &ghlife.Executor{
 		W:      &ghlife.Writer{App: app, BaseURL: cfg.GitHubAPIURL, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
-		Policy: cfg.Routing.Policy, Runs: s, Lock: s,
+		Policy: cfg.Routing.Policy, Runs: s, Lock: s, MaxRestarts: cfg.Restart.Max,
 		Links: lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
 			Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL},
 	}
 	if k != nil {
-		ex.Messages = taskMessages(k)
+		ex.Messages, ex.Limits = taskMessages(k), taskLimits(k)
 	}
 	return ex
 }

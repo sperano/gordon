@@ -115,6 +115,7 @@ func TestPRRunFailures(t *testing.T) {
 	unknown := followUp
 	unknown.Project = "elsewhere"
 	failed := kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseFailed}}
+	limitStop := kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseFailed, Results: map[string]string{kelos.ResultLimitType: "weekly"}}}
 	cases := []struct {
 		name  string
 		r     store.ObservedRun
@@ -126,6 +127,9 @@ func TestPRRunFailures(t *testing.T) {
 			[]string{"post-notice:github/sperano/gordon/pull/7:failed:pr-followup-gordon-7-c5|pr-followup-gordon-7-c5"}},
 		{"failed conflict", conflict, failed, owns(run.PRConflict),
 			[]string{"post-notice:github/sperano/gordon/pull/7:failed:" + conflict.Name + "|" + conflict.Name}},
+		// The limit restarts report a PR run's limit stop, not this.
+		{"limit-stopped follow-up", followUp, limitStop, owns(run.PRFollowUp), nil},
+		{"limit-stopped conflict", conflict, limitStop, owns(run.PRConflict), nil},
 		{"succeeded follow-up", followUp, kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseSucceeded}}, owns(run.PRFollowUp), nil},
 		{"legacy owns the follow-ups", followUp, failed, owns(run.VikunjaFailure), nil},
 		{"conflict family not owned", conflict, failed, owns(run.PRFollowUp), nil},

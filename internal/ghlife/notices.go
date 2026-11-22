@@ -1,6 +1,7 @@
 package ghlife
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/notice"
+	"github.com/sperano/gordon/internal/restart"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -141,6 +143,8 @@ func (e *Executor) render(ctx context.Context, a action.Action, t Target) (strin
 		return notice.SuggestionsCapText(p.SuggestionsMaxRounds, p.FixSuggestionsLabel, p.Trigger), nil
 	case notice.Failed:
 		return e.failedText(ctx, a.Detail, t)
+	case notice.RestartGaveUp:
+		return e.gaveUpText(ctx, a.Detail)
 	}
 	return "", worker.Permanent(fmt.Errorf("no GitHub notice %q", a.Value))
 }
@@ -190,8 +194,9 @@ func (e *Executor) visibility(ctx context.Context, t Target) (repoVisibility, er
 	return repo, nil
 }
 
-// failedText is a failed PR run's notice: its Task's status message, the
-// run link on a private repository only, as for the start notice.
+// failedText is a failed PR run's notice: its Task's status message and
+// the run link on a private repository only, as for the start notice: the
+// message is the agent's or the cluster's text.
 func (e *Executor) failedText(ctx context.Context, name string, t Target) (string, error) {
 	r, err := e.Runs.RunInfo(ctx, name)
 	if err != nil {
@@ -199,19 +204,32 @@ func (e *Executor) failedText(ctx context.Context, name string, t Target) (strin
 	}
 	f := notice.PRFailedInfo{Task: name, Trigger: e.Policy.Trigger, Conflict: r.Family == run.PRConflict,
 		Namespace: e.Links.Namespace}
+	url := e.Links.Run(r.TaskUID)
+	if e.Messages == nil && url == "" {
+		return notice.PRFailedText(f), nil
+	}
+	repo, err := e.visibility(ctx, t)
+	if err != nil || !repo.Private {
+		return notice.PRFailedText(f), err
+	}
+	f.RunURL = url
 	if e.Messages != nil {
 		if f.Message, err = e.Messages(ctx, name); err != nil {
 			return "", err
 		}
 	}
-	if url := e.Links.Run(r.TaskUID); url != "" {
-		repo, err := e.visibility(ctx, t)
-		if err != nil {
+	return notice.PRFailedText(f), nil
+}
+
+// gaveUpText is a PR run's gave-up notice, the Vikunja task's text:
+// the limit that stopped it, and the restarts allowed.
+func (e *Executor) gaveUpText(ctx context.Context, name string) (string, error) {
+	lt := ""
+	if e.Limits != nil {
+		var err error
+		if lt, err = e.Limits(ctx, name); err != nil {
 			return "", err
 		}
-		if repo.Private {
-			f.RunURL = url
-		}
 	}
-	return notice.PRFailedText(f), nil
+	return notice.GaveUpText(name, lt, cmp.Or(e.MaxRestarts, restart.DefaultMaxRestarts)), nil
 }
