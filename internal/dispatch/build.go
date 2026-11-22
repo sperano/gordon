@@ -1,8 +1,6 @@
 package dispatch
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"strconv"
@@ -190,6 +188,9 @@ func (b Builder) pod(fam Family, proj profile.Project, prof profile.Resolved, v 
 	if err := expandPod(out, d); err != nil {
 		return nil, err
 	}
+	if err := dedupePod(out); err != nil {
+		return nil, err
+	}
 	if podEmpty(out) {
 		return nil, nil
 	}
@@ -219,72 +220,6 @@ func addPiece(out *kelos.PodOverrides, p Pod) {
 func podEmpty(p *kelos.PodOverrides) bool {
 	return p.ServiceAccountName == "" && len(p.Labels) == 0 && p.Resources == nil && p.Affinity == nil &&
 		len(p.Env) == 0 && len(p.ExtraInitContainers) == 0 && len(p.Volumes) == 0 && len(p.VolumeMounts) == 0
-}
-
-// expandPod renders every pod string that holds a template.
-func expandPod(p *kelos.PodOverrides, d Data) error {
-	var err error
-	one := func(raw json.RawMessage) json.RawMessage {
-		if err != nil || raw == nil {
-			return raw
-		}
-		var out json.RawMessage
-		out, err = expand(raw, d)
-		return out
-	}
-	p.Resources, p.Affinity = one(p.Resources), one(p.Affinity)
-	for _, list := range [][]json.RawMessage{p.Env, p.ExtraInitContainers, p.Volumes, p.VolumeMounts} {
-		for i := range list {
-			list[i] = one(list[i])
-		}
-	}
-	return err
-}
-
-// expand renders the template strings of one raw JSON value; a value
-// without "{{" is kept byte for byte.
-func expand(raw json.RawMessage, d Data) (json.RawMessage, error) {
-	if !bytes.Contains(raw, []byte("{{")) {
-		return raw, nil
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, refuse(CodePod, "%v", err)
-	}
-	v, err := expandValue(v, d)
-	if err != nil {
-		return nil, err
-	}
-	out, err := json.Marshal(v)
-	if err != nil {
-		return nil, refuse(CodePod, "%v", err)
-	}
-	return out, nil
-}
-
-func expandValue(v any, d Data) (any, error) {
-	var err error
-	switch x := v.(type) {
-	case string:
-		if strings.Contains(x, "{{") {
-			return render("pod value", x, d)
-		}
-	case []any:
-		for i := range x {
-			if x[i], err = expandValue(x[i], d); err != nil {
-				return nil, err
-			}
-		}
-	case map[string]any:
-		for k := range x {
-			if x[k], err = expandValue(x[k], d); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return v, nil
 }
 
 // render executes one template; a missing variable is an error.

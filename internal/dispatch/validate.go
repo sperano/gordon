@@ -220,7 +220,33 @@ func checkObject(field string, raw json.RawMessage, named bool) error {
 	if name, ok := m["name"].(string); named && (!ok || name == "") {
 		return fmt.Errorf("pod %s: want a name", field)
 	}
+	if err := checkOmit("pod "+field, m, named); err != nil {
+		return err
+	}
 	return parseValue("pod "+field, m)
+}
+
+// checkOmit refuses OmitIfEmptyKey unless it is true on a list entry:
+// anywhere else nothing would remove it from the Task.
+func checkOmit(what string, v any, listEntry bool) error {
+	switch x := v.(type) {
+	case []any:
+		for _, item := range x {
+			if err := checkOmit(what, item, true); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		if mark, ok := x[OmitIfEmptyKey]; ok && (!listEntry || mark != true) {
+			return fmt.Errorf("%s: %s must be true, on a list entry", what, OmitIfEmptyKey)
+		}
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			if err := checkOmit(what, x[k], false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // parseValue parses every template string in v.
