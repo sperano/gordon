@@ -53,6 +53,9 @@ const (
 	ResultUnavailable  = "unavailable"
 	ResultIncompatible = "incompatible"
 	ResultRaced        = "raced"
+	// ResultExpired: Sillage still failed to answer once the notice's
+	// live window passed; it is checked no more.
+	ResultExpired = "expired"
 	// ResultNotOwned: Gordon no longer owns the project's vikunja-cost
 	// (a rollback); the notice is checked again later, nothing read.
 	ResultNotOwned = "not-owned"
@@ -60,7 +63,7 @@ const (
 
 // Results lists every result label.
 var Results = []string{ResultPublished, ResultUpdated, ResultUnchanged, ResultWaiting, ResultSettled,
-	ResultUnavailable, ResultIncompatible, ResultRaced, ResultNotOwned}
+	ResultUnavailable, ResultIncompatible, ResultRaced, ResultNotOwned, ResultExpired}
 
 // PassStore is the part of the store the pass uses.
 type PassStore interface {
@@ -173,8 +176,21 @@ func (p *Publisher) check(ctx context.Context, n store.CostNotice, r read, now t
 	return p.done(n, ok, err, result)
 }
 
-// failed records a read of Sillage that failed: a retry with backoff.
+// failed records a read of Sillage that failed: a retry with backoff,
+// until the notice's live window passed (a waiting notice's counts from
+// its run's finish), when it settles as it is: a waiting one is never
+// posted.
 func (p *Publisher) failed(ctx context.Context, n store.CostNotice, err error, now time.Time) error {
+	expiry := n.LiveUntil
+	if n.State == store.CostWaiting {
+		expiry = n.Finished.Add(cmp.Or(p.LiveFor, DefaultLiveFor))
+	}
+	if !now.Before(expiry) {
+		p.Log.Warn("sillage cost read failed past the live window", "task", n.Name, "state", n.State,
+			"failures", n.Failures+1, "error", err.Error())
+		ok, serr := p.Store.CostSettle(ctx, n)
+		return p.done(n, ok, serr, ResultExpired)
+	}
 	result := ResultUnavailable
 	if errors.Is(err, sillage.ErrIncompatible) {
 		result = ResultIncompatible

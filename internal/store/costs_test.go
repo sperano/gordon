@@ -149,17 +149,25 @@ func TestCostPublishQueuesAndFreezes(t *testing.T) {
 }
 
 // TestCostRevisionIsEditedInPlace: a live notice's next revision queues
-// its own action and freezes nothing.
+// its own action and freezes nothing, not even another live notice of a
+// newer run of the task.
 func TestCostRevisionIsEditedInPlace(t *testing.T) {
 	s, dbURL := storetest.Open(t)
 	id := failedRun(t, s)
-	if err := s.RecordCostRun(ctx, costRun(id, runName)); err != nil {
-		t.Fatal(err)
+	other := costRun(id, "vikunja-fu-gordon-5-c2")
+	other.Finished = costNow.Add(-30 * time.Minute)
+	for _, c := range []store.CostRun{costRun(id, runName), other} {
+		if err := s.RecordCostRun(ctx, c); err != nil {
+			t.Fatal(err)
+		}
 	}
 	n := costDue(t, s, costNow)[0]
 	if _, err := s.CostPublish(ctx, n, "<p>one</p>", "d1", costNow, costNow.Add(time.Hour), costNow); err != nil {
 		t.Fatal(err)
 	}
+	// Live without a publication, which a revision must leave alone.
+	exec(t, dbURL, `UPDATE cost_notices SET state = 'live', next_check = $2 WHERE name = $1`,
+		other.Name, costNow.Add(time.Hour))
 	n = costDue(t, s, costNow)[0]
 	if ok, err := s.CostPublish(ctx, n, "<p>two</p>", "d2", costNow, costNow.Add(time.Hour), costNow); err != nil || !ok {
 		t.Fatalf("CostPublish rev 2 = %v, %v", ok, err)
@@ -170,12 +178,15 @@ func TestCostRevisionIsEditedInPlace(t *testing.T) {
 	if got := count(t, dbURL, `SELECT count(*) FROM actions WHERE kind = 'publish-cost'`); got != 2 {
 		t.Errorf("publish actions %d, want one per revision", got)
 	}
+	if got := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE state = 'live'`); got != 2 {
+		t.Errorf("live notices %d, want both: a revision freezes nothing", got)
+	}
 	n = costDue(t, s, costNow)[0]
 	if ok, err := s.CostSettle(ctx, n); err != nil || !ok {
 		t.Fatalf("CostSettle = %v, %v", ok, err)
 	}
-	if got := costDue(t, s, costNow.Add(time.Hour)); len(got) != 0 {
-		t.Errorf("settled notice due: %+v", got)
+	if got := costDue(t, s, costNow.Add(time.Hour)); len(got) != 1 || got[0].Name != other.Name {
+		t.Errorf("due %+v, want only the other live notice: the settled one is not", got)
 	}
 	if ok, err := s.CostSettle(ctx, n); err != nil || ok {
 		t.Errorf("second CostSettle = %v, %v, want fenced out", ok, err)
@@ -228,9 +239,142 @@ func TestGrantWorkerCostRights(t *testing.T) {
 	}
 	defer conn.Close(ctx)
 	for _, q := range []string{`UPDATE cost_notices SET task_id = 6`, `UPDATE cost_notices SET name = 'x'`,
-		`DELETE FROM cost_notices`} {
+		`UPDATE cost_notices SET inbox_id = 1`, `UPDATE cost_notices SET family = 'x'`,
+		`UPDATE cost_notices SET project = 'x'`, `UPDATE cost_notices SET task_uid = 'x'`,
+		`UPDATE cost_notices SET phase = 'x'`, `UPDATE cost_notices SET finished_at = now()`,
+		`UPDATE cost_notices SET created_at = now()`, `DELETE FROM cost_notices`} {
 		if _, err := conn.Exec(ctx, q); !denied(err) {
 			t.Errorf("worker %s = %v, want permission denied", q, err)
 		}
 	}
+}
+
+func exec(t *testing.T, dbURL, sql string, args ...any) {
+	t.Helper()
+	conn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, sql, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// publishCost publishes n, failing the test unless it was written.
+func publishCost(t *testing.T, s *store.Store, n store.CostNotice, body string) {
+	t.Helper()
+	live := costNow.Add(14 * 24 * time.Hour)
+	if ok, err := s.CostPublish(ctx, n, body, body, costNow, live, costNow.Add(15*time.Minute)); err != nil || !ok {
+		t.Fatalf("CostPublish %s = %v, %v", n.Name, ok, err)
+	}
+}
+
+// TestCostPublishOfAnOlderRunPostsFrozen: an older run's notice whose
+// estimate turned final after a newer run's notice was posted is posted
+// frozen; the newer stays live with the task total.
+func TestCostPublishOfAnOlderRunPostsFrozen(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := failedRun(t, s)
+	older, newer := costRun(id, runName), costRun(id, "vikunja-fu-gordon-5-c2")
+	newer.Finished = costNow.Add(-30 * time.Minute)
+	for _, c := range []store.CostRun{older, newer} {
+		if err := s.RecordCostRun(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	due := costDue(t, s, costNow)
+	publishCost(t, s, due[1], "newer")
+	publishCost(t, s, due[0], "older")
+	if n := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE name = $1 AND state = 'frozen' AND rev = 1
+		AND body = 'older'`, older.Name); n != 1 {
+		t.Error("older notice not posted frozen")
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE name = $1 AND state = 'live'`, newer.Name); n != 1 {
+		t.Error("newer notice frozen by an older run's")
+	}
+	a := action.CostNotice(5, older.Name, id, 1)
+	if n := count(t, dbURL, `SELECT count(*) FROM actions WHERE key = $1 AND kind = 'publish-cost'`, a.Key); n != 1 {
+		t.Error("older notice's action not queued")
+	}
+}
+
+// TestCostPublishFreezesOnlyItsTask: a first publication leaves another
+// task's live notice alone.
+func TestCostPublishFreezesOnlyItsTask(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := failedRun(t, s)
+	elsewhere, mine := costRun(id, "vikunja-gordon-claude-opus-6"), costRun(id, runName)
+	elsewhere.TaskID, elsewhere.Finished = 6, costNow.Add(-2*time.Hour)
+	for _, c := range []store.CostRun{elsewhere, mine} {
+		if err := s.RecordCostRun(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	due := costDue(t, s, costNow)
+	publishCost(t, s, due[0], "task 6")
+	publishCost(t, s, due[1], "task 5")
+	if n := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE state = 'live'`); n != 2 {
+		t.Errorf("live notices %d, want each task's", n)
+	}
+}
+
+// TestCostFirstPublicationsOfOneTaskAreOrdered: a first publication
+// waits for the task's notices another transaction holds, then freezes
+// the older run's notice that transaction made live.
+func TestCostFirstPublicationsOfOneTaskAreOrdered(t *testing.T) {
+	s, dbURL := storetest.Open(t)
+	id := failedRun(t, s)
+	older, newer := costRun(id, runName), costRun(id, "vikunja-fu-gordon-5-c2")
+	newer.Finished = costNow.Add(-30 * time.Minute)
+	for _, c := range []store.CostRun{older, newer} {
+		if err := s.RecordCostRun(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	due := costDue(t, s, costNow)
+	conn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The older run's concurrent publication, not committed yet.
+	if _, err := tx.Exec(ctx, `UPDATE cost_notices SET state = 'live', rev = 1 WHERE name = $1`, older.Name); err != nil {
+		t.Fatal(err)
+	}
+	published := make(chan error, 1)
+	go func() {
+		_, err := s.CostPublish(ctx, due[1], "newer", "d", costNow, costNow.Add(time.Hour), costNow.Add(time.Hour))
+		published <- err
+	}()
+	waitForRowLockWaiter(t, dbURL)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-published; err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, dbURL, `SELECT count(*) FROM cost_notices WHERE name = $1 AND state = 'frozen'`, older.Name); n != 1 {
+		t.Error("older notice published concurrently left live")
+	}
+}
+
+// waitForRowLockWaiter returns once a session waits on a row lock in
+// this test's database.
+func waitForRowLockWaiter(t *testing.T, dbURL string) {
+	t.Helper()
+	deadline := time.Now().Add(lockWaitGuard)
+	for time.Now().Before(deadline) {
+		if count(t, dbURL, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+			WHERE l.locktype IN ('transactionid', 'tuple') AND NOT l.granted AND a.datname = current_database()`) > 0 {
+			return
+		}
+		time.Sleep(admissionPoll)
+	}
+	t.Fatal("no session waits on a row lock")
 }

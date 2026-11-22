@@ -103,8 +103,14 @@ func (f *fakeStore) CostPublish(_ context.Context, n store.CostNotice, body, dig
 	r.body, r.Digest, r.State, r.LiveUntil, r.next, r.Failures, r.lastError = body, digest, store.CostLive, liveUntil, next, 0, ""
 	if n.State == store.CostWaiting {
 		for _, o := range f.rows {
-			if o != r && o.TaskID == n.TaskID && o.State == store.CostLive {
+			if o == r || o.TaskID != n.TaskID {
+				continue
+			}
+			if o.State == store.CostLive && o.Finished.Before(r.Finished) {
 				o.State = store.CostFrozen
+			}
+			if o.State != store.CostWaiting && o.Finished.After(r.Finished) {
+				r.State = store.CostFrozen
 			}
 		}
 	}
@@ -319,6 +325,42 @@ func TestSillageOutage(t *testing.T) {
 	once(t, p)
 	if r.State != store.CostLive || r.Failures != 0 || r.lastError != "" {
 		t.Fatalf("row %+v after recovery", r.CostNotice)
+	}
+}
+
+// TestOutagePastTheLiveWindow: a notice Sillage still fails to answer
+// once its live window passed settles as it is: a waiting one unposted,
+// a live one with its last revision; one inside the window retries.
+func TestOutagePastTheLiveWindow(t *testing.T) {
+	s := &fakeStore{}
+	expired := s.add(waitingRow(now.Add(-DefaultLiveFor)))
+	inside := waitingRow(now.Add(-DefaultLiveFor + time.Second))
+	inside.Name, inside.TaskID = "vikunja-gordon-claude-opus-6", 6
+	retried := s.add(inside)
+	liveRow := waitingRow(now.Add(-time.Hour))
+	liveRow.Name, liveRow.TaskID, liveRow.State, liveRow.Rev, liveRow.LiveUntil = "vikunja-gordon-claude-opus-7", 7,
+		store.CostLive, 1, now
+	live := s.add(liveRow)
+	for _, r := range s.rows {
+		r.next = now
+	}
+	p, logs := publisher(s, &fakeSillage{err: &sillage.StatusError{Status: 503}, reads: map[int64]int{}})
+	once(t, p)
+	if expired.State != store.CostSettled || live.State != store.CostSettled || live.Rev != 1 || len(s.actions) != 0 {
+		t.Fatalf("expired %+v, live %+v, actions %v; want both settled, nothing posted",
+			expired.CostNotice, live.CostNotice, s.actions)
+	}
+	if retried.State != store.CostWaiting || retried.Failures != 1 || !retried.next.Equal(now.Add(DefaultRetryBase)) {
+		t.Errorf("inside the window: %+v, next %s; want a retry", retried.CostNotice, retried.next)
+	}
+	if got := checks(p, ResultExpired); got != 2 {
+		t.Errorf("expired checks %v, want 2", got)
+	}
+	if got := checks(p, ResultUnavailable); got != 1 {
+		t.Errorf("unavailable checks %v, want 1", got)
+	}
+	if !strings.Contains(logs.String(), `"msg":"sillage cost read failed past the live window"`) {
+		t.Errorf("logs %s", logs.String())
 	}
 }
 

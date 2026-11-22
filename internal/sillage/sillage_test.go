@@ -85,12 +85,24 @@ func TestTaskCostErrors(t *testing.T) {
 		{"unknown total status", http.StatusOK, `{"prices":{"version":"v","verifiedAt":"d"},"total":{"status":"zero"}}`, ErrIncompatible},
 		{"unknown run status", http.StatusOK, `{"prices":{"version":"v","verifiedAt":"d"},"total":{"status":"none"},` +
 			`"runs":[{"key":{"uid":"u"},"status":""}]}`, ErrIncompatible},
-		{"too large", http.StatusOK, `"` + strings.Repeat("x", maxResponseBytes) + `"`, ErrIncompatible},
+		{"too large", http.StatusOK, `{"prices":{"version":"v","verifiedAt":"d"},"total":{"status":"none"},"pad":"` +
+			strings.Repeat("x", maxResponseBytes) + `"}`, ErrIncompatible},
 	} {
 		cl, _ := serve(t, c.status, c.body)
 		if _, err := cl.TaskCost(context.Background(), "v", 1); !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, want %v", c.name, err, c.want)
 		}
+	}
+}
+
+// TestTaskCostAtTheSizeCap: a valid answer of exactly maxResponseBytes
+// is read; the "too large" case above differs from it only by its size.
+func TestTaskCostAtTheSizeCap(t *testing.T) {
+	head, tail := `{"prices":{"version":"v","verifiedAt":"d"},"total":{"status":"none"},"pad":"`, `"}`
+	body := head + strings.Repeat("x", maxResponseBytes-len(head)-len(tail)) + tail
+	cl, _ := serve(t, http.StatusOK, body)
+	if got, err := cl.TaskCost(context.Background(), "v", 1); err != nil || got.Prices.Version != "v" {
+		t.Errorf("answer at the cap: %+v, %v", got.Prices, err)
 	}
 }
 

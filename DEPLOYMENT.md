@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions` and `shadow_tasks`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison; nothing on `decisions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source` `vikunja` or `github` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token and the GitHub App's keys | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel` or `pr-review` (superseded reviews); nothing else (no Secrets, no pods) |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions`, `shadow_tasks`, `run_completions` and `cost_notices`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison, a cost notice's publication (`state`, `rev`, `body`, `digest`, `failures`, `last_error`, `next_check`, `published_at`, `live_until`, `updated_at`); nothing on `decisions` and `run_completions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source` `vikunja` or `github` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token and the GitHub App's keys | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel` or `pr-review` (superseded reviews); nothing else (no Secrets, no pods) |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -222,6 +222,7 @@ both agent families.
 | `vikunja-done-cleanup` | the enricher's done-unlabel and action-needed hooks, the failure reporter's done sweeps | the write token; the reconciliation |
 | `vikunja-chain` | the enricher's chain hook (`CHAIN_LABEL`) and the `subtask-chain-reconcile` CronJob | the write token; the reconciliation |
 | `vikunja-failure` | the failure reporter for Tasks labelled `gordon.spe.quebec/managed` (it keeps every other Task) | the write token |
+| `vikunja-cost` | nothing: no legacy component posts cost notices | the write token; `GORDON_SILLAGE_API_URL` and egress to Sillage |
 
 ### Rollback
 
@@ -394,6 +395,10 @@ to turn off.
   the contract) is a retry with the worker's backoff, never a zero
   estimate (`gordon_cost_notice_checks_total{result="unavailable"}` or
   `"incompatible"`); a task Sillage has no story of yet (404) waits.
+  Retries stop once the notice's live window (`GORDON_COST_LIVE_FOR`,
+  from the last revision, or from the run's finish before the first)
+  has passed: it settles as it is, a waiting one never posted
+  (`result="expired"`).
 - **Once**: the row (`cost_notices`, one per run generation) and each
   revision's text are stored in the transaction that queues its
   `publish-cost` action. The action writes the latest stored revision,
@@ -404,8 +409,12 @@ to turn off.
   revision or a later one.
 - **Updates**: the task's newest notice stays live: when its figures
   change (late usage, a review or fix, a price-table change) it is edited
-  in place, never posted again; posting a newer run's notice freezes the
-  older one. A notice unchanged for `GORDON_COST_LIVE_FOR` settles.
+  in place, never posted again. Runs are ordered by their finish:
+  posting a newer run's notice freezes the older ones, and an older
+  run's notice posted after a newer one's (its estimate turned final
+  later) is posted frozen. Publications of one task's notices take the
+  task's rows in turn, so concurrent passes leave one live notice. A
+  notice unchanged for `GORDON_COST_LIVE_FOR` settles.
 - **Rollback**: remove the rule. No new notice is recorded, and the
   project's waiting and live notices read and write nothing more
   (`result="not-owned"`); revisions already queued drain, each found by
@@ -422,8 +431,13 @@ Hollingsworth (Gordon 13 deploys it):
   `https://sillage.spe.quebec` for the links.
 - `helm/gordon/templates/networkpolicy-egress.yaml`: the worker's egress
   to the `sillage` namespace's Sillage pods on their container port
-  (`8080`; kube-router matches after the Service's DNAT). The `sillage`
-  namespace has no ingress policy.
+  (`8080`; kube-router matches after the Service's DNAT).
+- `sillage`'s ingress: the in-cluster port carries no credential (the
+  public host's forward-auth is not on this path) and serves per-task
+  cost and run data, while the `sillage` namespace has no ingress policy
+  today. Add a NetworkPolicy there that admits port `8080` only from the
+  Gordon worker's pods and the ingress controller, so agent pods in
+  `kelos-agents` cannot read it.
 - The ownership file: a `vikunja-cost` rule per project (or `*`) with
   its gate evidence; the migration (`0005_cost_notices.sql`) and its
   grants run with `gordon migrate` before the worker starts.
@@ -476,7 +490,7 @@ a duplicate.
   `gordon_readiness_reconcile_runs_total{result}`, `gordon_readiness_reconcile_queued_total`,
   `gordon_limit_restart_decisions_total{result}` (`restarted`, `superseded`, `gave-up`, `name-too-long`, `none`),
   `gordon_cost_notice_checks_total{result}` (`published`, `updated`, `unchanged`, `waiting`, `settled`,
-  `unavailable`, `incompatible`, `raced`, `not-owned`),
+  `unavailable`, `incompatible`, `raced`, `not-owned`, `expired`),
   plus the Go and process collectors. `gordon_action_attempts_total`'s
   `kind` includes `assign`, `sync-label`, `cancel-run`, `supersede-reviews`, `notify`, `merge-pull-request` and `publish-cost`.
 

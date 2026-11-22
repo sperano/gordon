@@ -107,8 +107,8 @@ func TestCostRevision(t *testing.T) {
 	if _, ok := CostRevision(text, "run-b", 7); ok {
 		t.Error("another run's marker counted")
 	}
-	if _, ok := CostRevision("<!-- gordon:cost run=run-a gen=7 rev= -->", "run-a", 7); ok {
-		t.Error("a marker without a revision counted")
+	if _, ok := CostRevision("<!-- gordon:cost run=run-a gen=7 rev=99999999999999999999 -->", "run-a", 7); ok {
+		t.Error("a marker with an overflowing revision counted")
 	}
 	if got := CostRevisionMarker("run-a", 7, 3); got != "<!-- gordon:cost run=run-a gen=7 rev=3 -->" {
 		t.Errorf("marker %q", got)

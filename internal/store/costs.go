@@ -1,8 +1,10 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,9 +19,10 @@ const (
 	CostWaiting = "waiting"
 	// CostLive: posted, and its task total is kept current.
 	CostLive = "live"
-	// CostFrozen: a newer notice of the task carries the total.
+	// CostFrozen: a notice of a newer run of the task carries the total.
 	CostFrozen = "frozen"
-	// CostSettled: nothing changed for the live window.
+	// CostSettled: nothing changed for the live window, or Sillage failed
+	// to answer through it.
 	CostSettled = "settled"
 )
 
@@ -65,7 +68,7 @@ func (s *Store) RecordCostRun(ctx context.Context, c CostRun) error {
 // CostDue takes at most limit waiting or live notices due at now, the
 // longest due first, and holds them until now+hold: concurrent passes
 // take disjoint rows, and one that dies leaves them to the next pass
-// after the hold.
+// after the hold. They are returned oldest run first.
 func (s *Store) CostDue(ctx context.Context, now time.Time, hold time.Duration, limit int) ([]CostNotice, error) {
 	rows, err := s.pool.Query(ctx, `UPDATE cost_notices SET next_check = $1::timestamptz + make_interval(secs => $2)
 		WHERE (name, inbox_id) IN (SELECT name, inbox_id FROM cost_notices
@@ -77,7 +80,7 @@ func (s *Store) CostDue(ctx context.Context, now time.Time, hold time.Duration, 
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (CostNotice, error) {
+	due, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (CostNotice, error) {
 		var n CostNotice
 		var family string
 		err := r.Scan(&n.Name, &n.InboxID, &family, &n.Project, &n.TaskID, &n.TaskUID, &n.Phase, &n.Finished,
@@ -85,6 +88,11 @@ func (s *Store) CostDue(ctx context.Context, now time.Time, hold time.Duration, 
 		n.Family = run.Family(family)
 		return n, err
 	})
+	// UPDATE ... RETURNING keeps no order.
+	slices.SortFunc(due, func(a, b CostNotice) int {
+		return cmp.Or(a.Finished.Compare(b.Finished), cmp.Compare(a.Name, b.Name), cmp.Compare(a.InboxID, b.InboxID))
+	})
+	return due, err
 }
 
 // CostCheck records a check that published nothing: the next one at
@@ -102,14 +110,25 @@ func (s *Store) CostCheck(ctx context.Context, n CostNotice, next time.Time, fai
 
 // CostPublish stores revision n.Rev+1 of the notice's text and, in the
 // same transaction, queues its publish-cost action on the run's inbox
-// row; the notice is live until liveUntil and checked again at next. A
-// first publication freezes the task's other live notices: the newest
-// notice carries the task total. Fenced like CostCheck.
+// row; the notice is checked again at next. The task's newest posted
+// notice carries the task total and is live until liveUntil: a first
+// publication freezes the task's live notices of older runs, and is
+// itself posted frozen when a newer run's notice was posted already.
+// The task's notices are locked first, so two first publications of one
+// task are ordered. Fenced like CostCheck.
 func (s *Store) CostPublish(ctx context.Context, n CostNotice, body, digest string, now, liveUntil, next time.Time) (bool, error) {
 	published := false
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM cost_notices WHERE task_id = $1 ORDER BY name, inbox_id FOR UPDATE`,
+			n.TaskID); err != nil {
+			return err
+		}
 		var rev int
-		err := tx.QueryRow(ctx, `UPDATE cost_notices SET rev = rev + 1, body = $5, digest = $6, state = 'live',
+		err := tx.QueryRow(ctx, `UPDATE cost_notices c SET rev = rev + 1, body = $5, digest = $6,
+				state = CASE WHEN c.state = 'waiting' AND EXISTS (SELECT 1 FROM cost_notices o
+					WHERE o.task_id = c.task_id AND o.state <> 'waiting'
+					AND (o.finished_at, o.name, o.inbox_id) > (c.finished_at, c.name, c.inbox_id))
+				THEN 'frozen' ELSE 'live' END,
 				published_at = $7, live_until = $8, next_check = $9, failures = 0, last_error = '', updated_at = now()
 			WHERE name = $1 AND inbox_id = $2 AND state = $3 AND rev = $4 RETURNING rev`,
 			n.Name, n.InboxID, n.State, n.Rev, body, digest, now, liveUntil, next).Scan(&rev)
@@ -121,9 +140,11 @@ func (s *Store) CostPublish(ctx context.Context, n CostNotice, body, digest stri
 		}
 		published = true
 		if n.State == CostWaiting {
-			if _, err := tx.Exec(ctx, `UPDATE cost_notices SET state = 'frozen', updated_at = now()
-				WHERE task_id = $1 AND state = 'live' AND NOT (name = $2 AND inbox_id = $3)`,
-				n.TaskID, n.Name, n.InboxID); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE cost_notices o SET state = 'frozen', updated_at = now()
+				FROM cost_notices c WHERE c.name = $1 AND c.inbox_id = $2
+				AND o.task_id = c.task_id AND o.state = 'live'
+				AND (o.finished_at, o.name, o.inbox_id) < (c.finished_at, c.name, c.inbox_id)`,
+				n.Name, n.InboxID); err != nil {
 				return err
 			}
 		}
@@ -134,7 +155,8 @@ func (s *Store) CostPublish(ctx context.Context, n CostNotice, body, digest stri
 	return published, err
 }
 
-// CostSettle stops checking a live notice. Fenced like CostCheck.
+// CostSettle stops checking a waiting or live notice. Fenced like
+// CostCheck.
 func (s *Store) CostSettle(ctx context.Context, n CostNotice) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE cost_notices SET state = 'settled', updated_at = now()
 		WHERE name = $1 AND inbox_id = $2 AND state = $3 AND rev = $4`, n.Name, n.InboxID, n.State, n.Rev)
