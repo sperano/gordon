@@ -23,6 +23,10 @@ type Reads struct {
 	// History reads a pull request's reviews and conversation comments,
 	// which the review-round caps count (a review bot's request only).
 	History bool
+	// Readiness reads the readiness state of the event's pull request (a
+	// synthetic readiness delivery) or of every open candidate on the
+	// completed check run's head.
+	Readiness bool
 }
 
 // ChainTask reports a fresh chain parent whose chain steps through its
@@ -57,12 +61,18 @@ func (r Router) Reads(ev event.Event) Reads {
 		}
 	case event.GitHubIssueComment, event.GitHubReview, event.GitHubReviewComment:
 		return r.commentReads(ev)
+	case event.GitHubCheckRun:
+		_, ok := r.Config.PRProject(ev.GitHub.Repository)
+		return Reads{Readiness: ok && ev.Action == event.ActionCompleted}
 	case event.GitHubPullRequest:
 		if _, ok := r.Config.PRProject(ev.GitHub.Repository); !ok {
 			return Reads{}
 		}
-		if ev.Action == event.ActionConflict {
+		switch ev.Action {
+		case event.ActionConflict:
 			return Reads{PullRequest: ev.GitHub.Synthetic}
+		case event.ActionReadiness:
+			return Reads{Readiness: ev.GitHub.Synthetic}
 		}
 		reviews, links := slices.Contains(reviewActions, ev.Action), r.linksTask(ev)
 		out := Reads{PullRequest: reviews || links, Files: reviews}

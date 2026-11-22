@@ -61,9 +61,13 @@ func githubReconcilers() []Entry {
 			"templates/conflictreconcilers.yaml", "templates/conflict-reconcile.yaml"),
 		gh("merge-close-reconcile", Cron, "*/15: agent PRs closed in the last 24 h", []run.Family{run.MergeClose},
 			"missed-webhook recovery for merge-close", "scripts/reconcile_merge_close.py", "templates/merge-close-reconcile.yaml"),
-		gh("pr-readiness", Spawner, "check_run completed; */5 backstop", nil,
-			"exact-head readiness, ready/round-limit notices, ntfy, auto-merge, missing checks",
+		gh("pr-readiness", Spawner, "check_run completed; */5 backstop", []run.Family{run.PRReadiness},
+			"exact-head readiness from fresh state: READY TO MERGE, ROUND LIMIT REACHED, CHECKS MISSING and AUTO-MERGE "+
+				"REFUSED notices, ready/round-limit/action-needed labels, ntfy, auto-merge pinned to the head; "+
+				"Gordon decides each completed check run and scans every GORDON_READINESS_RECONCILE_INTERVAL, "+
+				"no waiter Task",
 			"scripts/reconcile_pr_ready.py", "scripts/pr_ready_notify.py", "scripts/auto_merge.py",
-			"scripts/missing_checks.py", "scripts/review_findings.py", "templates/pr-readiness.yaml"),
+			"scripts/missing_checks.py", "scripts/review_findings.py", "templates/pr-readiness.yaml",
+			"templates/_pr-readiness.tpl"),
 	}
 }

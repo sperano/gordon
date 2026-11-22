@@ -22,7 +22,7 @@ import (
 
 // vikunjaKinds are the action kinds the Vikunja writer performs.
 var vikunjaKinds = []action.Kind{action.React, action.AddLabel, action.RemoveLabel, action.MoveBucket,
-	action.MarkDone, action.PostNotice, action.Assign, action.SyncLabel}
+	action.MarkDone, action.PostNotice, action.Assign, action.SyncLabel, action.Notify}
 
 // agentUsers are the routing configuration's agent variants, sorted.
 func agentUsers(cfg config.Worker) []string {
@@ -54,11 +54,16 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 			providers[kind][provider] = ex
 		}
 	}
-	if ex := vikunjaExecutor(cfg, s, k); ex != nil {
-		register(upstream.ProviderVikunja, ex, vikunjaKinds)
+	vex := vikunjaExecutor(cfg, s, k)
+	if vex != nil {
+		register(upstream.ProviderVikunja, vex, vikunjaKinds)
 	}
 	if app != nil {
-		register(upstream.ProviderGitHub, githubExecutor(cfg, s, k, app), githubKinds)
+		gex := githubExecutor(cfg, s, k, app)
+		if vex != nil {
+			gex.Vikunja = vex
+		}
+		register(upstream.ProviderGitHub, gex, githubKinds)
 	}
 	for kind, byProvider := range providers {
 		out[kind] = worker.ByProvider{Executors: byProvider, Delay: cfg.Backoff.Max}
@@ -75,7 +80,7 @@ func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client) *lifecy
 	ex := &lifecycle.Executor{
 		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + l.WriteToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
 		Policy: cfg.Routing.Policy, Agents: agentUsers(cfg), Runs: s, Lock: s, Namespace: route.KelosNamespace,
-		MaxRestarts: cfg.Restart.Max,
+		MaxRestarts: cfg.Restart.Max, Ntfy: ntfy(cfg),
 		Links: lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
 			Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL},
 	}

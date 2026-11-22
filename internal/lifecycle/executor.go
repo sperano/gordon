@@ -54,6 +54,8 @@ type Executor struct {
 	MaxRestarts int
 	// Namespace is the Kelos namespace a failure notice's retry names.
 	Namespace string
+	// Ntfy sends ready heads (nil: a notify action fails).
+	Ntfy *Ntfy
 }
 
 // ErrNotVikunja is an action this executor does not write.
@@ -105,6 +107,8 @@ func (e *Executor) handler(k action.Kind) (handler, bool) {
 		return handler{e.doneApplied, e.markDone}, true
 	case action.PostNotice:
 		return handler{e.noticeApplied, e.postNotice}, true // checks again under the target lock
+	case action.Notify:
+		return handler{e.notifyApplied, e.notify}, true // checks again under the target lock
 	}
 	return handler{}, false
 }

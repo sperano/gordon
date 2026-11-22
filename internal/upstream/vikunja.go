@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 
 	"github.com/sperano/gordon/internal/event"
@@ -21,7 +22,10 @@ type vikunjaTask struct {
 	Description string `json:"description"`
 	Done        bool   `json:"done"`
 	Labels      []struct {
-		Title string `json:"title"`
+		Title     string `json:"title"`
+		CreatedBy *struct {
+			Username string `json:"username"`
+		} `json:"created_by"`
 	} `json:"labels"`
 	Assignees []struct {
 		Username string `json:"username"`
@@ -47,6 +51,12 @@ func (raw vikunjaTask) toTask() event.Task {
 		Done: raw.Done, Buckets: []string{}, Index: raw.Index}
 	for _, l := range raw.Labels {
 		t.Labels = append(t.Labels, l.Title)
+		if l.CreatedBy != nil && l.CreatedBy.Username != "" {
+			if t.LabelCreators == nil {
+				t.LabelCreators = map[string][]string{}
+			}
+			t.LabelCreators[l.Title] = append(t.LabelCreators[l.Title], l.CreatedBy.Username)
+		}
 	}
 	for _, a := range raw.Assignees {
 		t.Assignees = append(t.Assignees, a.Username)
@@ -148,4 +158,23 @@ func (v Vikunja) commentsPage(ctx context.Context, id int64, page, limit int) (j
 		return json.Unmarshal(raw, &items)
 	}, limit)
 	return raw, items, err
+}
+
+// TaskReactions reads the reaction values on a task (GET
+// /tasks/{id}/reactions: value -> users), sorted; the ntfy bookkeeping of
+// the readiness notices lives there.
+func (v Vikunja) TaskReactions(ctx context.Context, id int64) ([]string, error) {
+	if id <= 0 {
+		return nil, &Error{Provider: ProviderVikunja, Class: Invalid, Err: fmt.Errorf("task id %d", id)}
+	}
+	var raw map[string]json.RawMessage
+	if err := v.Client.get(ctx, fmt.Sprintf("/tasks/%d/reactions", id), nil, &raw, nil); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for value := range raw {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out, nil
 }

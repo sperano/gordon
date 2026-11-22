@@ -15,11 +15,11 @@ const fixtureDir = "testdata"
 
 // minFixtures is the committed fixture count: deleting one fails, and
 // the glob cannot silently match nothing.
-const minFixtures = 58
+const minFixtures = 63
 
 // minWriteFixtures is the committed count of fixtures recording the
 // legacy lifecycle's writes (an empty list included): deleting one fails.
-const minWriteFixtures = 19
+const minWriteFixtures = 24
 
 func load(t *testing.T) []Fixture {
 	t.Helper()

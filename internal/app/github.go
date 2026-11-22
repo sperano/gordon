@@ -20,7 +20,7 @@ import (
 
 // githubKinds are the action kinds the GitHub writer performs.
 var githubKinds = []action.Kind{action.React, action.AddLabel, action.RemoveLabel, action.ConvertDraft,
-	action.SkippedChecks, action.PostNotice}
+	action.SkippedChecks, action.PostNotice, action.MergePullRequest}
 
 // newGitHubApp loads the GitHub App the writes act as, nil without
 // GORDON_GITHUB_APP_DIR: GitHub actions then stay queued (deferred).

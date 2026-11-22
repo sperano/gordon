@@ -48,6 +48,22 @@ type ErrStatus struct {
 	Method, Path string
 	Status       int
 	Message      string
+	// Body is the start of the answer's body, whitespace collapsed
+	// (reconcile_conflicts.error_body).
+	Body string
+}
+
+// errorBodyLimit is the characters of an answer's body ErrStatus keeps
+// (reconcile_conflicts.ERROR_BODY_LIMIT).
+const errorBodyLimit = 300
+
+// errorBody is reconcile_conflicts.error_body.
+func errorBody(data []byte) string {
+	b := []rune(strings.Join(strings.Fields(string(data)), " "))
+	if len(b) > errorBodyLimit {
+		return string(b[:errorBodyLimit]) + "..."
+	}
+	return string(b)
 }
 
 func (e *ErrStatus) Error() string {
@@ -147,6 +163,9 @@ func classify(method, path string, resp *http.Response, write bool, data []byte,
 	}
 	_ = json.Unmarshal(data, &msg) //nolint:errcheck // a message is optional
 	st := &ErrStatus{Method: method, Path: path, Status: status, Message: msg.Message}
+	if status >= http.StatusBadRequest {
+		st.Body = errorBody(data)
+	}
 	limited := status == http.StatusForbidden && rateLimited(resp)
 	switch {
 	case status >= http.StatusInternalServerError && write:

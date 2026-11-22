@@ -31,7 +31,7 @@ const (
 )
 
 // githubWriting are the families whose actions write to GitHub.
-var githubWriting = []run.Family{run.PRFollowUp, run.PRReview, run.PRConflict}
+var githubWriting = []run.Family{run.PRFollowUp, run.PRReview, run.PRConflict, run.PRReadiness}
 
 func (r *reader) github() GitHub {
 	g := GitHub{AppDir: r.str("GORDON_GITHUB_APP_DIR", ""),

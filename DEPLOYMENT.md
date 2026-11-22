@@ -94,12 +94,14 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
 | `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`, on a pull request `<sillage>/open?url=<PR URL>`, only on a private repository); unset, no link |
-| `GORDON_GITHUB_APP_DIR` | empty | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry. Without it GitHub actions stay queued (deferred); outside shadow a Gordon-owned `pr-followup`, `pr-review` or `pr-conflict` is refused without it |
+| `GORDON_GITHUB_APP_DIR` | empty | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry. Without it GitHub actions stay queued (deferred); outside shadow a Gordon-owned `pr-followup`, `pr-review`, `pr-conflict` or `pr-readiness` is refused without it, and a shadow `pr-readiness` too (it reads check runs as the App) |
 | `GORDON_GITHUB_RECONCILE_INTERVAL` | `0` (off) | pace of the GitHub reconciliation: for each configured repository's open pull requests by a pull-request author, the owner's `/gordon` comments, inline comments and reviews and each review bot's latest review with a body, not handled yet, and those pull requests closed from an agent branch, are queued as synthetic deliveries, each once |
 | `GORDON_GITHUB_RECONCILE_LOOKBACK`, `GORDON_GITHUB_RECONCILE_GRACE` | `24h`, `10m` | its window: submitted, created or closed within the first, and longer ago than the second (the webhook may still be on its way) |
 | `GORDON_CONFLICT_RECONCILE_INTERVAL` | `0` (off) | pace of the conflict reconciliation: for each Workspace of a project whose `pr-conflict` is not legacy's, the repository's open agent PRs based on the Workspace's ref (`base_ref` of its first project, `main` by default) or stacked on another such PR are read one by one, and each GitHub reports in conflict (mergeable `false`, `dirty`) whose episode has no run left is queued, once an hour. Push and `pull_request` events start no scan: this interval is the detection delay. One read-only GitHub read per candidate PR and pass |
 | `GORDON_LIMIT_RESTART_MAX` | `3` | restarts of one chain after a subscription limit; then the gave-up notice |
 | `GORDON_LIMIT_RESTART_GRACE`, `GORDON_LIMIT_RESTART_FALLBACK` | `2m`, `1h` | a limit stop restarts this long after its reset; without a known reset time, the fallback after its Task's completion |
+| `GORDON_READINESS_RECONCILE_INTERVAL` | `0` (off) | pace of the readiness backstop: every open readiness candidate (an allowed author's non-draft PR from a `kelos/vikunja-<id>` branch of the repository) of each repository whose PR project's `pr-readiness` is not legacy's is queued as a synthetic `pull_request` (action `gordon-readiness`), once per head and interval. It replaces the legacy cron scan and the event waiter's polling (`eventWaitSeconds`, `pollSeconds`): `1m` keeps the legacy latency. Required, with the App and the dispatch config, by a non-legacy `pr-readiness` rule |
+| `GORDON_NTFY_URL`, `GORDON_NTFY_TOPIC`, `GORDON_NTFY_TOKEN_FILE` | empty | the private ntfy publisher of a ready head (`prReadiness.notify`): an HTTPS base URL (refused otherwise), the topic and its bearer token. Outside shadow a Gordon-owned `pr-readiness` is refused without them while `policy.readiness.notify` is on |
 
 ## Dispatch configuration
 
@@ -229,9 +231,8 @@ actions are dead-lettered (never retried), so review them separately.
 Gordon decides and executes the GitHub lifecycle the reactor, the PR
 follow-up, conflict and reviewer init containers, the conflict
 reconcilers, the limit reaper and the pollers performed, as durable
-actions on the GitHub families. PR readiness (`reconcile_pr_ready.py`:
-ready and round-limit notices, ntfy, auto-merge, missing checks) is not
-ported yet and stays legacy. Its writes act as the GitHub App
+actions on the GitHub families, PR readiness (Gordon 08c, below) included.
+Its writes act as the GitHub App
 (`GORDON_GITHUB_APP_DIR`); its reads keep the read-only token. The
 routing configuration's `policy` carries the round caps
 (`max_rounds_per_pr`, `suggestions_max_rounds`; `0` for none,
@@ -301,6 +302,62 @@ routing configuration's `policy` carries the round caps
   a pull-request author (the App's bot or a Workspace token's user), so a
   lost answer is recovered, never written blind.
 
+### PR readiness (Gordon 08c)
+
+`pr-readiness` is `reconcile_pr_ready.py` with `pr_ready_notify.py`,
+`auto_merge.py`, `missing_checks.py` and `review_findings.py`: a
+model-free family decided from fresh state, its writes through the
+outbox. A completed `check_run` (every open candidate on its head; the
+deliveries must be mirrored to the receiver) and the readiness backstop
+(`GORDON_READINESS_RECONCILE_INTERVAL`) queue a decision; each reads the
+pull request (files, mergeability, creation time), its head's check runs,
+commit date (only when a CHECKS MISSING notice may be due) and, with
+review bots, reviews, conversation and review threads, as the App (the
+read-only token has no Checks permission), the Kelos Tasks of the
+repository's Workspaces and of the task (`list` on `tasks`), the task
+with its label creators, comments and, with ntfy, reactions. The
+routing configuration's `policy` carries it: `ready_to_merge_label`,
+`round_limit_label`, `pr_readiness` (must be `true` once Gordon owns it:
+the pr-open notice's promise) and `readiness` (`ci_checks` per
+repository, a repository without an entry is refused; `cubic_repos`,
+`settle_seconds`, `missing_check_minutes`, `merge_method`, `notify`;
+`profile.Defaults()` mirrors `values-hollingsworth.yaml`).
+
+- **Verdict**: an open, non-draft, mergeable head whose check runs are all
+  complete and settled, whose CI and applicable reviewer checks
+  (`review/<reviewer>` of the reviewers the review family starts on its
+  files) passed, with no active Task of its task or reviewing, following
+  up or fixing a conflict of the PR (Gordon's queued runs included) and no
+  bot review waiting for its follow-up, is ready. Findings a round limit
+  left unaddressed (`max_rounds_per_pr`, the suggestions cap notice), a
+  failed reviewer check among them, are the ROUND LIMIT REACHED verdict
+  instead: never notified nor merged. A legacy pr-open Task of the PR, or
+  a legacy readiness waiter of the head, still active defers the
+  decision (`announcement-tasks-active`).
+- **Writes**, each found again before it is made: the PR CREATED notice
+  if missing (first), READY TO MERGE / ROUND LIMIT REACHED once per head
+  (the deduplication key, before the labels), CHECKS MISSING once per head
+  after `missing_check_minutes`, the verdict labels (the other verdict's
+  off, `action-needed` then the verdict's own on; a not-ready head takes a
+  verdict label off with `action-needed`), the ntfy send of a ready head
+  and, on a task carrying the `auto_merge_label` its
+  `auto_merge_label_creator` created, the merge (`PUT .../merge` with the
+  head SHA pinned and `merge_method`, its own Contents and Pull requests
+  write token). An announced head is notified and merged only once the
+  full gate passes again. The notices are byte-equal to legacy and a
+  legacy one of the same head counts, on a comment by Gordon's Vikunja
+  user only.
+- **ntfy**: under the task's lock, a `⏳<sha8>-<n>` reaction before the
+  send, `🔔<sha8>` after it, `🔁<sha8>-<n>` on a failed send (retried);
+  three sends whose outcome was never recorded stop it, as legacy.
+  Redirects are never followed (the token stays on the configured host).
+- **Merge**: a merged, closed or pushed-since PR is left (legacy's pinned
+  merge would have been refused and reported for a pushed head); a
+  merge GitHub declines (403, 405, 409, 422) gets AUTO-MERGE REFUSED on
+  the task once per head, quoting GitHub's answer, and the next scan
+  tries again; a rate limit or 5xx is retried; an ambiguous merge is
+  recovered by reading the PR.
+
 ### GitHub ownership switches
 
 `go run ./cmd/gordon-inventory` prints the full table (its second
@@ -319,6 +376,7 @@ a duplicate.
 | `merge-close` | the repository's merge-close spawner and its `merge-close-reconcile` entry | the Vikunja write token; the GitHub reconciliation |
 | `pr-conflict` | the Workspace's `pr-conflict-*` spawners and its `conflict-reconcile-event-*` and `conflict-reconcile-cron-*` reconcilers | dispatch config and Task `create`; the App; Tasks without the `announce-github-start` init container; the conflict reconciliation |
 | `limit-restart` | the limit reaper for Gordon's Tasks (`gordon.spe.quebec/managed`) of the rule's projects; it keeps every other Task | dispatch config, Task `create` and `list`; the Vikunja write token |
+| `pr-readiness` | the repository's `pr-readiness-event-*` and `pr-readiness-cron-*` spawners | the App; Task `list`; the Vikunja write token; the readiness backstop; `pr_readiness` and `readiness.ci_checks` in the policy; `check_run` deliveries mirrored; with `readiness.notify`, the ntfy publisher |
 
 ## Probes and metrics
 
@@ -345,16 +403,18 @@ a duplicate.
   `gordon_vikunja_reconcile_runs_total{result}`, `gordon_vikunja_reconcile_queued_total`,
   `gordon_github_reconcile_runs_total{result}`, `gordon_github_reconcile_queued_total`,
   `gordon_conflict_reconcile_runs_total{result}`, `gordon_conflict_reconcile_queued_total`,
+  `gordon_readiness_reconcile_runs_total{result}`, `gordon_readiness_reconcile_queued_total`,
   `gordon_limit_restart_decisions_total{result}` (`restarted`, `superseded`, `gave-up`, `name-too-long`, `none`),
   plus the Go and process collectors. `gordon_action_attempts_total`'s
-  `kind` includes `assign`, `sync-label`, `cancel-run` and `supersede-reviews`.
+  `kind` includes `assign`, `sync-label`, `cancel-run`, `supersede-reviews`, `notify` and `merge-pull-request`.
 
 Suggested alerts: `gordon_queue_oldest_age_seconds{state="pending"}` above
 the retry cap, any `gordon_queue_depth{state="failed"}` or
 `{queue="actions",state="ambiguous"}`, reconciliation not successful for
 several intervals (`gordon_vikunja_reconcile_runs_total{result="error"}`,
-`gordon_github_reconcile_runs_total{result="error"}` and
-`gordon_conflict_reconcile_runs_total{result="error"}` too, once on), `gordon_limit_restart_decisions_total{result="gave-up"}`, `gordon_intake_requests_total{result="unavailable"}`,
+`gordon_github_reconcile_runs_total{result="error"}`,
+`gordon_conflict_reconcile_runs_total{result="error"}` and
+`gordon_readiness_reconcile_runs_total{result="error"}` too, once on), `gordon_limit_restart_decisions_total{result="gave-up"}`, `gordon_intake_requests_total{result="unavailable"}`,
 `gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
 a submission's request: the lookup or the admission list before the
 create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.

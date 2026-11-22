@@ -103,6 +103,11 @@ type State struct {
 	// comments, read only for a review bot's request while a round cap is
 	// configured (Reads.History): the cap counts the rounds from them.
 	History *PRHistory `json:"history,omitempty"`
+	// Readiness holds the fresh readiness state of each pull request a
+	// readiness delivery decides; ReadinessRead is set once it was read
+	// (an empty Readiness then means no open candidate).
+	Readiness     []Readiness `json:"readiness,omitempty"`
+	ReadinessRead bool        `json:"readiness_read,omitempty"`
 }
 
 // PRHistory is what the review-round caps count rounds from.
@@ -133,7 +138,8 @@ type Ledger interface {
 	Run(name string) (RunRecord, bool)
 	// TaskRuns are the runs of a Vikunja task in the given families.
 	TaskRuns(taskID int64, families []run.Family) []RunRecord
-	// PRRuns are the PR follow-up runs of a Workspace's pull request.
+	// PRRuns are the runs of a Workspace's pull request: its follow-ups,
+	// reviews and conflict runs.
 	PRRuns(workspace string, pr int) []RunRecord
 }
 

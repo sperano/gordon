@@ -307,7 +307,8 @@ func TestVikunjaEntriesMatchTheirSwitches(t *testing.T) {
 // legacy components the cutover (09) turns off and what Gordon needs,
 // once, each component changed by stage 08 or 09.
 func TestGitHubFamiliesPublishTheirSwitch(t *testing.T) {
-	github := []run.Family{run.PRFollowUp, run.PRReview, run.PROpen, run.MergeClose, run.PRConflict, run.LimitRestart}
+	github := []run.Family{run.PRFollowUp, run.PRReview, run.PROpen, run.MergeClose, run.PRConflict, run.LimitRestart,
+		run.PRReadiness}
 	var seen []run.Family
 	for _, s := range GitHubSwitches() {
 		if slices.Contains(seen, s.Family) {

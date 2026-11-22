@@ -15,7 +15,11 @@ const (
 		"init container (Gordon announces)"
 	needConflictReconcile = "`GORDON_CONFLICT_RECONCILE_INTERVAL` > 0 (the scan that finds conflicts: " +
 		"push and pull_request events start none)"
-	needList = "`list` on `tasks` in `kelos-agents`"
+	needList             = "`list` on `tasks` in `kelos-agents`"
+	needReadinessScan    = "`GORDON_READINESS_RECONCILE_INTERVAL` > 0 (the backstop scan of open agent PRs)"
+	needReadinessPolicy  = "a routing policy with `pr_readiness: true` and `readiness.ci_checks` for every repository"
+	needCheckRunDelivery = "`check_run` deliveries of the repository mirrored to Gordon's receiver"
+	needNtfy             = "with `readiness.notify`, `GORDON_NTFY_URL` (HTTPS), `GORDON_NTFY_TOPIC` and `GORDON_NTFY_TOKEN_FILE`"
 )
 
 // GitHubSwitches lists the GitHub families' contracts, in run.Families
@@ -51,5 +55,10 @@ func GitHubSwitches() []Switch {
 			"the limit reaper for Gordon's Tasks: it must skip Tasks labelled `gordon.spe.quebec/managed` of the rule's " +
 				"projects (Gordon restarts them, and its failure notices skip limit stops); it keeps every other Task",
 			[]string{needKelos, needList, needWriter}},
+		{run.PRReadiness, chartPath("templates/pr-readiness.yaml", "templates/_pr-readiness.tpl",
+			"scripts/reconcile_pr_ready.py", "scripts/pr_ready_notify.py", "scripts/auto_merge.py",
+			"scripts/missing_checks.py", "scripts/review_findings.py"),
+			"the repository's `pr-readiness-event-<workspace>` and `pr-readiness-cron-<workspace>` spawners",
+			[]string{needApp, needList, needWriter, needReadinessScan, needReadinessPolicy, needCheckRunDelivery, needNtfy}},
 	}
 }

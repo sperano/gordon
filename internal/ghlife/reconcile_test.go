@@ -108,8 +108,8 @@ func agentPR(n int, author, head string) upstream.ListedPR {
 }
 
 func listed(id int64, author, body string, at time.Time) upstream.ListedReview {
-	return upstream.ListedReview{Review: event.Review{ID: id, Author: author, Body: body, CommitID: "abc12345"},
-		NodeID: "PRR_x", Submitted: at}
+	return upstream.ListedReview{Review: event.Review{ID: id, Author: author, Body: body, CommitID: "abc12345",
+		SubmittedAt: at}, NodeID: "PRR_x"}
 }
 
 func reconciler(l *fakeLister, in *fakeInbox) (*Reconciler, *metrics.Metrics) {

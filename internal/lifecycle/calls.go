@@ -138,3 +138,16 @@ func (w *Writer) MarkDone(ctx context.Context, task int64) error {
 	raw["done"] = true
 	return w.do(ctx, http.MethodPost, fmt.Sprintf("/tasks/%d", task), nil, raw, nil)
 }
+
+// TaskReactions reads a task's reactions: value -> users.
+func (w *Writer) TaskReactions(ctx context.Context, task int64) (map[string][]User, error) {
+	out := map[string][]User{}
+	err := w.get(ctx, fmt.Sprintf("/tasks/%d/reactions", task), nil, &out)
+	return out, err
+}
+
+// ReactTask adds a reaction to a task (Vikunja creates with PUT;
+// repeating one is a no-op).
+func (w *Writer) ReactTask(ctx context.Context, task int64, value string) error {
+	return w.do(ctx, http.MethodPut, fmt.Sprintf("/tasks/%d/reactions", task), nil, map[string]string{"value": value}, nil)
+}

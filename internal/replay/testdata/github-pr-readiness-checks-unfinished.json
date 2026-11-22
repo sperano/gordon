@@ -1,0 +1,138 @@
+{
+  "description": "pr-challenger's check completed while the Go reviewer still runs: not ready, nothing written (the next check or scan decides again).",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Delivery": "44444444-2222-3333-4444-000000000072",
+      "X-GitHub-Event": "check_run"
+    },
+    "body": {
+      "action": "completed",
+      "check_run": {
+        "conclusion": "success",
+        "head_sha": "0123456789abcdef0123456789abcdef01234567",
+        "id": 31,
+        "name": "review/pr-challenger",
+        "pull_requests": [
+          {
+            "number": 7
+          }
+        ],
+        "status": "completed"
+      },
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "github-actions[bot]"
+      }
+    }
+  },
+  "state": {
+    "readiness": [
+      {
+        "pull_request": {
+          "repository": "sperano/lucarne",
+          "number": 7,
+          "url": "https://github.com/sperano/lucarne/pull/7",
+          "state": "open",
+          "draft": false,
+          "merged": false,
+          "author": "gordon-cole-ai[bot]",
+          "head_ref": "kelos/vikunja-4403",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "head_repo": "sperano/lucarne",
+          "base_ref": "main",
+          "labels": [
+            "kelos:claude-opus"
+          ],
+          "files": [
+            "internal/run/run.go"
+          ],
+          "mergeable": true,
+          "mergeable_state": "clean",
+          "created_at": "2026-11-22T10:00:00Z"
+        },
+        "check_runs": [
+          {
+            "id": 11,
+            "name": "review/pr-challenger",
+            "status": "completed",
+            "conclusion": "success",
+            "completed_at": "2026-11-22T11:55:00Z"
+          },
+          {
+            "id": 12,
+            "name": "review/idiomatic-go",
+            "status": "in_progress"
+          }
+        ],
+        "reviews": [],
+        "comments": [],
+        "threads": [],
+        "tasks": [],
+        "task": {
+          "id": 4403,
+          "project_id": 139,
+          "done": false,
+          "labels": [
+            "in progress",
+            "pr open"
+          ],
+          "assignees": [
+            "claude-opus"
+          ],
+          "buckets": [
+            "Review"
+          ]
+        },
+        "task_comments": [
+          {
+            "id": 900001,
+            "author": "gordon",
+            "body": "\u003cp\u003ePR CREATED: \u003ca href=\"https://github.com/sperano/lucarne/pull/7\"\u003esperano/lucarne#7\u003c/a\u003e. THE AGENT'S LOCAL CHECKS PASSED; GITHUB CHECKS AND AUTOMATED REVIEWS MAY STILL BE RUNNING. I'LL SPEAK UP AGAIN WHEN IT'S READY TO MERGE.\u003c/p\u003e\u003c!-- kelos:pr-open --\u003e"
+          }
+        ],
+        "read_at": "2026-11-22T12:00:00Z"
+      }
+    ],
+    "readiness_read": true
+  },
+  "ledger": {},
+  "ownership": {
+    "rules": [
+      {
+        "project": "lucarne",
+        "family": "pr-readiness",
+        "owner": "gordon",
+        "evidence": [
+          "replay-parity",
+          "shadow-parity",
+          "rollback-tested",
+          "legacy-disabled"
+        ]
+      }
+    ]
+  },
+  "legacy": {
+    "tasks": [
+      "pr-ready-47d85cbe-0123456789ab"
+    ],
+    "divergence": "Gordon decides each completed check run itself: no model-free pr-ready waiter Task polling the head",
+    "writes": []
+  },
+  "expect": {
+    "outcome": "ignore",
+    "delivery_key": "github/delivery/44444444-2222-3333-4444-000000000072",
+    "families": [
+      {
+        "family": "pr-readiness",
+        "project": "lucarne",
+        "owner": "gordon",
+        "execute": true,
+        "outcome": "ignore",
+        "reason": "checks-unfinished"
+      }
+    ]
+  }
+}

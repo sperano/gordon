@@ -19,6 +19,16 @@ const (
 // sends no such action, and only a synthetic delivery is routed with it.
 const ActionConflict = "gordon-conflict"
 
+// ActionReadiness is the pull_request action of the readiness
+// reconciliation's synthetic delivery: an open agent pull request whose
+// head is due a readiness verdict. Only a synthetic delivery is routed
+// with it.
+const ActionReadiness = "gordon-readiness"
+
+// ActionCompleted is a check_run's completed action, the only one the
+// readiness family routes.
+const ActionCompleted = "completed"
+
 // Legacy follow-up Task-name letters by comment kind.
 const (
 	CommentKindIssue  byte = 'c'
@@ -45,6 +55,9 @@ type githubBody struct {
 	Comment     *githubComment     `json:"comment"`
 	Review      *githubComment     `json:"review"`
 	PullRequest *githubPullRequest `json:"pull_request"`
+	CheckRun    *struct {
+		HeadSHA string `json:"head_sha"`
+	} `json:"check_run"`
 	// Gordon is what a synthetic delivery adds: the Workspace whose
 	// conflict reconciliation found the conflict.
 	Gordon *struct {
@@ -181,6 +194,12 @@ func request(ev *Event, raw githubBody) error {
 		}
 		gh.CommentKind, gh.CommentID, gh.CommentNodeID, gh.Body = CommentKindReview, raw.Review.ID, raw.Review.NodeID, raw.Review.Body
 		gh.CommentURL, gh.ReviewCommitID = raw.Review.HTMLURL, raw.Review.CommitID
+	case GitHubCheckRun:
+		if raw.CheckRun == nil || raw.CheckRun.HeadSHA == "" {
+			return fmt.Errorf("%w: check_run without head_sha", ErrMalformed)
+		}
+		gh.CheckRunHeadSHA = raw.CheckRun.HeadSHA
+		return nil
 	case GitHubPullRequest:
 		if raw.PullRequest == nil {
 			return fmt.Errorf("%w: pull_request event without pull_request", ErrMalformed)

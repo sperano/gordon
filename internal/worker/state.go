@@ -41,6 +41,8 @@ type StateReader struct {
 	Tasks   TaskReader
 	PRs     PullRequestReader
 	History HistoryReader
+	// Readiness reads the PR readiness state.
+	Readiness Readiness
 }
 
 // Read returns the state and the reads' errors, joined. led answers
@@ -62,6 +64,9 @@ func (s StateReader) Read(ctx context.Context, ev event.Event, led route.Ledger)
 	}
 	if need.History {
 		errs = append(errs, s.readHistory(ctx, ev, &st))
+	}
+	if need.Readiness {
+		errs = append(errs, s.readReadiness(ctx, ev, &st))
 	}
 	if need.Task != 0 {
 		if t, err := s.Tasks.Task(ctx, need.Task); err != nil {

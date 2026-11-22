@@ -24,8 +24,11 @@ func TestLedgerPRRuns(t *testing.T) {
 	follow := func(pr int, kind string, comment int64) run.Identity {
 		return run.Identity{Family: run.PRFollowUp, Workspace: "vigie", PR: pr, CommentKind: kind, CommentID: comment}
 	}
-	for _, id := range []run.Identity{follow(4, "r", 88), follow(4, "c", 77), follow(44, "r", 9),
-		{Family: run.PRReview, Workspace: "vigie", Reviewer: "pr-challenger", PR: 4, HeadSHA: "abc12345"}} {
+	review := run.Identity{Family: run.PRReview, Workspace: "vigie", Reviewer: "pr-challenger", PR: 4, HeadSHA: "abc12345"}
+	conflict := run.Identity{Family: run.PRConflict, Workspace: "vigie", PR: 4, Episode: "0123abcd-4-11111111-22222222",
+		HeadRef: "kelos/vikunja-9"}
+	implement := run.Identity{Family: run.VikunjaImplement, Project: "vigie", Workspace: "vigie", PR: 4, Variant: "v", TaskID: 9}
+	for _, id := range []run.Identity{follow(4, "r", 88), follow(4, "c", 77), follow(44, "r", 9), review, conflict, implement} {
 		dec := prRun(id)
 		dec.RequestKey = id.Name()
 		recorded(t, s, "k"+id.Name(), dec.RequestKey, dec)
@@ -34,15 +37,22 @@ func TestLedgerPRRuns(t *testing.T) {
 	storetest.Exec(t, dbURL, `UPDATE runs SET state = 'finished' WHERE name = $1`, finished)
 	led := s.Ledger(ctx)
 	got := led.PRRuns("vigie", 4)
+	families := map[string]run.Family{}
 	var names []string
 	for _, r := range got {
-		names = append(names, r.Name)
-		if r.Family != run.PRFollowUp || r.Workspace != "vigie" || r.PR != 4 || r.Active != (r.Name != finished) {
+		names, families[r.Name] = append(names, r.Name), r.Family
+		if r.Workspace != "vigie" || r.PR != 4 || r.Active != (r.Name != finished) {
 			t.Errorf("record %+v; want active unless finished", r)
 		}
 	}
-	if led.Err != nil || !slices.Equal(names, []string{"pr-followup-vigie-4-c77", "pr-followup-vigie-4-r88"}) {
-		t.Fatalf("PRRuns = %v (%v); want PR 4's follow-ups only, not PR 44's nor its review", names, led.Err)
+	want := []string{conflict.Name(), "pr-followup-vigie-4-c77", "pr-followup-vigie-4-r88", review.Name()}
+	if led.Err != nil || !slices.Equal(names, want) {
+		t.Fatalf("PRRuns = %v (%v); want PR 4's follow-ups, review and conflict run, not PR 44's nor the task's run",
+			names, led.Err)
+	}
+	if families[review.Name()] != run.PRReview || families[conflict.Name()] != run.PRConflict ||
+		families["pr-followup-vigie-4-r88"] != run.PRFollowUp {
+		t.Errorf("families %v", families)
 	}
 	if none := led.PRRuns("gordon", 4); len(none) != 0 {
 		t.Fatalf("another Workspace's PR 4 has runs %+v", none)

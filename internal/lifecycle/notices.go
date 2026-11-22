@@ -79,6 +79,9 @@ func (e *Executor) legacyPosted(a action.Action, body string) bool {
 		return notice.HasKind(body, notice.Restart, a.Detail)
 	case notice.RestartGaveUp:
 		return notice.GaveUpPosted(body, a.Detail)
+	case notice.Ready, notice.RoundLimit, notice.ChecksMissing, notice.MergeRefused:
+		h, err := notice.ParseHead(a.Detail)
+		return err == nil && notice.HeadPosted(body, a.Value, h)
 	case notice.PROpen, notice.Merged:
 		url, err := notice.PRURL(a.Detail)
 		if err != nil {
@@ -185,6 +188,9 @@ func (e *Executor) render(ctx context.Context, a action.Action, task int64) (str
 	case notice.PROpen, notice.Merged:
 		text, err := e.pullRequestText(a)
 		return text, 0, err
+	case notice.Ready, notice.RoundLimit, notice.ChecksMissing, notice.MergeRefused:
+		text, err := e.readinessText(a)
+		return text, 0, err
 	case notice.Restart:
 		text, err := e.restartText(ctx, a.Detail)
 		return text, 0, err
@@ -244,6 +250,30 @@ func (e *Executor) pullRequestText(a action.Action) (string, error) {
 		return notice.PROpenText(url, e.Policy.PRReadiness), nil
 	}
 	return notice.MergedText(url), nil
+}
+
+// readinessText is a readiness notice's text, from the head its detail
+// names.
+func (e *Executor) readinessText(a action.Action) (string, error) {
+	h, err := notice.ParseHead(a.Detail)
+	if err != nil {
+		return "", worker.Permanent(err)
+	}
+	var text string
+	switch a.Value {
+	case notice.Ready:
+		return notice.ReadyText(h), nil
+	case notice.MergeRefused:
+		return notice.MergeRefusedText(h), nil
+	case notice.RoundLimit:
+		text, err = notice.RoundLimitText(h)
+	default:
+		text, err = notice.ChecksMissingText(h, e.Policy.Readiness.MissingCheckMinutes)
+	}
+	if err != nil {
+		return "", worker.Permanent(err)
+	}
+	return text, nil
 }
 
 func (e *Executor) failedText(ctx context.Context, name string) (string, error) {

@@ -38,8 +38,14 @@ func (r Router) pullRequest(ev event.Event, st State, led Ledger) Decision {
 	if !ok {
 		return Decision{Outcome: Ignore, Reason: ReasonRepositoryNotConfigured}
 	}
-	if ev.Action == event.ActionConflict {
+	switch ev.Action {
+	case event.ActionConflict:
 		return r.conflict(ev, st, led)
+	case event.ActionReadiness:
+		if !ev.GitHub.Synthetic {
+			return Decision{Outcome: Ignore, Reason: ReasonActionNotRouted}
+		}
+		return r.readiness(ev, st, led, "")
 	}
 	reviews := slices.Contains(reviewActions, ev.Action)
 	if !reviews && !r.linksTask(ev) {

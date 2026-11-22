@@ -1,0 +1,16 @@
+{
+ "ready": "<p>READY TO MERGE: <a href=\"https://github.com/sperano/gordon/pull/12\">sperano/gordon#12</a>. HEAD <code>01234567</code>. CHECKS AND AUTOMATED REVIEW FOLLOW-UPS ARE FINISHED.</p><!-- kelos:ready -->",
+ "ready_escaped": "<p>READY TO MERGE: <a href=\"https://github.com/o/r&amp;x/pull/3\">o/r&amp;x#3</a>. HEAD <code>fedcba98</code>. CHECKS AND AUTOMATED REVIEW FOLLOW-UPS ARE FINISHED.</p><!-- kelos:ready -->",
+ "ready_signature": "READY TO MERGE: sperano/gordon#12. HEAD 01234567.",
+ "round_limit_one": "<p>ROUND LIMIT REACHED: <a href=\"https://github.com/sperano/gordon/pull/12\">sperano/gordon#12</a>. HEAD <code>01234567</code>. CHECKS ARE FINISHED, BUT THE REVIEW ROUND LIMIT STOPPED THE AUTOMATED FOLLOW-UPS WITH FINDINGS UNADDRESSED: <a href=\"https://github.com/sperano/gordon/pull/12#pullrequestreview-99\">gordon-cole-ai[bot] review 99</a>. REVIEW THEM, OR ASK FOR A FOLLOW-UP ON THE PULL REQUEST, BEFORE MERGING.</p><!-- kelos:round-limit -->",
+ "round_limit_many": "<p>ROUND LIMIT REACHED: <a href=\"https://github.com/sperano/gordon/pull/12\">sperano/gordon#12</a>. HEAD <code>01234567</code>. CHECKS ARE FINISHED, BUT THE REVIEW ROUND LIMIT STOPPED THE AUTOMATED FOLLOW-UPS WITH FINDINGS UNADDRESSED: <a href=\"https://github.com/sperano/gordon/pull/12#pullrequestreview-7\">cubic-dev-ai[bot] review 7</a>, <a href=\"https://github.com/sperano/gordon/pull/12#pullrequestreview-99\">gordon-cole-ai[bot] review 99</a>. REVIEW THEM, OR ASK FOR A FOLLOW-UP ON THE PULL REQUEST, BEFORE MERGING.</p><!-- kelos:round-limit -->",
+ "round_limit_signature": "ROUND LIMIT REACHED: sperano/gordon#12. HEAD 01234567.",
+ "checks_missing_one": "<p>CHECKS MISSING: <a href=\"https://github.com/sperano/vigie/pull/12\">sperano/vigie#12</a>. HEAD <code>01234567</code>. EXPECTED CI CHECKS STILL ABSENT AFTER 30 MINUTES: <code>check</code>. THE READY-TO-MERGE NOTICE WAITS FOR THEM. IS THE GITHUB ACTIONS WORKFLOW DISABLED, OUT OF MINUTES OR NOT TRIGGERED? IF A CHECK IS GONE FOR GOOD, DROP IT FROM <code>prReadiness.ciChecks</code>.</p><!-- kelos:checks-missing -->",
+ "checks_missing_many": "<p>CHECKS MISSING: <a href=\"https://github.com/sperano/nhl/pull/12\">sperano/nhl#12</a>. HEAD <code>01234567</code>. EXPECTED CI CHECKS STILL ABSENT AFTER 45 MINUTES: <code>Format</code>, <code>Test &lt;default&gt;</code>. THE READY-TO-MERGE NOTICE WAITS FOR THEM. IS THE GITHUB ACTIONS WORKFLOW DISABLED, OUT OF MINUTES OR NOT TRIGGERED? IF A CHECK IS GONE FOR GOOD, DROP IT FROM <code>prReadiness.ciChecks</code>.</p><!-- kelos:checks-missing -->",
+ "checks_missing_signature": "CHECKS MISSING: sperano/vigie#12. HEAD 01234567.",
+ "merge_refused": "<p>AUTO-MERGE REFUSED: <a href=\"https://github.com/sperano/gordon/pull/12\">sperano/gordon#12</a>. HEAD <code>01234567</code>. GITHUB SAID: <code>PUT https://api.github.com/repos/sperano/gordon/pulls/12/merge: HTTP 405 Method Not Allowed: {&quot;message&quot;:&quot;Pull Request is not mergeable&quot;,&quot;status&quot;:&quot;405&quot;}</code>. EVERY SCAN TRIES AGAIN; MERGE IT BY HAND OR REMOVE THE LABEL.</p><!-- kelos:merge-refused -->",
+ "merge_refused_signature": "AUTO-MERGE REFUSED: sperano/gordon#12. HEAD 01234567.",
+ "ntfy_marker": "🔔01234567",
+ "ntfy_pending": "⏳01234567-2",
+ "ntfy_retried": "🔁01234567-1"
+}

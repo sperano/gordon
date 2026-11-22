@@ -167,6 +167,50 @@ type Policy struct {
 	// (followUp.fixSuggestions.maxRounds).
 	MaxRoundsPerPR       int `json:"max_rounds_per_pr,omitempty"`
 	SuggestionsMaxRounds int `json:"suggestions_max_rounds,omitempty"`
+	// The PR readiness verdict labels (labels.readyToMerge,
+	// labels.roundLimitReached), "" for none, and the readiness gate.
+	ReadyToMergeLabel string    `json:"ready_to_merge_label,omitempty"`
+	RoundLimitLabel   string    `json:"round_limit_label,omitempty"`
+	Readiness         Readiness `json:"readiness,omitzero"`
+}
+
+// Readiness is the PR readiness gate (vikunjaSpawners.prReadiness): what
+// a head waits for before its READY TO MERGE verdict. The reviewer checks
+// it expects are the review/<reviewer> checks of the reviewers whose
+// patterns match the pull request's files, as the review family picks
+// them.
+type Readiness struct {
+	// CIChecks are each repository's required CI check names (ciChecks).
+	CIChecks map[string][]string `json:"ci_checks,omitempty"`
+	// CubicRepos are the repositories whose Cubic check counts
+	// (cubicRepos); elsewhere a stray one is ignored.
+	CubicRepos []string `json:"cubic_repos,omitempty"`
+	// SettleSeconds is how long after the last check completed a head
+	// waits (settleSeconds), so a review's follow-up can appear first.
+	SettleSeconds int `json:"settle_seconds,omitempty"`
+	// MissingCheckMinutes is how long a head may lack a CI check before
+	// its CHECKS MISSING notice (missingCheckNoticeMinutes; 0: none).
+	MissingCheckMinutes int `json:"missing_check_minutes,omitempty"`
+	// MergeMethod is the auto-merge's GitHub merge method (mergeMethod):
+	// merge, squash or rebase; "" is squash.
+	MergeMethod string `json:"merge_method,omitempty"`
+	// Notify sends a ready head to ntfy (notify.enabled).
+	Notify bool `json:"notify,omitempty"`
+}
+
+// MergeMethods are the merge methods GitHub accepts; DefaultMergeMethod
+// is auto_merge.DEFAULT_MERGE_METHOD.
+var MergeMethods = []string{"merge", "squash", "rebase"}
+
+// DefaultMergeMethod is the merge method of an empty MergeMethod.
+const DefaultMergeMethod = "squash"
+
+// Method is the merge method, the default for "".
+func (r Readiness) Method() string {
+	if r.MergeMethod == "" {
+		return DefaultMergeMethod
+	}
+	return r.MergeMethod
 }
 
 // Bot is a review bot whose findings start a PR follow-up.
