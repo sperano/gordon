@@ -70,6 +70,10 @@ type Config struct {
 	// failed legacy fetch was).
 	Comments         bool `json:"comments"`
 	CommentsMaxBytes int  `json:"comments_max_bytes,omitempty"`
+	// CoreLabels maps trusted Vikunja or GitHub label names to whole CPU
+	// cores requested by the agent container. Labels outside this map do
+	// nothing; two labels selecting different values refuse the Task.
+	CoreLabels map[string]int `json:"core_labels,omitempty"`
 	// CommonSecrets are the Secrets every profile may reference (runner
 	// credentials, Vikunja and Authentik identities, ...): the admission
 	// policy's commonSecrets.
