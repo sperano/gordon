@@ -68,7 +68,7 @@ func (r Router) review(ev event.Event, proj profile.Project, pr event.PullReques
 	fd := r.family(run.PRReview, proj.Name)
 	switch {
 	case slices.Contains(p.ReviewSkipAuthors, pr.Author):
-		r.skipChecks(&fd, sent, ReasonSkipAuthor)
+		r.skipChecks(&fd, sent, ReasonSkipAuthor, SkipByAuthor+pr.Author)
 	case !slices.Contains(p.PullRequestAuthors, pr.Author):
 		fd.Outcome, fd.Reason = Reject, ReasonAuthorNotAllowed
 	case sent.Draft:
@@ -107,7 +107,9 @@ func (r Router) reviewRuns(fd *FamilyDecision, proj profile.Project, pr event.Pu
 			return
 		}
 		fd.Runs = append(fd.Runs, rn)
-		fd.Actions = append(fd.Actions, action.New(action.SubmitTask, action.KelosTask(KelosNamespace, rn.Name), ""))
+		target := action.KelosTask(KelosNamespace, rn.Name)
+		submit := action.New(action.SubmitTask, target, "")
+		fd.Actions = append(fd.Actions, submit, action.New(action.SupersedeReviews, target, "").WaitFor(submit))
 	}
 	fd.Outcome = Dispatch
 	switch {
@@ -146,11 +148,22 @@ func (r Router) requiredChecks() []string {
 	return out
 }
 
-func (r Router) skipChecks(fd *FamilyDecision, pr event.PullRequest, reason string) {
+// Skipped-check details: why the PR is not reviewed, which the check's
+// summary names (review_skip.skip_reason).
+const (
+	SkipByAuthor = "author:"
+	SkipByLabel  = "label:"
+)
+
+// skipChecks posts each required review check as skipped on the head;
+// the action's detail is the skip reason its summary names.
+func (r Router) skipChecks(fd *FamilyDecision, pr event.PullRequest, reason, why string) {
 	fd.Outcome, fd.Reason = Act, reason
 	target := action.PullRequest(pr.Repository, pr.Number)
 	for _, check := range r.requiredChecks() {
-		fd.Actions = append(fd.Actions, action.New(action.SkippedChecks, target, check+"@"+pr.HeadSHA))
+		a := action.New(action.SkippedChecks, target, check+"@"+pr.HeadSHA)
+		a.Detail = why
+		fd.Actions = append(fd.Actions, a)
 	}
 }
 
@@ -160,7 +173,7 @@ func (r Router) skipChecks(fd *FamilyDecision, pr event.PullRequest, reason stri
 func (r Router) skipLabelled(fd *FamilyDecision, pr event.PullRequest) {
 	for _, prefix := range skipLabelBranches {
 		if strings.HasPrefix(pr.HeadRef, prefix) && pr.HeadRepo == pr.Repository {
-			r.skipChecks(fd, pr, ReasonNoReviewLabel)
+			r.skipChecks(fd, pr, ReasonNoReviewLabel, SkipByLabel+r.Config.Policy.NoReviewLabel)
 			return
 		}
 	}

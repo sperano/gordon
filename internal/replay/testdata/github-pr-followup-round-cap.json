@@ -1,0 +1,658 @@
+{
+  "description": "A review bot's blocking review on a PR that took its 50 review-bot rounds (start notices naming bot reviews) is capped: the round-cap notice, no run, no draft.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Event": "pull_request_review",
+      "X-GitHub-Delivery": "33333333-2222-3333-4444-000000000050"
+    },
+    "body": {
+      "action": "submitted",
+      "sender": {
+        "login": "gordon-cole-ai[bot]"
+      },
+      "repository": {
+        "full_name": "sperano/vigie"
+      },
+      "review": {
+        "id": 800001,
+        "body": "**Review verdict: blocking** (review/pr-challenger)\n\nOne finding.",
+        "commit_id": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+      },
+      "pull_request": {
+        "number": 42,
+        "state": "open",
+        "draft": false,
+        "merged": false,
+        "user": {
+          "login": "sperano"
+        },
+        "head": {
+          "ref": "kelos/vikunja-4401",
+          "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          "repo": {
+            "full_name": "sperano/vigie"
+          }
+        },
+        "base": {
+          "ref": "main"
+        },
+        "labels": [
+          {
+            "name": "kelos:claude-sonnet"
+          }
+        ]
+      }
+    }
+  },
+  "state": {
+    "pull_request": {
+      "repository": "sperano/vigie",
+      "number": 42,
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "author": "sperano",
+      "head_ref": "kelos/vikunja-4401",
+      "head_sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "head_repo": "sperano/vigie",
+      "base_ref": "main",
+      "labels": [
+        "kelos:claude-sonnet"
+      ],
+      "files": []
+    },
+    "history": {
+      "reviews": [
+        {
+          "id": 700001,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head01"
+        },
+        {
+          "id": 700002,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head02"
+        },
+        {
+          "id": 700003,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head03"
+        },
+        {
+          "id": 700004,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head04"
+        },
+        {
+          "id": 700005,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head05"
+        },
+        {
+          "id": 700006,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head06"
+        },
+        {
+          "id": 700007,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head07"
+        },
+        {
+          "id": 700008,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head08"
+        },
+        {
+          "id": 700009,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head09"
+        },
+        {
+          "id": 700010,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head10"
+        },
+        {
+          "id": 700011,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head11"
+        },
+        {
+          "id": 700012,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head12"
+        },
+        {
+          "id": 700013,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head13"
+        },
+        {
+          "id": 700014,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head14"
+        },
+        {
+          "id": 700015,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head15"
+        },
+        {
+          "id": 700016,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head16"
+        },
+        {
+          "id": 700017,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head17"
+        },
+        {
+          "id": 700018,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head18"
+        },
+        {
+          "id": 700019,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head19"
+        },
+        {
+          "id": 700020,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head20"
+        },
+        {
+          "id": 700021,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head21"
+        },
+        {
+          "id": 700022,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head22"
+        },
+        {
+          "id": 700023,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head23"
+        },
+        {
+          "id": 700024,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head24"
+        },
+        {
+          "id": 700025,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head25"
+        },
+        {
+          "id": 700026,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head26"
+        },
+        {
+          "id": 700027,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head27"
+        },
+        {
+          "id": 700028,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head28"
+        },
+        {
+          "id": 700029,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head29"
+        },
+        {
+          "id": 700030,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head30"
+        },
+        {
+          "id": 700031,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head31"
+        },
+        {
+          "id": 700032,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head32"
+        },
+        {
+          "id": 700033,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head33"
+        },
+        {
+          "id": 700034,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head34"
+        },
+        {
+          "id": 700035,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head35"
+        },
+        {
+          "id": 700036,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head36"
+        },
+        {
+          "id": 700037,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head37"
+        },
+        {
+          "id": 700038,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head38"
+        },
+        {
+          "id": 700039,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head39"
+        },
+        {
+          "id": 700040,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head40"
+        },
+        {
+          "id": 700041,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head41"
+        },
+        {
+          "id": 700042,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head42"
+        },
+        {
+          "id": 700043,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head43"
+        },
+        {
+          "id": 700044,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head44"
+        },
+        {
+          "id": 700045,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head45"
+        },
+        {
+          "id": 700046,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head46"
+        },
+        {
+          "id": 700047,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head47"
+        },
+        {
+          "id": 700048,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head48"
+        },
+        {
+          "id": 700049,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head49"
+        },
+        {
+          "id": 700050,
+          "author": "cubic-dev-ai[bot]",
+          "body": "**2 issues found** across 1 file",
+          "commit_id": "head50"
+        },
+        {
+          "id": 800001,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: blocking** (review/pr-challenger)\n\nOne finding.",
+          "commit_id": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+        }
+      ],
+      "comments": [
+        {
+          "id": 900001,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700001` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700001 -->"
+        },
+        {
+          "id": 900002,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700002` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700002 -->"
+        },
+        {
+          "id": 900003,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700003` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700003 -->"
+        },
+        {
+          "id": 900004,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700004` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700004 -->"
+        },
+        {
+          "id": 900005,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700005` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700005 -->"
+        },
+        {
+          "id": 900006,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700006` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700006 -->"
+        },
+        {
+          "id": 900007,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700007` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700007 -->"
+        },
+        {
+          "id": 900008,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700008` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700008 -->"
+        },
+        {
+          "id": 900009,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700009` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700009 -->"
+        },
+        {
+          "id": 900010,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700010` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700010 -->"
+        },
+        {
+          "id": 900011,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700011` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700011 -->"
+        },
+        {
+          "id": 900012,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700012` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700012 -->"
+        },
+        {
+          "id": 900013,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700013` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700013 -->"
+        },
+        {
+          "id": 900014,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700014` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700014 -->"
+        },
+        {
+          "id": 900015,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700015` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700015 -->"
+        },
+        {
+          "id": 900016,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700016` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700016 -->"
+        },
+        {
+          "id": 900017,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700017` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700017 -->"
+        },
+        {
+          "id": 900018,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700018` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700018 -->"
+        },
+        {
+          "id": 900019,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700019` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700019 -->"
+        },
+        {
+          "id": 900020,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700020` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700020 -->"
+        },
+        {
+          "id": 900021,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700021` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700021 -->"
+        },
+        {
+          "id": 900022,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700022` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700022 -->"
+        },
+        {
+          "id": 900023,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700023` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700023 -->"
+        },
+        {
+          "id": 900024,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700024` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700024 -->"
+        },
+        {
+          "id": 900025,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700025` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700025 -->"
+        },
+        {
+          "id": 900026,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700026` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700026 -->"
+        },
+        {
+          "id": 900027,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700027` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700027 -->"
+        },
+        {
+          "id": 900028,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700028` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700028 -->"
+        },
+        {
+          "id": 900029,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700029` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700029 -->"
+        },
+        {
+          "id": 900030,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700030` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700030 -->"
+        },
+        {
+          "id": 900031,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700031` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700031 -->"
+        },
+        {
+          "id": 900032,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700032` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700032 -->"
+        },
+        {
+          "id": 900033,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700033` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700033 -->"
+        },
+        {
+          "id": 900034,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700034` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700034 -->"
+        },
+        {
+          "id": 900035,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700035` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700035 -->"
+        },
+        {
+          "id": 900036,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700036` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700036 -->"
+        },
+        {
+          "id": 900037,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700037` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700037 -->"
+        },
+        {
+          "id": 900038,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700038` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700038 -->"
+        },
+        {
+          "id": 900039,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700039` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700039 -->"
+        },
+        {
+          "id": 900040,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700040` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700040 -->"
+        },
+        {
+          "id": 900041,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700041` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700041 -->"
+        },
+        {
+          "id": 900042,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700042` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700042 -->"
+        },
+        {
+          "id": 900043,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700043` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700043 -->"
+        },
+        {
+          "id": 900044,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700044` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700044 -->"
+        },
+        {
+          "id": 900045,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700045` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700045 -->"
+        },
+        {
+          "id": 900046,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700046` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700046 -->"
+        },
+        {
+          "id": 900047,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700047` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700047 -->"
+        },
+        {
+          "id": 900048,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700048` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700048 -->"
+        },
+        {
+          "id": 900049,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700049` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700049 -->"
+        },
+        {
+          "id": 900050,
+          "author": "gordon-cole-ai[bot]",
+          "body": "A KELOS AGENT HAS STARTED THIS FOLLOW-UP ROUND.\n\n| | |\n|---|---|\n| KELOS TASK | `pr-followup-vigie-42-r700050` |\n\nCOFFEE TIME! REPORT TO FOLLOW.\n\n<!-- kelos:start task=pr-followup-vigie-42-r700050 -->"
+        }
+      ]
+    }
+  },
+  "ledger": {},
+  "legacy": {
+    "tasks": [
+      "pr-followup-vigie-42-r800001"
+    ],
+    "divergence": "Gordon decides the review-round cap before submitting: legacy created the follow-up Task, whose review-round-cap init container failed it before the model started."
+  },
+  "expect": {
+    "outcome": "act",
+    "delivery_key": "github/delivery/33333333-2222-3333-4444-000000000050",
+    "request_key": "github/sperano/vigie/r/800001",
+    "families": [
+      {
+        "family": "pr-followup",
+        "project": "vigie",
+        "owner": "legacy",
+        "execute": false,
+        "outcome": "act",
+        "reason": "review-round-cap",
+        "actions": [
+          {
+            "key": "post-notice:github/sperano/vigie/pull/42:review-cap",
+            "kind": "post-notice",
+            "target": "github/sperano/vigie/pull/42",
+            "value": "review-cap"
+          }
+        ]
+      }
+    ]
+  }
+}

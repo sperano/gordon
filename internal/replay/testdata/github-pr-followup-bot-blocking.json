@@ -16,7 +16,8 @@
       },
       "review": {
         "id": 800001,
-        "body": "**Review verdict: blocking** (review/pr-challenger)\n\nOne finding."
+        "body": "**Review verdict: blocking** (review/pr-challenger)\n\nOne finding.",
+        "commit_id": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
       },
       "pull_request": {
         "number": 42,
@@ -60,6 +61,17 @@
         "kelos:claude-sonnet"
       ],
       "files": []
+    },
+    "history": {
+      "reviews": [
+        {
+          "id": 800001,
+          "author": "gordon-cole-ai[bot]",
+          "body": "**Review verdict: blocking** (review/pr-challenger)\n\nOne finding.",
+          "commit_id": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+        }
+      ],
+      "comments": []
     }
   },
   "ledger": {},
@@ -129,7 +141,16 @@
           {
             "key": "convert-to-draft:github/sperano/vigie/pull/42",
             "kind": "convert-to-draft",
-            "target": "github/sperano/vigie/pull/42"
+            "target": "github/sperano/vigie/pull/42",
+            "after": "add-label:github/sperano/vigie/pull/42:kelos:follow-up"
+          },
+          {
+            "key": "post-notice:github/sperano/vigie/pull/42:start:pr-followup-vigie-42-r800001",
+            "kind": "post-notice",
+            "target": "github/sperano/vigie/pull/42",
+            "value": "start",
+            "detail": "pr-followup-vigie-42-r800001",
+            "after": "submit-task:kelos/kelos-agents/pr-followup-vigie-42-r800001"
           }
         ]
       }

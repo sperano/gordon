@@ -99,6 +99,16 @@ type State struct {
 	// chain label (Reads.Chain).
 	Subtasks []event.Task        `json:"subtasks,omitempty"`
 	Comments []event.TaskComment `json:"comments,omitempty"`
+	// History is a pull request's fresh reviews and conversation
+	// comments, read only for a review bot's request while a round cap is
+	// configured (Reads.History): the cap counts the rounds from them.
+	History *PRHistory `json:"history,omitempty"`
+}
+
+// PRHistory is what the review-round caps count rounds from.
+type PRHistory struct {
+	Reviews  []event.Review       `json:"reviews"`
+	Comments []event.IssueComment `json:"comments"`
 }
 
 // RunRecord is the ledger's record of a run: Active while its Kelos Task
@@ -111,6 +121,9 @@ type RunRecord struct {
 	// Family and TaskID locate the run on its Vikunja task.
 	Family run.Family `json:"family,omitempty"`
 	TaskID int64      `json:"task_id,omitempty"`
+	// Workspace and PR locate a PR follow-up run on its pull request.
+	Workspace string `json:"workspace,omitempty"`
+	PR        int    `json:"pr,omitempty"`
 }
 
 // Ledger is the durable record of handled deliveries, requests and runs.
@@ -120,6 +133,8 @@ type Ledger interface {
 	Run(name string) (RunRecord, bool)
 	// TaskRuns are the runs of a Vikunja task in the given families.
 	TaskRuns(taskID int64, families []run.Family) []RunRecord
+	// PRRuns are the PR follow-up runs of a Workspace's pull request.
+	PRRuns(workspace string, pr int) []RunRecord
 }
 
 // overall is the strongest family outcome, by precedence.

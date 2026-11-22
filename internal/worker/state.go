@@ -21,6 +21,15 @@ type PullRequestReader interface {
 	PullRequest(ctx context.Context, repo string, number int, withFiles bool) (event.PullRequest, error)
 }
 
+// HistoryReader reads what the review-round caps count: a pull request's
+// reviews and conversation comments.
+type HistoryReader interface {
+	History(ctx context.Context, repo string, number int) ([]event.Review, []event.IssueComment, error)
+}
+
+// errNoHistory is a history read with no reader configured.
+var errNoHistory = errors.New("no pull-request history reader")
+
 // StateReader reads the fresh upstream state a delivery's decision needs:
 // only what the router would read (route.Router.Reads), so a delivery the
 // router refuses before looking at the state (an unconfigured repository,
@@ -28,9 +37,10 @@ type PullRequestReader interface {
 // handled costs no API call. A failed read leaves that part of the state
 // nil, which the router answers with retry.
 type StateReader struct {
-	Config profile.Config
-	Tasks  TaskReader
-	PRs    PullRequestReader
+	Config  profile.Config
+	Tasks   TaskReader
+	PRs     PullRequestReader
+	History HistoryReader
 }
 
 // Read returns the state and the reads' errors, joined. led answers
@@ -50,6 +60,9 @@ func (s StateReader) Read(ctx context.Context, ev event.Event, led route.Ledger)
 			st.PullRequest = &p
 		}
 	}
+	if need.History {
+		errs = append(errs, s.readHistory(ctx, ev, &st))
+	}
 	if need.Task != 0 {
 		if t, err := s.Tasks.Task(ctx, need.Task); err != nil {
 			errs = append(errs, err)
@@ -61,6 +74,21 @@ func (s StateReader) Read(ctx context.Context, ev event.Event, led route.Ledger)
 		errs = append(errs, s.readChain(ctx, &st))
 	}
 	return st, errors.Join(errs...)
+}
+
+// readHistory reads the pull request's reviews and comments; a failure
+// leaves the history unread, which the router answers with retry.
+func (s StateReader) readHistory(ctx context.Context, ev event.Event, st *route.State) error {
+	if s.History == nil {
+		return errNoHistory
+	}
+	gh := ev.GitHub
+	reviews, comments, err := s.History.History(ctx, gh.Repository, gh.PullRequest.Number)
+	if err != nil {
+		return err
+	}
+	st.History = &route.PRHistory{Reviews: reviews, Comments: comments}
+	return nil
 }
 
 // chainReadFanOut bounds the subtask reads of one chain decision in

@@ -67,9 +67,18 @@ func (f *fakeTasks) Task(_ context.Context, id int64) (event.Task, error) {
 
 // fakePRs serves pull requests by repo#number.
 type fakePRs struct {
-	mu    sync.Mutex
-	prs   map[string]event.PullRequest
-	reads int
+	mu      sync.Mutex
+	prs     map[string]event.PullRequest
+	history map[string]route.PRHistory
+	reads   int
+}
+
+// History serves the recorded history of repo#number, empty without one.
+func (f *fakePRs) History(_ context.Context, repo string, n int) ([]event.Review, []event.IssueComment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	h := f.history[fmt.Sprintf("%s#%d", repo, n)]
+	return h.Reviews, h.Comments, nil
 }
 
 func (f *fakePRs) PullRequest(_ context.Context, repo string, n int, _ bool) (event.PullRequest, error) {
@@ -104,11 +113,12 @@ func newEnv(t *testing.T, ownership rollout.Table) *env {
 	s, dbURL := storetest.Open(t)
 	logs := &bytes.Buffer{}
 	m := metrics.New()
-	tasks, prs := &fakeTasks{tasks: map[int64]event.Task{}, comments: map[int64][]event.TaskComment{}}, &fakePRs{prs: map[string]event.PullRequest{}}
+	tasks, prs := &fakeTasks{tasks: map[int64]event.Task{}, comments: map[int64][]event.TaskComment{}}, &fakePRs{prs: map[string]event.PullRequest{},
+		history: map[string]route.PRHistory{}}
 	cfg := profile.Defaults()
 	proc := &Processor{
 		Store: s, Router: route.Router{Config: cfg, Ownership: ownership},
-		State: StateReader{Config: cfg, Tasks: tasks, PRs: prs},
+		State: StateReader{Config: cfg, Tasks: tasks, PRs: prs, History: prs},
 		Owner: "test-worker", Concurrency: testConcurrency, LeaseTTL: testTTL, MaxAttempts: testMaxAttempts,
 		Backoff: testBackoff, Projects: &Limiter{}, DeferDelay: time.Second,
 		Metrics: m, Log: logging.New(logs, slog.LevelDebug),

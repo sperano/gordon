@@ -22,7 +22,7 @@ var Outcomes = []string{string(route.Dispatch), string(route.Act), string(route.
 var ActionKinds = []string{string(action.SubmitTask), string(action.React), string(action.AddLabel),
 	string(action.RemoveLabel), string(action.MoveBucket), string(action.MarkDone), string(action.PostNotice),
 	string(action.ConvertDraft), string(action.SkippedChecks), string(action.Assign), string(action.SyncLabel),
-	string(action.CancelRun)}
+	string(action.CancelRun), string(action.SupersedeReviews)}
 
 // QueueStates are the states each queue reports, zero when empty; any
 // other state is summed under Other.

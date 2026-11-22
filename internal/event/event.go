@@ -149,6 +149,9 @@ type GitHub struct {
 	// review an inline comment belongs to (0 otherwise).
 	CommentURL string
 	ReviewID   int64
+	// ReviewCommitID is a submitted review's commit_id: the head it
+	// reviewed, one suggestions round per head.
+	ReviewCommitID string
 	// OnPullRequest is false for an issue_comment on a plain issue.
 	OnPullRequest bool
 	PullRequest   PullRequest

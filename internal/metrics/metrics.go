@@ -60,6 +60,8 @@ type Metrics struct {
 
 	VikunjaReconciles      *prometheus.CounterVec
 	VikunjaReconcileQueued prometheus.Counter
+	GitHubReconciles       *prometheus.CounterVec
+	GitHubReconcileQueued  prometheus.Counter
 }
 
 // New registers Gordon's metrics, with the Go and process collectors, on
@@ -113,15 +115,19 @@ func New() *Metrics {
 		m.QueueDepth, m.QueueOldest, m.ActionResults, m.ActionDuration, m.ActionQueueLatency,
 		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions, m.ShadowComparisons,
 		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
-		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued)
+		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued,
+		m.GitHubReconciles, m.GitHubReconcileQueued)
 	return m
 }
 
-// lifecycle creates the Vikunja reconciliation's metrics.
+// lifecycle creates the Vikunja and GitHub reconciliations' metrics.
 func (m *Metrics) lifecycle() {
 	m.VikunjaReconciles = counter("vikunja_reconcile_runs_total", "Vikunja reconciliation passes by result.", "result")
 	m.VikunjaReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
 		Name: "vikunja_reconcile_queued_total", Help: "Synthetic deliveries the Vikunja reconciliation queued."})
+	m.GitHubReconciles = counter("github_reconcile_runs_total", "GitHub reconciliation passes by result.", "result")
+	m.GitHubReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
+		Name: "github_reconcile_queued_total", Help: "Synthetic deliveries the GitHub reconciliation queued."})
 }
 
 func counter(name, help string, labels ...string) *prometheus.CounterVec {

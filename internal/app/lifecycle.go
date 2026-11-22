@@ -9,6 +9,7 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/config"
+	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/metrics"
@@ -33,17 +34,43 @@ func agentUsers(cfg config.Worker) []string {
 	return out
 }
 
-// lifecycleExecutors registers the Vikunja writer (with a write token)
-// under each kind it performs, routed by provider: the same kinds on
-// GitHub targets stay deferred until Gordon 08; and the run cancellation
-// (with Kelos).
-func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, s *store.Store, k *kelos.Client) {
+// lifecycleExecutors registers the run cancellation and the review
+// supersede (with Kelos), and under each kind the Vikunja writer (with a
+// write token) and the GitHub writer (with the App) perform, routed by
+// the target's provider: a provider without its writer defers the
+// action, which stays queued.
+func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, s *store.Store, k *kelos.Client,
+	app *githubapp.App) {
 	if k != nil {
 		out[action.CancelRun] = &submit.Canceller{Store: s, Kelos: k}
+		out[action.SupersedeReviews] = &submit.Superseder{Store: s, Kelos: k}
 	}
+	providers := map[action.Kind]map[string]worker.Executor{}
+	register := func(provider string, ex worker.Executor, kinds []action.Kind) {
+		for _, kind := range kinds {
+			if providers[kind] == nil {
+				providers[kind] = map[string]worker.Executor{}
+			}
+			providers[kind][provider] = ex
+		}
+	}
+	if ex := vikunjaExecutor(cfg, s, k); ex != nil {
+		register(upstream.ProviderVikunja, ex, vikunjaKinds)
+	}
+	if app != nil {
+		register(upstream.ProviderGitHub, githubExecutor(cfg, s, app), githubKinds)
+	}
+	for kind, byProvider := range providers {
+		out[kind] = worker.ByProvider{Executors: byProvider, Delay: cfg.Backoff.Max}
+	}
+}
+
+// vikunjaExecutor is the Vikunja writer's executor, nil without a write
+// token.
+func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client) *lifecycle.Executor {
 	l := cfg.Lifecycle
 	if l.WriteToken == "" {
-		return
+		return nil
 	}
 	ex := &lifecycle.Executor{
 		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + l.WriteToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
@@ -54,10 +81,7 @@ func lifecycleExecutors(out map[action.Kind]worker.Executor, cfg config.Worker, 
 	if k != nil {
 		ex.Messages = taskMessages(k)
 	}
-	for _, kind := range vikunjaKinds {
-		out[kind] = worker.ByProvider{Executors: map[string]worker.Executor{upstream.ProviderVikunja: ex},
-			Delay: cfg.Backoff.Max}
-	}
+	return ex
 }
 
 // taskMessages reads a Task's status message for its failure notice: ""

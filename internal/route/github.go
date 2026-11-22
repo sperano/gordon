@@ -7,6 +7,7 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/notice"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/run"
 )
@@ -71,8 +72,18 @@ func (r Router) prComment(ev event.Event, st State, led Ledger) Decision {
 	kind := string(gh.CommentKind)
 	id := run.Identity{Family: run.PRFollowUp, Project: proj.Name, Workspace: proj.Workspace, Variant: variant,
 		PR: pr.Number, CommentKind: kind, CommentID: gh.CommentID, HeadRef: pr.HeadRef}
-	if _, _, ok := r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: profile.ModeFollowUp}); ok {
+	if _, dup := existing(led, id.Name()); !dup && !owner && r.capsOn() {
+		if st.History == nil {
+			fd.Outcome, fd.Reason = Retry, ReasonStateUnavailable
+			return Decision{Families: []FamilyDecision{fd}}
+		}
+		if r.roundCap(&fd, ev, st.History, led, proj) {
+			return Decision{Families: []FamilyDecision{fd}}
+		}
+	}
+	if rn, submit, ok := r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: profile.ModeFollowUp}); ok {
 		r.followUpWrites(&fd, owner, gh, pr, true)
+		fd.Actions = append(fd.Actions, action.Notice(action.PullRequest(gh.Repository, pr.Number), notice.Start, rn.Name).WaitFor(submit))
 	} else if fd.Outcome == Duplicate {
 		r.recoverWrites(&fd, owner, gh, pr)
 	}
@@ -203,7 +214,8 @@ func (r Router) recoverWrites(fd *FamilyDecision, owner bool, gh *event.GitHub, 
 }
 
 // followUpWrites adds the reactor's writes: 👀 on an owner request, and
-// the draft label and draft conversion when draft is set. The 👀 is
+// the draft label and, once labelled, the draft conversion when draft is
+// set (github_reactor.GitHub.draft). The 👀 is
 // GraphQL addReaction on the comment's or review's node id, its Detail
 // (REST has no reactions on a submitted review), as github_reactor.py
 // does; a delivery without a node id gets none, as in legacy.
@@ -216,7 +228,7 @@ func (r Router) followUpWrites(fd *FamilyDecision, owner bool, gh *event.GitHub,
 	}
 	if label := r.Config.Policy.DraftLabel; draft && label != "" && !pr.Draft {
 		target := action.PullRequest(gh.Repository, pr.Number)
-		fd.Actions = append(fd.Actions, action.New(action.AddLabel, target, label),
-			action.New(action.ConvertDraft, target, ""))
+		labelled := action.New(action.AddLabel, target, label)
+		fd.Actions = append(fd.Actions, labelled, action.New(action.ConvertDraft, target, "").WaitFor(labelled))
 	}
 }

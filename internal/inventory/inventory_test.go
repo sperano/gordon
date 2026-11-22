@@ -291,13 +291,77 @@ func TestVikunjaFamiliesPublishTheirSwitch(t *testing.T) {
 // families that stay (`_worker.tpl`), so they are not checked.
 func TestVikunjaEntriesMatchTheirSwitches(t *testing.T) {
 	legacy := map[run.Family][]string{}
-	for _, s := range Switches() {
+	for _, s := range append(Switches(), GitHubSwitches()...) {
 		legacy[s.Family] = s.Legacy
 	}
 	for _, e := range Entries() {
 		for _, f := range e.Families {
 			if sw, ok := legacy[f]; ok && len(e.Legacy) > 0 && !slices.Contains(sw, e.Legacy[0]) {
 				t.Errorf("%s acts for %s, but its switch's legacy %v omits %s", e.ID, f, sw, e.Legacy[0])
+			}
+		}
+	}
+}
+
+// TestGitHubFamiliesPublishTheirSwitch: every GitHub family names the
+// legacy components the cutover (09) turns off and what Gordon needs,
+// once, each component changed by stage 08 or 09.
+func TestGitHubFamiliesPublishTheirSwitch(t *testing.T) {
+	github := []run.Family{run.PRFollowUp, run.PRReview, run.PROpen, run.MergeClose}
+	var seen []run.Family
+	for _, s := range GitHubSwitches() {
+		if slices.Contains(seen, s.Family) {
+			t.Errorf("%s: two switches", s.Family)
+		}
+		seen = append(seen, s.Family)
+		if len(s.Legacy) == 0 || s.Off == "" || len(s.Needs) == 0 {
+			t.Errorf("%s: incomplete switch %+v", s.Family, s)
+		}
+		for _, p := range s.Legacy {
+			if !stagedBetween(p, StageGitHub, StageGitHubCut) {
+				t.Errorf("%s: legacy %s is changed by neither stage 08 nor 09", s.Family, p)
+			}
+		}
+	}
+	if !slices.Equal(seen, github) {
+		t.Errorf("GitHub switches %v, want %v", seen, github)
+	}
+}
+
+// TestGitHubSwitchesNameTheirFamilysInitContainers: a GitHub switch names,
+// in backticks, exactly the init containers that act for its family, so
+// the printed table and DEPLOYMENT.md list the same containers per family.
+func TestGitHubSwitchesNameTheirFamilysInitContainers(t *testing.T) {
+	want := map[run.Family][]string{
+		run.PRFollowUp: {"announce-github-start", "pr-task-dedup", "review-round-cap"},
+		run.PRReview:   {"pr-review-supersede", "pr-task-dedup"},
+	}
+	var all []string
+	for _, e := range Entries() {
+		if e.Kind == InitContainer {
+			all = append(all, e.ID)
+		}
+	}
+	for _, s := range GitHubSwitches() {
+		needs := strings.Join(s.Needs, "; ")
+		var got []string
+		for _, id := range all {
+			if strings.Contains(needs, "`"+id+"`") {
+				got = append(got, id)
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want[s.Family]) {
+			t.Errorf("%s needs name init containers %v, want %v", s.Family, got, want[s.Family])
+		}
+	}
+	for _, e := range Entries() {
+		if e.Kind != InitContainer {
+			continue
+		}
+		for _, f := range e.Families {
+			if w, ok := want[f]; ok && !slices.Contains(w, e.ID) {
+				t.Errorf("init container %s acts for %s but is not expected in its switch", e.ID, f)
 			}
 		}
 	}

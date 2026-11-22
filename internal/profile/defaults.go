@@ -116,6 +116,12 @@ func stackReviewers() map[string]Reviewer {
 	}
 }
 
+// The review-round caps of values-hollingsworth.yaml (followUp).
+const (
+	defaultMaxRoundsPerPR       = 50
+	defaultSuggestionsMaxRounds = 4
+)
+
 func policy() Policy {
 	return Policy{
 		VikunjaOwner: "eric", GitHubOwner: "sperano", Trigger: "/gordon",
@@ -131,6 +137,7 @@ func policy() Policy {
 		VikunjaServiceUser: "gordon", VikunjaWebURL: "https://vikunja.spe.quebec", CancelReaction: "👎",
 		VariantLabelPrefix: "kelos:", DraftLabel: "kelos:follow-up",
 		FixSuggestionsLabel: "kelos:fix-suggestions", NoReviewLabel: "kelos:no-review",
+		MaxRoundsPerPR: defaultMaxRoundsPerPR, SuggestionsMaxRounds: defaultSuggestionsMaxRounds,
 		ReviewBots: []Bot{
 			{Login: "cubic-dev-ai[bot]", FindingsPattern: `\*\*[1-9][0-9]* issues? found\b`},
 			{Login: "gordon-cole-ai[bot]", FindingsPattern: `(?m)^\*\*Review verdict: blocking\*\*`,

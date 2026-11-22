@@ -23,8 +23,8 @@ type Roles struct {
 // never deletes, and it never changes the schema. The inbox is the
 // receiver's for webhooks: the worker inserts only its own synthetic
 // deliveries (workerInboxInsert: requeues and reconciliation, never a
-// body digest; a row policy refuses any row that is not a Vikunja
-// delivery with the synthetic header), and it updates only the queue
+// body digest; a row policy refuses any row that is not a Vikunja or
+// GitHub delivery with the synthetic header), and it updates only the queue
 // bookkeeping and the body (pruning).
 var workerTables = []string{"decisions", "requests", "runs", "actions", "shadow_tasks"}
 
@@ -52,11 +52,13 @@ const workerInboxInsert = "source, delivery_key, request_key, kind, scope, heade
 
 // Row policies on the inbox: every role may use any row (the column
 // grants decide what), except that the worker may insert only synthetic
-// Vikunja deliveries, which a column grant cannot express.
+// Vikunja and GitHub deliveries (the requeues and the reconciliations),
+// which a column grant cannot express.
 const (
 	inboxAnyRowPolicy     = "gordon_any_row"
 	workerInsertPolicy    = "gordon_worker_synthetic_only"
-	workerInsertCondition = "source = '" + string(event.SourceVikunja) + "' AND headers ? '" + SyntheticHeader + "'"
+	workerInsertCondition = "source IN ('" + string(event.SourceVikunja) + "', '" + string(event.SourceGitHub) +
+		"') AND headers ? '" + SyntheticHeader + "'"
 )
 
 // inboxPolicies (re)creates the inbox's row policies: the permissive one

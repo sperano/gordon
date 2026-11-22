@@ -110,3 +110,19 @@ func (s *Store) QueueRunActions(ctx context.Context, inboxID int64, family run.F
 		return insertActions(ctx, tx, inboxID, &fd)
 	})
 }
+
+// OlderReviews returns the unfinished review runs of the named review
+// run's pull request, by the same reviewer in the same Workspace, created
+// before it: the reviews of older heads it supersedes.
+func (s *Store) OlderReviews(ctx context.Context, name string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT o.name FROM runs o, runs r
+		WHERE r.name = $1 AND o.name <> r.name AND o.family = $2 AND r.family = $2 AND o.state <> 'finished'
+		  AND o.identity->>'workspace' = r.identity->>'workspace'
+		  AND o.identity->>'reviewer' = r.identity->>'reviewer'
+		  AND o.identity->>'pr' = r.identity->>'pr' AND o.created_at < r.created_at
+		ORDER BY o.name`, name, string(run.PRReview))
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
