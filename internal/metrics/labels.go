@@ -23,7 +23,8 @@ var ActionKinds = []string{string(action.SubmitTask), string(action.React), stri
 	string(action.RemoveLabel), string(action.MoveBucket), string(action.MarkDone), string(action.PostNotice),
 	string(action.ConvertDraft), string(action.SkippedChecks), string(action.Assign), string(action.SyncLabel),
 	string(action.AssignIfUnassigned),
-	string(action.CancelRun), string(action.SupersedeReviews), string(action.Notify), string(action.MergePullRequest)}
+	string(action.CancelRun), string(action.SupersedeReviews), string(action.Notify), string(action.MergePullRequest),
+	string(action.PublishCost)}
 
 // QueueStates are the states each queue reports, zero when empty; any
 // other state is summed under Other.

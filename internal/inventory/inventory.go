@@ -49,9 +49,13 @@ const (
 	Migrate Decision = "migrate"
 	Retain  Decision = "retain"
 	Retire  Decision = "retire"
+	// Add is a responsibility Gordon takes on that nothing in legacy
+	// had: it has no legacy files, and its rollback turns it off.
+	Add Decision = "add"
 )
 
-// Entry is one legacy dispatch family, hook or reconciler.
+// Entry is one legacy dispatch family, hook or reconciler, or a
+// responsibility Gordon adds (Decision Add, no legacy files).
 type Entry struct {
 	ID       string
 	Kind     Kind
@@ -145,6 +149,9 @@ func stages(e Entry) string {
 }
 
 func files(paths []string) string {
+	if len(paths) == 0 {
+		return "–"
+	}
 	quoted := make([]string, len(paths))
 	for i, p := range paths {
 		quoted[i] = "`" + p + "`"

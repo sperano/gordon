@@ -69,10 +69,10 @@ func depthTotal(m *Metrics) float64 {
 	return total
 }
 
-// TestReadinessKindsAreLabelled: the readiness actions keep their own
+// TestReadinessKindsAreLabelled: the readiness and cost actions keep their own
 // kind label instead of falling into Other.
 func TestReadinessKindsAreLabelled(t *testing.T) {
-	for _, k := range []action.Kind{action.Notify, action.MergePullRequest} {
+	for _, k := range []action.Kind{action.Notify, action.MergePullRequest, action.PublishCost} {
 		if got := Bound(string(k), ActionKinds); got != string(k) {
 			t.Errorf("Bound(%q) = %q", k, got)
 		}

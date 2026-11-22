@@ -24,3 +24,14 @@ func TestKeysAreStableAndDistinct(t *testing.T) {
 		t.Error("two notice reasons share a key")
 	}
 }
+
+func TestCostNoticeKeyPerRevision(t *testing.T) {
+	a := CostNotice(5, "vikunja-gordon-claude-opus-5", 41, 2)
+	if a.Key != "publish-cost:vikunja/task/5:vikunja-gordon-claude-opus-5:41:2" || a.Kind != PublishCost ||
+		a.Target != "vikunja/task/5" || a.Value != "vikunja-gordon-claude-opus-5" || a.Detail != "41:2" {
+		t.Errorf("CostNotice = %+v", a)
+	}
+	if b := CostNotice(5, "vikunja-gordon-claude-opus-5", 42, 2); b.Key == a.Key {
+		t.Error("two generations share a key")
+	}
+}

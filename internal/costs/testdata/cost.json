@@ -1,0 +1,35 @@
+{
+  "root": {"task": {"instance": "vikunja.example", "id": 5}},
+  "prices": {"version": "2026-11-22.1", "verifiedAt": "2026-11-22", "sources": []},
+  "assumptions": [
+    {"code": "api-equivalent", "text": "An estimate of what the same usage would cost at the providers' public API list prices."},
+    {"code": "standard-tier-by-default", "text": "A request that reports no speed or service tier is priced at the standard tier."}
+  ],
+  "feed": {"on": true, "since": "2026-11-22T00:00:00Z", "readThrough": "2026-11-22T14:00:00Z"},
+  "final": true,
+  "total": {"status": "partial", "estimatedUSD": "2.250000", "reportedUSD": "2.000000", "requests": 7, "failedRequests": 1,
+    "categories": [{"category": "uncachedInput", "tokens": 1000, "estimatedUSD": "0.750000"},
+      {"category": "output", "tokens": 100, "estimatedUSD": "1.500000"}],
+    "notes": ["failed-run-may-lose-unsent-events"]},
+  "byRole": [],
+  "runs": [
+    {"key": {"cluster": "c", "namespace": "kelos-agents", "uid": "uid-1"}, "taskName": "vikunja-gordon-claude-opus-5",
+     "role": "implementation", "outcome": "failed", "final": true,
+     "status": "complete", "estimatedUSD": "1.500000", "requests": 5, "failedRequests": 1,
+     "categories": [{"category": "uncachedInput", "tokens": 600, "estimatedUSD": "0.500000"},
+       {"category": "cacheRead", "tokens": 0},
+       {"category": "output", "tokens": 60, "estimatedUSD": "1.000000"}],
+     "notes": [],
+     "attempts": [{"pod": "pod-1", "status": "complete", "estimatedUSD": "0.500000"},
+       {"pod": "pod-2", "status": "complete", "estimatedUSD": "1.000000"}],
+     "models": [{"runner": "claude-code", "model": "claude-opus-5-5", "status": "complete", "estimatedUSD": "1.200000"},
+       {"runner": "claude-code", "model": "claude-haiku-5-5", "status": "complete", "estimatedUSD": "0.300000"}],
+     "threads": [{"runner": "claude-code", "stream": "s1", "status": "complete", "estimatedUSD": "0.900000"},
+       {"runner": "claude-code", "stream": "s1", "agent": "sub-1", "status": "complete", "estimatedUSD": "0.400000"},
+       {"runner": "claude-code", "stream": "s1", "agent": "sub-2", "parentAgent": "sub-1", "status": "complete", "estimatedUSD": "0.200000"}]},
+    {"key": {"cluster": "c", "namespace": "kelos-agents", "uid": "uid-2"}, "taskName": "review-gordon-r-12-abcdef12",
+     "role": "pr-follow-up", "outcome": "succeeded", "final": true,
+     "status": "partial", "estimatedUSD": "0.750000", "requests": 2, "failedRequests": 0,
+     "categories": [], "notes": ["price-unknown"], "attempts": [], "models": [], "threads": []}
+  ]
+}

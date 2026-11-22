@@ -9,11 +9,13 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/config"
+	"github.com/sperano/gordon/internal/costs"
 	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/sillage"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/submit"
 	"github.com/sperano/gordon/internal/upstream"
@@ -22,7 +24,7 @@ import (
 
 // vikunjaKinds are the action kinds the Vikunja writer performs.
 var vikunjaKinds = []action.Kind{action.React, action.AddLabel, action.RemoveLabel, action.MoveBucket,
-	action.MarkDone, action.PostNotice, action.Assign, action.AssignIfUnassigned, action.SyncLabel, action.Notify}
+	action.MarkDone, action.PostNotice, action.Assign, action.AssignIfUnassigned, action.SyncLabel, action.Notify, action.PublishCost}
 
 // agentUsers are the routing configuration's agent variants, sorted.
 func agentUsers(cfg config.Worker) []string {
@@ -80,15 +82,21 @@ func vikunjaExecutor(cfg config.Worker, s *store.Store, k *kelos.Client, autoAss
 	ex := &lifecycle.Executor{
 		W:      &lifecycle.Writer{BaseURL: cfg.VikunjaURL, Authorization: "Bearer " + l.WriteToken, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
 		Policy: cfg.Routing.Policy, Agents: agentUsers(cfg), AutoAssignUsers: autoAssignUsers,
-		Runs: s, Lock: s, Namespace: route.KelosNamespace,
+		Runs: s, Lock: s, Costs: s, Namespace: route.KelosNamespace,
 		MaxRestarts: cfg.Restart.Max, Ntfy: ntfy(cfg),
-		Links: lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
-			Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL},
+		Links: links(cfg),
 	}
 	if k != nil {
 		ex.Messages, ex.Limits = taskMessages(k), taskLimits(k)
 	}
 	return ex
+}
+
+// links are the notices' Lucarne and Sillage links.
+func links(cfg config.Worker) lifecycle.Links {
+	l := cfg.Lifecycle
+	return lifecycle.Links{Lucarne: l.LucarneURL, Cluster: l.LucarneCluster, Namespace: route.KelosNamespace,
+		Sillage: l.SillageURL, VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL}
 }
 
 func resolveAutoAssignUsers(ctx context.Context, cfg config.Worker) (map[int64]int64, error) {
@@ -147,11 +155,24 @@ func taskMessages(k *kelos.Client) lifecycle.TaskMessages {
 	}
 }
 
-// finishHooks are the observer's hooks: the completion record, then the
-// lifecycle's failure notices.
+// finishHooks are the observer's hooks: the completion record, the
+// lifecycle's failure notices, then the cost notices.
 func finishHooks(cfg config.Worker, s *store.Store) []submit.FinishHook {
 	return []submit.FinishHook{&submit.Completions{Store: s},
-		&lifecycle.Failures{Store: s, Policy: cfg.Routing.Policy, Ownership: cfg.Ownership, Projects: cfg.Routing.Projects}}
+		&lifecycle.Failures{Store: s, Policy: cfg.Routing.Policy, Ownership: cfg.Ownership, Projects: cfg.Routing.Projects},
+		&costs.Hook{Store: s, Ownership: cfg.Ownership}}
+}
+
+// costPublisher is the cost notice pass, nil without Sillage's API.
+func costPublisher(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger) *costs.Publisher {
+	c := cfg.Costs
+	if c.APIURL == "" {
+		return nil
+	}
+	return &costs.Publisher{Store: s, Ownership: cfg.Ownership, Sillage: &sillage.Client{BaseURL: c.APIURL, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
+		Links: links(cfg), VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL,
+		Wait: c.Wait, Deadline: c.Deadline, Refresh: c.Refresh, LiveFor: c.LiveFor,
+		Backoff: cfg.Backoff, Metrics: m, Log: log.With("pass", "cost-notices")}
 }
 
 // vikunjaReconciler is the Vikunja reconciliation, nil when it is off.

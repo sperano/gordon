@@ -1,9 +1,22 @@
 package inventory
 
+import "github.com/sperano/gordon/internal/run"
+
 func otherEntries() []Entry {
-	out := append(retiredEntries(), imageBuildEntries()...)
+	out := append(addedEntries(), retiredEntries()...)
+	out = append(out, imageBuildEntries()...)
 	out = append(out, executionEntries()...)
 	return append(out, infrastructureEntries()...)
+}
+
+// addedEntries are what Gordon does that no legacy component did: the
+// completion cost notices, from Sillage's estimates (Gordon 12), deployed
+// at Gordon 13.
+func addedEntries() []Entry {
+	return []Entry{{ID: "cost-notices", Kind: Loop, Owner: Gordon, Decision: Add,
+		Trigger:   "a run of a Vikunja task finished; its estimate final in Sillage (or 6 h later); live notices every 15 min",
+		Implement: StageEstimates, Cutover: StageRetire, Families: []run.Family{run.VikunjaCost},
+		Note: "one notice per run generation, edited in place as the task total changes; Sillage down retries, never $0"}}
 }
 
 // retiredEntries is the legacy Wiki.js follow-up family. Wiki.js has been

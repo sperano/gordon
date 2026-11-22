@@ -83,7 +83,7 @@ func cutoverStages() []Stage {
 		{StageCosts, "add Sillage API-equivalent cost history and breakdowns",
 			[]string{"sperano/sillage", "sperano/hollingsworth"}, []string{"helm/sillage/", "tofu/sillage/"}},
 		{StageEstimates, "publish completion estimates and evolving task totals", []string{"sperano/hollingsworth"},
-			[]string{"helm/gordon/values-hollingsworth.yaml", "helm/sillage/"}},
+			[]string{"helm/gordon/values-hollingsworth.yaml", "helm/gordon/templates/networkpolicy-egress.yaml", "helm/sillage/"}},
 		{StageRetire, "deploy cost reporting and retire migrated glue", []string{"sperano/hollingsworth"},
 			append(chartPath("templates/", "scripts/", "values.yaml", "values-hollingsworth.yaml", "README.md"),
 				"tofu/kelos/", "portal-docs/docs/")},

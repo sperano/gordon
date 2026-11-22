@@ -115,6 +115,8 @@ type Worker struct {
 	Restart Restart
 	// Readiness is the PR readiness backstop's and ntfy's.
 	Readiness Readiness
+	// Costs is the completion cost notices'.
+	Costs Costs
 }
 
 // Worker defaults.
@@ -189,7 +191,9 @@ func LoadWorker(env Getenv) (Worker, error) {
 	c.GitHub = r.github()
 	c.Restart = r.restart()
 	c.Readiness = r.readiness()
+	c.Costs = r.costs()
 	r.checkWriter(c)
+	r.checkCosts(c)
 	r.checkGitHubWriter(c)
 	r.checkReadiness(c)
 	return c, r.err()
@@ -245,10 +249,10 @@ func (c Worker) String() string {
 	}
 	return fmt.Sprintf("shadow=%v id=%s concurrency=%d lease=%s poll=%s attempts=%d backoff=%s..%s project_limit=%d "+
 		"upstream=%v reconcile=%s retention=%s config=%s rules=%d dispatch=%s kelos=%s vikunja_writer=%v "+
-		"vikunja_reconcile=%s github_writer=%v github_reconcile=%s conflict_reconcile=%s readiness_reconcile=%s ntfy=%v",
+		"vikunja_reconcile=%s github_writer=%v github_reconcile=%s conflict_reconcile=%s readiness_reconcile=%s ntfy=%v sillage_api=%v",
 		c.Shadow, c.ID, c.Concurrency,
 		c.LeaseTTL, c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
 		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL,
 		c.Lifecycle.WriteToken != "", c.Lifecycle.ReconcileInterval, c.GitHub.AppDir != "", c.GitHub.ReconcileInterval,
-		c.GitHub.ConflictInterval, c.Readiness.ReconcileInterval, c.Readiness.NtfyToken != "")
+		c.GitHub.ConflictInterval, c.Readiness.ReconcileInterval, c.Readiness.NtfyToken != "", c.Costs.APIURL != "")
 }

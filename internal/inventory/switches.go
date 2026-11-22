@@ -28,6 +28,7 @@ const (
 	needKelos     = "`GORDON_DISPATCH_CONFIG_FILE` and `create` on `tasks` in `kelos-agents`"
 	needDelete    = "`list` and `delete` on `tasks` in `kelos-agents`"
 	needReconcile = "`GORDON_VIKUNJA_RECONCILE_INTERVAL` > 0 and a read token that may list tasks (`tasks.read_all`)"
+	needSillage   = "`GORDON_SILLAGE_API_URL` (Sillage's in-cluster read API, `/api/v1/cost/task/`, from sperano/sillage#57 or later) and egress to it"
 	needNoWait    = "a dispatch config whose Tasks of the family carry no `wait-for-blockers`, `announce-start` or `sillage-marker` init container (Gordon waits and announces)"
 )
 
@@ -59,6 +60,9 @@ func Switches() []Switch {
 		{run.VikunjaAutoAssign, []string{"helm/kelos/scripts/webhook_enricher.py", "scripts/vikunja_sync.py"},
 			"no writer is disabled; retain the `task.created` webhook relay",
 			[]string{needWriter}},
+		{run.VikunjaCost, nil,
+			"nothing: no legacy component posts cost notices (rollback is the rule removed: no new notice, waiting and live ones read and write nothing more)",
+			[]string{needWriter, needSillage}},
 	}
 }
 

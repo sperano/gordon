@@ -26,7 +26,9 @@ notices, skipped checks, superseded reviews, conflict runs, the pinned
 auto-merge) as the GitHub App; runs a subscription limit stopped are
 restarted once it resets; agent PR heads get their readiness verdict
 (ready to merge, round limit, missing checks) from fresh state, with its
-labels, ntfy and auto-merge.
+labels, ntfy and auto-merge. With Sillage's API, each finished run of a
+Vikunja task gets a completion notice of its estimated API-equivalent
+cost and the task's total to date, kept current in place.
 [DEPLOYMENT.md](DEPLOYMENT.md) is the deployment contract, its ownership
 switches and rollback included.
 
@@ -45,7 +47,7 @@ switches and rollback included.
 | `internal/dispatch` | The Task a run submits: the resolved profile (agent, model, effort, ServiceAccount, Workspace) plus per-family, per-Workspace, per-profile and per-variant templates (prompt, labels, annotations, agent configs, pod pieces) that mirror the legacy spawner `taskTemplate`s; a Task referencing a Secret its profile does not grant is refused when built, as Kelos admission would refuse it. A new model or effort is one more entry, never one more TaskSpawner. |
 | `internal/kelos` | The `kelos.dev/v1alpha2` Task resource, a create/get/list client for one namespace (in-cluster ServiceAccount token, re-read per request) and `Diff` of two Tasks; `kelostest` is a fake API for tests. |
 | `internal/replay` | Sanitized legacy deliveries in `testdata/` with their exact expected decisions, the Task names the legacy spawners created and, for the lifecycle, the writes the legacy hooks made. |
-| `internal/notice` | Gordon's Vikunja notices: the legacy `<!-- kelos:<kind> -->` markers, Gordon's action marker, and the texts, byte-equal to the legacy scripts'. A marker counts only on a comment by Gordon's own Vikunja user. |
+| `internal/notice` | Gordon's Vikunja notices: the legacy `<!-- kelos:<kind> -->` markers, Gordon's action marker, the cost notice's revision marker, and the texts, byte-equal to the legacy scripts' (the cost notice has no legacy). A marker counts only on a comment by Gordon's own Vikunja user. |
 
 ## Service
 
@@ -59,7 +61,9 @@ switches and rollback included.
 | `internal/githubapp` | The GitHub App's installation tokens (RS256 JWT), one per repository and kind of write, cached until near expiry. |
 | `internal/ghlife` | The GitHub writer and its outbox executors (reactions, the draft label and conversion, label removal, skipped checks, PR notices found again by their marker), as the App; the GitHub reconciliation (missed owner requests, review-bot findings and merge-closes), the conflict reconciliation (confirmed merge conflicts of agent PRs), the readiness backstop and reads (check runs, commit dates, review threads) and the merge pinned to the head. |
 | `internal/restart` | The limit restarts: Gordon's runs a subscription limit stopped, restarted as `<name>-retry<n>` once the limit reset, at most a configured number of times. |
-| `internal/lifecycle` | The Vikunja writer and its outbox executors (labels, buckets in every manual view, assignments, label sync, reactions, notices found again by their marker, ntfy sends bookkept in task reactions), the failure hook of the run observer, and the Vikunja reconciliation (missed task changes and owner requests). |
+| `internal/sillage` | GET-only client of Sillage's cost API (`/api/v1/cost/task/<Vikunja host>/<id>`): the price table, assumptions, task total and runs by Task uid; a 404 is a task Sillage has not read yet, an answer without the contract's fields is incompatible, anything else unavailable. |
+| `internal/costs` | The completion cost notices (Gordon 12): the observer's hook records each finished run of a Vikunja task once; the pass posts its notice once Sillage's estimate of the run is final (or marked not final after a deadline), keeps the task's newest notice current by editing it in place, and retries with backoff while Sillage is unavailable, never posting a zero. |
+| `internal/lifecycle` | The Vikunja writer and its outbox executors (labels, buckets in every manual view, assignments, label sync, reactions, notices found again by their marker, ntfy sends bookkept in task reactions, cost notices posted or edited to their latest stored revision), the failure hook of the run observer, and the Vikunja reconciliation (missed task changes and owner requests). |
 | `internal/metrics`, `internal/logging` | Prometheus metrics with fixed label sets; JSON logs with redaction. |
 | `internal/config`, `internal/app`, `cmd/gordon` | Environment configuration, the three modes, health, readiness and metrics. |
 

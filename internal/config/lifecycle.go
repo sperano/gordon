@@ -32,7 +32,8 @@ const (
 // vikunjaWriting are the families whose actions write to Vikunja.
 var vikunjaWriting = []run.Family{run.VikunjaImplement, run.VikunjaDiscuss, run.VikunjaFollowUp,
 	run.VikunjaFollowUpAnswer, run.VikunjaFollowUpDiscuss, run.VikunjaDragCancel, run.VikunjaDoneCleanup,
-	run.VikunjaChain, run.VikunjaFailure, run.VikunjaAutoAssign, run.PROpen, run.MergeClose, run.LimitRestart, run.PRReadiness}
+	run.VikunjaChain, run.VikunjaFailure, run.VikunjaAutoAssign, run.PROpen, run.MergeClose, run.LimitRestart, run.PRReadiness,
+	run.VikunjaCost}
 
 func (r *reader) lifecycle() Lifecycle {
 	l := Lifecycle{WriteToken: r.secretFile("GORDON_VIKUNJA_WRITE_TOKEN_FILE"),
