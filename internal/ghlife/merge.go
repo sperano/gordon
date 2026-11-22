@@ -58,7 +58,8 @@ func (e *Executor) mergeApplied(ctx context.Context, a action.Action, t Target) 
 // so a push after the verdict makes GitHub refuse instead of merging an
 // unchecked head; branch protection still applies. A merge GitHub
 // declines is reported on the task once per head (AUTO-MERGE REFUSED)
-// unless the pull request merged meanwhile; the next scan tries again.
+// unless the pull request merged, closed or moved to another head
+// meanwhile; the next scan tries again.
 func (e *Executor) merge(ctx context.Context, a action.Action, t Target) error {
 	p := path("repos", t.Owner, t.Name, "pulls", fmt.Sprint(t.N), "merge")
 	body := map[string]string{"sha": a.Value, "merge_method": e.Policy.Readiness.Method()}

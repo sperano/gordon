@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -235,5 +236,37 @@ func TestReadinessNoticesRenderAndDeduplicate(t *testing.T) {
 		if err := executor(f, nil).Execute(ctx, bad); !worker.IsPermanent(err) {
 			t.Errorf("%s %q: %v, want permanent", bad.Value, bad.Detail, err)
 		}
+	}
+}
+
+func TestNotifyNeverResendsARecordedSend(t *testing.T) {
+	delivered := "🔔01234567"
+	for _, c := range []struct {
+		name      string
+		refusals  int
+		permanent bool
+	}{{"recorded on the last try", DeliveredWriteAttempts - 1, false}, {"never recorded", DeliveredWriteAttempts, true}} {
+		f, n := newFake(t), newNtfy(t, http.StatusOK)
+		f.put(Task{ID: 5, ProjectID: 3})
+		f.refuseReactions[delivered] = c.refusals
+		ex := executor(f, nil)
+		ex.Ntfy = n.publisher()
+		err := ex.Execute(ctx, notifyAction())
+		if (err != nil) != c.permanent || worker.IsPermanent(err) != c.permanent || len(n.requests) != 1 {
+			t.Errorf("%s: %v after %d sends, want permanent %v after 1", c.name, err, len(n.requests), c.permanent)
+		}
+		if got := slices.Contains(reactionValues(f, 5), delivered); got == c.permanent {
+			t.Errorf("%s: delivered reaction on %v", c.name, got)
+		}
+	}
+}
+
+func TestNtfyTransportErrorHidesTheTopic(t *testing.T) {
+	n := newNtfy(t, http.StatusOK)
+	p := n.publisher()
+	n.Close()
+	err := p.Publish(ctx, notice.Head{Repo: "sperano/gordon", Number: 12, SHA: ntfyHead})
+	if !errors.Is(err, errNtfySend) || err.Error() != "ntfy: request failed" {
+		t.Errorf("transport error %v, want %v alone", err, errNtfySend)
 	}
 }

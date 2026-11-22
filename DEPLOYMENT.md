@@ -233,7 +233,9 @@ follow-up, conflict and reviewer init containers, the conflict
 reconcilers, the limit reaper and the pollers performed, as durable
 actions on the GitHub families, PR readiness (Gordon 08c, below) included.
 Its writes act as the GitHub App
-(`GORDON_GITHUB_APP_DIR`); its reads keep the read-only token. The
+(`GORDON_GITHUB_APP_DIR`); readiness reads check runs, commit dates and
+review threads as the App too, and every other read keeps the read-only
+token. The
 routing configuration's `policy` carries the round caps
 (`max_rounds_per_pr`, `suggestions_max_rounds`; `0` for none,
 `values-hollingsworth.yaml`'s `50` and `4` by default).
@@ -310,10 +312,11 @@ model-free family decided from fresh state, its writes through the
 outbox. A completed `check_run` (every open candidate on its head; the
 deliveries must be mirrored to the receiver) and the readiness backstop
 (`GORDON_READINESS_RECONCILE_INTERVAL`) queue a decision; each reads the
-pull request (files, mergeability, creation time), its head's check runs,
-commit date (only when a CHECKS MISSING notice may be due) and, with
-review bots, reviews, conversation and review threads, as the App (the
-read-only token has no Checks permission), the Kelos Tasks of the
+pull request (files, mergeability, creation time) and, with review bots,
+its reviews and conversation with the read-only token; its head's check
+runs, commit date (only when a CHECKS MISSING notice may be due) and, with
+review bots, review threads as the App (the read-only token has no Checks
+permission); the Kelos Tasks of the
 repository's Workspaces and of the task (`list` on `tasks`), the task
 with its label creators, comments and, with ntfy, reactions. The
 routing configuration's `policy` carries it: `ready_to_merge_label`,

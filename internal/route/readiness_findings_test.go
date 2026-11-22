@@ -2,6 +2,7 @@ package route_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,6 +135,9 @@ func TestReadinessRoundLimitCases(t *testing.T) {
 		{"blocking verdict check at the cap", func(rd *route.Readiness, _ *route.Router) {
 			rd.CheckRuns[1].Conclusion = "failure"
 		}, route.ReasonRoundLimit, []notice.Limited{{Author: gordonBot, Review: 99}}},
+		{"CI failure with a blocking verdict at the cap", func(rd *route.Readiness, _ *route.Router) {
+			rd.CheckRuns[0].Conclusion, rd.CheckRuns[1].Conclusion = "failure", "failure"
+		}, route.ReasonChecksUnacceptable, nil},
 		{"no cap configured", func(_ *route.Readiness, r *route.Router) { r.Config.Policy.MaxRoundsPerPR = 0 },
 			route.ReasonFollowUpPending, nil},
 		{"below the cap", func(rd *route.Readiness, _ *route.Router) { rd.Comments = nil }, route.ReasonFollowUpPending, nil},
@@ -161,6 +165,11 @@ func TestReadinessRoundLimitCases(t *testing.T) {
 			continue
 		}
 		if c.limited == nil {
+			for _, k := range keys(fd.Actions) {
+				if strings.Contains(k, "round-limit") {
+					t.Errorf("%s: %s without a round limit", c.name, k)
+				}
+			}
 			continue
 		}
 		want := "post-notice:" + readyTask + ":round-limit:" + headDetail(notice.LimitedExtra(c.limited))

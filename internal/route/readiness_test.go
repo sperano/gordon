@@ -193,25 +193,32 @@ func TestReadinessIgnoresWhatDoesNotHoldIt(t *testing.T) {
 	cases := []struct {
 		name   string
 		change func(*route.Readiness)
+		led    replay.Ledger
 	}{
 		{"finished Task of the task", func(rd *route.Readiness) {
 			rd.Tasks = []route.KelosTask{{Name: "vikunja-vigie-claude-opus-5", Phase: "Succeeded", Labels: map[string]string{route.TaskLabel: "5"}}}
-		}},
+		}, replay.Ledger{}},
 		{"another PR's follow-up", func(rd *route.Readiness) {
 			rd.Tasks = []route.KelosTask{{Name: "pr-followup-vigie-44-c1", Labels: map[string]string{route.RoleLabel: "pr-followup",
 				route.PRLabel: "44"}, Annotations: map[string]string{route.RepositoryAnnotation: repo}}}
-		}},
+		}, replay.Ledger{}},
 		{"stray Cubic check on a repository Cubic does not review", func(rd *route.Readiness) {
 			rd.CheckRuns = append(rd.CheckRuns, check(9, route.CubicCheck, "queued", "", time.Time{}))
-		}},
+		}, replay.Ledger{}},
 		{"older failed run of a passing check", func(rd *route.Readiness) {
 			rd.CheckRuns = append([]event.CheckRun{check(0, "check", "completed", "failure", readAt.Add(-time.Hour))}, rd.CheckRuns...)
-		}},
+		}, replay.Ledger{}},
+		{"Gordon's finished task run", func(*route.Readiness) {}, replay.Ledger{Runs: []route.RunRecord{{
+			Name: "vikunja-vigie-claude-opus-5", Family: run.VikunjaImplement, TaskID: 5}}}},
+		{"legacy waiter of another head", func(rd *route.Readiness) {
+			rd.Tasks = []route.KelosTask{{Name: "pr-ready-x", Phase: "Running", Labels: map[string]string{route.RoleLabel: "pr-readiness"},
+				Annotations: map[string]string{route.RepositoryAnnotation: repo, route.SHAAnnotation: "fedcba9876543210fedcba9876543210fedcba98"}}}
+		}, replay.Ledger{}},
 	}
 	for _, c := range cases {
 		rd := readyState()
 		c.change(&rd)
-		if fd := decideReady(t, rd, replay.Ledger{}); fd.Reason != route.ReasonReady {
+		if fd := decideReady(t, rd, c.led); fd.Reason != route.ReasonReady {
 			t.Errorf("%s: %s/%q, want ready", c.name, fd.Outcome, fd.Reason)
 		}
 	}
@@ -224,6 +231,26 @@ func TestReadinessCubicCountsWhereItReviews(t *testing.T) {
 	r.Config.Policy.Readiness.CubicRepos = []string{repo}
 	dec := r.DecideAuthenticated(readinessDelivery(t), route.State{Readiness: []route.Readiness{rd}, ReadinessRead: true}, replay.Ledger{})
 	expectFamily(t, family(t, dec), run.PRReadiness, route.Ignore, route.ReasonChecksUnfinished)
+}
+
+func TestReadinessWithoutNtfySendsNothing(t *testing.T) {
+	r := router()
+	r.Config.Policy.Readiness.Notify = false
+	fd := decideWith(t, &r, readyState())
+	expectFamily(t, fd, run.PRReadiness, route.Act, route.ReasonReady)
+	expectActions(t, fd, []string{readyNotice, actionNeeded, readyLabel},
+		map[string]string{actionNeeded: readyNotice, readyLabel: actionNeeded})
+}
+
+func TestReadinessRevokesTheRoundLimitLabel(t *testing.T) {
+	revoke := "remove-label:" + readyTask + ":round-limit-reached"
+	rd := readyState()
+	rd.Task.Labels = append(rd.Task.Labels, "round-limit-reached", "action-needed")
+	expectActions(t, decideReady(t, rd, replay.Ledger{}), []string{readyNotice, notifyKey, revoke, readyLabel}, nil)
+	rd.PullRequest.Mergeable = nil
+	fd := decideReady(t, rd, replay.Ledger{})
+	expectFamily(t, fd, run.PRReadiness, route.Act, route.ReasonNotMergeable)
+	expectActions(t, fd, []string{revoke, "remove-label:" + readyTask + ":action-needed"}, nil)
 }
 
 func TestReadinessNotReadyRevokesItsLabels(t *testing.T) {

@@ -25,6 +25,15 @@ const (
 	RetryReaction   = "🔁"
 )
 
+// DeliveredWriteAttempts bounds the tries at recording a send that
+// succeeded: the send itself is never repeated for it.
+const DeliveredWriteAttempts = 3
+
+// errNtfySend is a request to ntfy that got no answer. The transport's
+// error is dropped: a url.Error carries the endpoint, whose path is the
+// private topic.
+var errNtfySend = errors.New("ntfy: request failed")
+
 // MaxUnconfirmedSends bounds the sends whose outcome could not be
 // recorded (pr_ready_notify.MAX_UNCONFIRMED_ATTEMPTS).
 const MaxUnconfirmedSends = 3
@@ -71,7 +80,7 @@ func (n *Ntfy) Publish(ctx context.Context, h notice.Head) error {
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("ntfy: %w", err)
+		return errNtfySend
 	}
 	resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -158,7 +167,9 @@ func (e *Executor) notifyApplied(ctx context.Context, a action.Action) (bool, er
 // notify is pr_ready_notify.send_attempt, under the task's target lock
 // so two decisions of one head never send it twice: the reservation is
 // reacted first (a send is never made without it), then the send, then
-// the delivery, or the reservation's failure for a later retry.
+// the delivery, or the reservation's failure for a later retry. A send
+// whose delivery cannot be recorded fails permanently: a retry would
+// send it again.
 func (e *Executor) notify(ctx context.Context, a action.Action) error {
 	id, _ := taskTarget(a)
 	h, err := notifyHead(a)
@@ -183,6 +194,18 @@ func (e *Executor) notify(ctx context.Context, a action.Action) error {
 		if err := e.Ntfy.Publish(ctx, h); err != nil {
 			return errors.Join(err, e.W.ReactTask(ctx, id, RetryReaction+attempt))
 		}
-		return e.W.ReactTask(ctx, id, route.DeliveredReaction+short)
+		return e.recordDelivery(ctx, id, route.DeliveredReaction+short)
 	})
+}
+
+// recordDelivery reacts a succeeded send's delivery, up to
+// DeliveredWriteAttempts times.
+func (e *Executor) recordDelivery(ctx context.Context, id int64, value string) error {
+	var err error
+	for range DeliveredWriteAttempts {
+		if err = e.W.ReactTask(ctx, id, value); err == nil {
+			return nil
+		}
+	}
+	return worker.Permanent(fmt.Errorf("ntfy sent, delivery not recorded: %w", err))
 }
