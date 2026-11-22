@@ -67,7 +67,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_SHADOW` | `true` | record decisions, execute nothing (no outbox loop at all) |
 | `GORDON_WORKER_ID` | hostname | lease owner name (the pod name) |
 | `GORDON_VIKUNJA_URL` | required | API base, e.g. `https://vikunja.example/api/v1` |
-| `GORDON_VIKUNJA_TOKEN_FILE` | required | read token: `GET /tasks/{id}` and its comments; with the reconciliation also `GET /tasks` (listing) and `GET /labels`. Re-read per request, so a rotated Secret applies without a restart |
+| `GORDON_VIKUNJA_TOKEN_FILE` | required | read token: `GET /tasks/{id}` (`tasks.read_one`) and its comments (`tasks_comments.read_all`); with `pr-readiness` and `policy.readiness.notify` also `GET /tasks/{id}/reactions` (`reactions.read_all`); with the reconciliation also `GET /tasks` (listing, `tasks.read_all`) and `GET /labels` (`labels.read_all`). Vikunja answers a route the token lacks with 401, which the worker logs as `vikunja: unauthorized (HTTP 401) on GET <path>` and retries. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_GITHUB_API_URL` | `https://api.github.com` | |
 | `GORDON_GITHUB_TOKEN_FILE` | required | read-only token for pull requests and their files. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_ROUTING_CONFIG_FILE` | `profile.Defaults()` | JSON `profile.Config` (unknown fields refused) |

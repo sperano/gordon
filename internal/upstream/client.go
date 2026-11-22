@@ -45,13 +45,20 @@ type Error struct {
 	Provider string
 	Class    Class
 	Status   int
-	Err      error
+	// Path is the request's path relative to BaseURL, without its query;
+	// "" for a failure before any request was built. It names the route a
+	// token was refused on, so the missing permission can be told apart.
+	Path string
+	Err  error
 }
 
 func (e *Error) Error() string {
 	msg := fmt.Sprintf("%s: %s", e.Provider, e.Class)
 	if e.Status != 0 {
 		msg += fmt.Sprintf(" (HTTP %d)", e.Status)
+	}
+	if e.Path != "" {
+		msg += " on GET " + e.Path
 	}
 	if e.Err != nil {
 		msg += ": " + e.Err.Error()
@@ -133,7 +140,7 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 		case c.Limit <- struct{}{}:
 			defer func() { <-c.Limit }()
 		case <-ctx.Done():
-			return c.fail(Unavailable, 0, ctx.Err(), 0)
+			return c.fail(path, Unavailable, 0, ctx.Err(), 0)
 		}
 	}
 	start := time.Now()
@@ -143,7 +150,7 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return c.fail(Invalid, 0, err, time.Since(start))
+		return c.fail(path, Invalid, 0, err, time.Since(start))
 	}
 	req.Header.Set("Accept", "application/json")
 	for k, v := range c.Headers {
@@ -151,7 +158,7 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 	}
 	auth, err := c.authorization()
 	if err != nil {
-		return c.fail(Unavailable, 0, err, time.Since(start))
+		return c.fail(path, Unavailable, 0, err, time.Since(start))
 	}
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
@@ -160,22 +167,22 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 	if err != nil {
 		// The error quotes the request URL, which holds no credential
 		// (the token travels in a header).
-		return c.fail(Unavailable, 0, err, time.Since(start))
+		return c.fail(path, Unavailable, 0, err, time.Since(start))
 	}
 	defer resp.Body.Close()
 	if class, failed := classify(resp); failed {
 		io.Copy(io.Discard, io.LimitReader(resp.Body, MaxResponseBytes)) //nolint:errcheck // drained for reuse
-		return c.fail(class, resp.StatusCode, nil, time.Since(start))
+		return c.fail(path, class, resp.StatusCode, nil, time.Since(start))
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
-		return c.fail(Unavailable, resp.StatusCode, err, time.Since(start))
+		return c.fail(path, Unavailable, resp.StatusCode, err, time.Since(start))
 	}
 	if len(body) > limit {
-		return c.fail(Invalid, resp.StatusCode, fmt.Errorf("response over %d bytes", limit), time.Since(start))
+		return c.fail(path, Invalid, resp.StatusCode, fmt.Errorf("response over %d bytes", limit), time.Since(start))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return c.fail(Invalid, resp.StatusCode, err, time.Since(start))
+		return c.fail(path, Invalid, resp.StatusCode, err, time.Since(start))
 	}
 	if raw, ok := out.(*json.RawMessage); ok {
 		// json.Unmarshal strips surrounding whitespace from RawMessage;
@@ -184,7 +191,7 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 	}
 	if valid != nil {
 		if err := valid(); err != nil {
-			return c.fail(Invalid, resp.StatusCode, err, time.Since(start))
+			return c.fail(path, Invalid, resp.StatusCode, err, time.Since(start))
 		}
 	}
 	c.observe(ResultOK, time.Since(start))
@@ -209,9 +216,9 @@ func classify(resp *http.Response) (Class, bool) {
 	}
 }
 
-func (c *Client) fail(class Class, status int, err error, d time.Duration) error {
+func (c *Client) fail(path string, class Class, status int, err error, d time.Duration) error {
 	c.observe(string(class), d)
-	return &Error{Provider: c.Provider, Class: class, Status: status, Err: err}
+	return &Error{Provider: c.Provider, Class: class, Status: status, Path: path, Err: err}
 }
 
 func (c *Client) observe(result string, d time.Duration) {
