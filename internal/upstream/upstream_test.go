@@ -379,10 +379,10 @@ func TestVikunjaComments(t *testing.T) {
 			fmt.Fprint(w, `[]`)
 			return
 		}
-		fmt.Fprint(w, ` [{"id":1,"comment":"<p>hi</p>"}]`)
+		fmt.Fprint(w, " [{\"id\":1,\"comment\":\"<p>hi</p>\"}]\n")
 	})
 	got, err := Vikunja{c}.Comments(ctx, 42, commentBudget)
-	if err != nil || string(got) != `[{"id":1,"comment":"<p>hi</p>"}]` {
+	if err != nil || string(got) != " [{\"id\":1,\"comment\":\"<p>hi</p>\"}]\n" {
 		t.Fatalf("Comments = %s, %v; want the raw array", got, err)
 	}
 	if !reflect.DeepEqual(o.results, []string{"vikunja/ok", "vikunja/ok"}) {

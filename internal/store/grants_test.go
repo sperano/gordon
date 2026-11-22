@@ -91,6 +91,8 @@ func TestGrantReceiverInsertsOnly(t *testing.T) {
 
 func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 	owner, dbURL := storetest.Open(t)
+	// Production db-init removes PostgreSQL 14's PUBLIC CREATE default.
+	storetest.Exec(t, dbURL, "REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 	worker := role(t, dbURL)
 	if err := owner.Grant(ctx, store.Roles{Worker: worker}); err != nil {
 		t.Fatal(err)
@@ -116,6 +118,9 @@ func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, "CREATE TABLE worker_schema_change (id integer)"); !denied(err) {
+		t.Fatalf("worker CREATE TABLE = %v, want permission denied", err)
+	}
 	if _, err := conn.Exec(ctx, "DELETE FROM requests"); !denied(err) {
 		t.Fatalf("worker DELETE = %v, want permission denied", err)
 	}

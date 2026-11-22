@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,7 +59,7 @@ func (p Preparer) comments(ctx context.Context, taskID int64) string {
 	if err != nil || len(raw) > limit {
 		return ""
 	}
-	return string(bytes.TrimSpace(raw))
+	return string(raw)
 }
 
 func reject(fd *route.FamilyDecision, err error) {

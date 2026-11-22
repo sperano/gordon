@@ -177,6 +177,11 @@ func (c *Client) getCapped(ctx context.Context, path string, query url.Values, o
 	if err := json.Unmarshal(body, out); err != nil {
 		return c.fail(Invalid, resp.StatusCode, err, time.Since(start))
 	}
+	if raw, ok := out.(*json.RawMessage); ok {
+		// json.Unmarshal strips surrounding whitespace from RawMessage;
+		// Kelos quotes the HTTP body byte-for-byte in task prompts.
+		*raw = body
+	}
 	if valid != nil {
 		if err := valid(); err != nil {
 			return c.fail(Invalid, resp.StatusCode, err, time.Since(start))
