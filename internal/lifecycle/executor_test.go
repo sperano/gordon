@@ -306,6 +306,11 @@ func TestAssignIfUnassigned(t *testing.T) {
 	if applied, err := ex.Recover(ctx, a); err != nil || !applied {
 		t.Fatalf("recover assigned task: applied %v, err %v", applied, err)
 	}
+	f.put(Task{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}})
+	before := len(f.writes)
+	if applied, err := ex.Recover(ctx, a); err != nil || !applied || len(f.writes) != before {
+		t.Fatalf("recover task assigned to another user: applied %v, err %v, writes %d, want %d", applied, err, len(f.writes), before)
+	}
 	for _, task := range []Task{
 		{ID: 5, ProjectID: 3, Assignees: []User{{Username: "eric"}}},
 		{ID: 5, ProjectID: 4},
