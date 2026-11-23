@@ -180,8 +180,9 @@ func (p Pod) checkNoLabels() error {
 }
 
 // validate checks a pod piece's shape: resources and affinity are
-// objects, every list entry is an object with a name, and every template
-// in them parses. The API server still checks the rest of the schema.
+// objects, every list entry is an object with a name, OmitIfEmptyKey is
+// true and only on an env entry, and every template in them parses. The
+// API server still checks the rest of the schema.
 func (p Pod) validate() error {
 	for _, f := range []struct {
 		field string
@@ -190,17 +191,19 @@ func (p Pod) validate() error {
 		if f.raw == nil {
 			continue
 		}
-		if err := checkObject(f.field, f.raw, false); err != nil {
+		if err := checkObject(f.field, f.raw, false, takeNoMark); err != nil {
 			return err
 		}
 	}
 	for _, l := range []struct {
 		field string
 		list  []json.RawMessage
-	}{{"env", p.Env}, {"extraInitContainers", p.ExtraInitContainers}, {"lastInitContainers", p.LastInitContainers},
-		{"volumes", p.Volumes}, {"volumeMounts", p.VolumeMounts}} {
+		take  markTaker
+	}{{"env", p.Env, takeMark}, {"extraInitContainers", p.ExtraInitContainers, takeEnvMarks},
+		{"lastInitContainers", p.LastInitContainers, takeEnvMarks},
+		{"volumes", p.Volumes, takeNoMark}, {"volumeMounts", p.VolumeMounts, takeNoMark}} {
 		for i, raw := range l.list {
-			if err := checkObject(fmt.Sprintf("%s[%d]", l.field, i), raw, true); err != nil {
+			if err := checkObject(fmt.Sprintf("%s[%d]", l.field, i), raw, true, l.take); err != nil {
 				return err
 			}
 		}
@@ -209,8 +212,9 @@ func (p Pod) validate() error {
 }
 
 // checkObject refuses raw unless it is a JSON object (with a non-empty
-// string name when named) whose templates parse.
-func checkObject(field string, raw json.RawMessage, named bool) error {
+// string name when named) whose templates parse and whose only
+// OmitIfEmptyKey marks are the ones take accepts.
+func checkObject(field string, raw json.RawMessage, named bool, take markTaker) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var m map[string]any
@@ -220,7 +224,69 @@ func checkObject(field string, raw json.RawMessage, named bool) error {
 	if name, ok := m["name"].(string); named && (!ok || name == "") {
 		return fmt.Errorf("pod %s: want a name", field)
 	}
-	return parseValue("pod "+field, m)
+	what := "pod " + field
+	if err := take(what, m); err != nil {
+		return err
+	}
+	if err := checkNoMark(what, m); err != nil {
+		return err
+	}
+	return parseValue(what, m)
+}
+
+// markTaker removes from a decoded list entry the OmitIfEmptyKey marks
+// expandPod acts on, refusing one that is not true; checkNoMark then
+// refuses any left, since nothing would remove them from the Task.
+type markTaker func(what string, m map[string]any) error
+
+func takeNoMark(string, map[string]any) error { return nil }
+
+// takeMark takes the mark of an env entry.
+func takeMark(what string, m map[string]any) error {
+	mark, ok := m[OmitIfEmptyKey]
+	if !ok {
+		return nil
+	}
+	if mark != true {
+		return fmt.Errorf("%s: %s must be true", what, OmitIfEmptyKey)
+	}
+	delete(m, OmitIfEmptyKey)
+	return nil
+}
+
+// takeEnvMarks takes the marks of an init container's env entries.
+func takeEnvMarks(what string, m map[string]any) error {
+	env, _ := m["env"].([]any)
+	for i, e := range env {
+		if entry, ok := e.(map[string]any); ok {
+			if err := takeMark(fmt.Sprintf("%s env[%d]", what, i), entry); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkNoMark refuses OmitIfEmptyKey anywhere in v.
+func checkNoMark(what string, v any) error {
+	switch x := v.(type) {
+	case []any:
+		for _, item := range x {
+			if err := checkNoMark(what, item); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		if _, ok := x[OmitIfEmptyKey]; ok {
+			return fmt.Errorf("%s: %s is only accepted on an env entry", what, OmitIfEmptyKey)
+		}
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			if err := checkNoMark(what, x[k]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // parseValue parses every template string in v.
