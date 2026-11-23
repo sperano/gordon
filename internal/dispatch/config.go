@@ -123,9 +123,10 @@ type VariantSpec struct {
 // pr-opener still starts after a profile's test-postgres, as in the
 // legacy spawners. Volumes repeated by name and volume mounts repeated by
 // mountPath collapse to the first when equal (a profile's sidecar may
-// declare what a family also declares) and refuse the Task when not. A
-// list entry carrying OmitIfEmptyKey is dropped when its rendered value
-// is empty, as a spawner's {{if}} leaves it out.
+// declare what a family also declares) and refuse the Task when not. An
+// env entry (top-level or in an init container) carrying OmitIfEmptyKey
+// is dropped when its rendered value is empty and it has no valueFrom,
+// as a spawner's {{if}} leaves it out.
 type Pod struct {
 	Labels              map[string]string `json:"labels,omitempty"`
 	Resources           json.RawMessage   `json:"resources,omitempty"`

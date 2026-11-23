@@ -9,17 +9,15 @@ import (
 	"github.com/sperano/gordon/internal/kelos"
 )
 
-// OmitIfEmptyKey marks a pod list entry (an env var, top-level or in an
-// init container) that Gordon drops when its rendered "value" is empty
+// OmitIfEmptyKey marks a pod env entry (top-level or in an init
+// container's env) that Gordon drops when its rendered "value" is empty
 // and it has no "valueFrom", as a legacy spawner's {{if}} leaves it out;
-// a kept entry loses the key. Only true is accepted, and only on list
-// entries: Kubernetes has no such field, so it never reaches a Task.
+// a kept entry loses the key. Only true is accepted, and only on those
+// env entries: Kubernetes has no such field, so it never reaches a Task.
 const OmitIfEmptyKey = "gordonOmitIfEmpty"
 
-var omitIfEmptyKey = []byte(`"` + OmitIfEmptyKey + `"`)
-
 // expandPod renders every pod string that holds a template and drops
-// the entries OmitIfEmptyKey marks empty.
+// the env entries OmitIfEmptyKey marks empty.
 func expandPod(p *kelos.PodOverrides, d Data) error {
 	var err error
 	if p.Resources, err = expandOne(p.Resources, d); err != nil {
@@ -28,29 +26,79 @@ func expandPod(p *kelos.PodOverrides, d Data) error {
 	if p.Affinity, err = expandOne(p.Affinity, d); err != nil {
 		return err
 	}
-	for _, list := range []*[]json.RawMessage{&p.Env, &p.ExtraInitContainers, &p.Volumes, &p.VolumeMounts} {
-		if *list, err = expandList(*list, d); err != nil {
+	for _, l := range []struct {
+		list  *[]json.RawMessage
+		prune pruner
+	}{{&p.Env, pruneEnvEntry}, {&p.ExtraInitContainers, pruneContainerEnv},
+		{&p.Volumes, keepAll}, {&p.VolumeMounts, keepAll}} {
+		if *l.list, err = expandList(*l.list, d, l.prune); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// pruner drops the OmitIfEmptyKey entries of one rendered list entry:
+// it reports whether the entry itself goes and whether it found a mark,
+// which changes the entry.
+type pruner func(v any) (drop, marked bool)
+
+func keepAll(any) (bool, bool) { return false, false }
+
+// pruneEnvEntry handles an env entry: a marked one goes when its value
+// is empty and it has no valueFrom; a kept one loses the key.
+func pruneEnvEntry(v any) (bool, bool) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false, false
+	}
+	if _, marked := m[OmitIfEmptyKey]; !marked {
+		return false, false
+	}
+	delete(m, OmitIfEmptyKey)
+	value, _ := m["value"].(string)
+	_, from := m["valueFrom"]
+	return value == "" && !from, true
+}
+
+// pruneContainerEnv prunes the env entries of an init container; the
+// container itself always stays.
+func pruneContainerEnv(v any) (bool, bool) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false, false
+	}
+	env, ok := m["env"].([]any)
+	if !ok {
+		return false, false
+	}
+	out, changed := env[:0], false
+	for _, e := range env {
+		drop, marked := pruneEnvEntry(e)
+		changed = changed || marked
+		if !drop {
+			out = append(out, e)
+		}
+	}
+	m["env"] = out
+	return false, changed
+}
+
 func expandOne(raw json.RawMessage, d Data) (json.RawMessage, error) {
 	if raw == nil {
 		return nil, nil
 	}
-	out, _, err := expand(raw, d)
+	out, _, err := expand(raw, d, keepAll)
 	return out, err
 }
 
-func expandList(list []json.RawMessage, d Data) ([]json.RawMessage, error) {
+func expandList(list []json.RawMessage, d Data, prune pruner) ([]json.RawMessage, error) {
 	if list == nil {
 		return nil, nil
 	}
 	out := list[:0]
 	for _, raw := range list {
-		e, drop, err := expand(raw, d)
+		e, drop, err := expand(raw, d, prune)
 		if err != nil {
 			return nil, err
 		}
@@ -62,24 +110,26 @@ func expandList(list []json.RawMessage, d Data) ([]json.RawMessage, error) {
 }
 
 // expand renders the template strings of one raw JSON value and reports
-// whether OmitIfEmptyKey drops it; a value with neither a template nor
-// the key is kept byte for byte.
-func expand(raw json.RawMessage, d Data) (json.RawMessage, bool, error) {
-	if !bytes.Contains(raw, []byte("{{")) && !bytes.Contains(raw, omitIfEmptyKey) {
-		return raw, false, nil
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
+// whether prune drops it; a value with neither a template nor a mark is
+// kept byte for byte. The mark is looked up on the decoded value, so an
+// escaped key is found too.
+func expand(raw json.RawMessage, d Data, prune pruner) (json.RawMessage, bool, error) {
+	v, err := decodeAny(raw)
+	if err != nil {
 		return nil, false, refuse(CodePod, "%v", err)
 	}
-	v, err := expandValue(v, d)
-	if err != nil {
-		return nil, false, err
+	templated := bytes.Contains(raw, []byte("{{"))
+	if templated {
+		if v, err = expandValue(v, d); err != nil {
+			return nil, false, err
+		}
 	}
-	if omitted(v) {
+	drop, marked := prune(v)
+	if drop {
 		return nil, true, nil
+	}
+	if !templated && !marked {
+		return raw, false, nil
 	}
 	out, err := json.Marshal(v)
 	if err != nil {
@@ -96,16 +146,11 @@ func expandValue(v any, d Data) (any, error) {
 			return render("pod value", x, d)
 		}
 	case []any:
-		out := x[:0]
-		for _, item := range x {
-			if item, err = expandValue(item, d); err != nil {
+		for i := range x {
+			if x[i], err = expandValue(x[i], d); err != nil {
 				return nil, err
 			}
-			if !omitted(item) {
-				out = append(out, item)
-			}
 		}
-		return out, nil
 	case map[string]any:
 		for k := range x {
 			if x[k], err = expandValue(x[k], d); err != nil {
@@ -114,22 +159,6 @@ func expandValue(v any, d Data) (any, error) {
 		}
 	}
 	return v, nil
-}
-
-// omitted reports whether v is an entry OmitIfEmptyKey drops; a kept
-// entry loses the key.
-func omitted(v any) bool {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return false
-	}
-	if _, marked := m[OmitIfEmptyKey]; !marked {
-		return false
-	}
-	delete(m, OmitIfEmptyKey)
-	value, _ := m["value"].(string)
-	_, from := m["valueFrom"]
-	return value == "" && !from
 }
 
 func containsTemplate(s string) bool { return strings.Contains(s, "{{") }

@@ -162,21 +162,73 @@ func TestConflictingRepeatsRefuseTask(t *testing.T) {
 	}
 }
 
-func TestValidateRefusesMisplacedOmitIfEmpty(t *testing.T) {
-	const want = "gordonOmitIfEmpty must be true, on a list entry"
-	cases := map[string]dispatch.Pod{
-		"false":        {Env: []json.RawMessage{json.RawMessage(`{"name":"A","value":"","gordonOmitIfEmpty":false}`)}},
-		"on resources": {Resources: json.RawMessage(`{"limits":{},"gordonOmitIfEmpty":true}`)},
-		"nested object": {Env: []json.RawMessage{
-			json.RawMessage(`{"name":"A","valueFrom":{"secretKeyRef":{"name":"s"},"gordonOmitIfEmpty":true}}`)}},
+// TestOmitIfEmptyFindsAnEscapedKey: the mark is found on the decoded
+// entry, so a key spelled with a JSON escape and no template still drops
+// an empty entry and is stripped from a kept one.
+func TestOmitIfEmptyFindsAnEscapedKey(t *testing.T) {
+	cfg := fixture(t)
+	f := cfg.Families[run.VikunjaDiscuss]
+	f.Pod.Env = append(f.Pod.Env,
+		json.RawMessage(`{"name":"X_EMPTY","value":"","gordon\u004fmitIfEmpty":true}`),
+		json.RawMessage(`{"name":"X_SET","value":"1","gordon\u004fmitIfEmpty":true}`))
+	cfg.Families[run.VikunjaDiscuss] = f
+	rn, _ := prepared(t, cfg, taskUpdated(vikunjaTask(gordonID, "discuss"), "claude-opus"), run.VikunjaDiscuss)
+	po := rn.Task.Spec.Worker.PodOverrides
+	if e, ok := envEntry(po.Env, "X_EMPTY"); ok {
+		t.Fatalf("env X_EMPTY = %v, want it omitted", e)
 	}
-	for name, pod := range cases {
+	if e, ok := envEntry(po.Env, "X_SET"); !ok || e["value"] != "1" || len(e) != 2 {
+		t.Fatalf("env X_SET = %v, want only name and value 1", e)
+	}
+}
+
+func TestValidateAcceptsOmitIfEmptyOnEnvEntries(t *testing.T) {
+	c := fixture(t)
+	c.Workspaces = map[string]dispatch.Pod{"gordon": {
+		Env:                 []json.RawMessage{json.RawMessage(effortEnv)},
+		ExtraInitContainers: []json.RawMessage{json.RawMessage(initWithEffort)},
+		LastInitContainers:  []json.RawMessage{json.RawMessage(initWithEffort)},
+	}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate = %v, want nil", err)
+	}
+}
+
+func TestValidateRefusesMisplacedOmitIfEmpty(t *testing.T) {
+	const (
+		notTrue   = "gordonOmitIfEmpty must be true"
+		notOnEnv  = "gordonOmitIfEmpty is only accepted on an env entry"
+		markedVol = `{"name":"agent-lifecycle","emptyDir":{},"gordonOmitIfEmpty":true}`
+	)
+	raw := func(s string) []json.RawMessage { return []json.RawMessage{json.RawMessage(s)} }
+	cases := map[string]struct {
+		pod       dispatch.Pod
+		field     string
+		wantError string
+	}{
+		"false": {dispatch.Pod{Env: raw(`{"name":"A","value":"","gordonOmitIfEmpty":false}`)}, "env[0]", notTrue},
+		"false in init env": {dispatch.Pod{ExtraInitContainers: raw(
+			`{"name":"i","env":[{"name":"A","value":"","gordonOmitIfEmpty":"yes"}]}`)}, "extraInitContainers[0] env[0]", notTrue},
+		"on resources": {dispatch.Pod{Resources: json.RawMessage(`{"limits":{},"gordonOmitIfEmpty":true}`)}, "resources", notOnEnv},
+		"in affinity array": {dispatch.Pod{Affinity: json.RawMessage(`{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":` +
+			`{"nodeSelectorTerms":[{"matchExpressions":[{"key":"k","operator":"Exists","gordonOmitIfEmpty":true}]}]}}}`)},
+			"affinity", notOnEnv},
+		"nested object": {dispatch.Pod{Env: raw(
+			`{"name":"A","valueFrom":{"secretKeyRef":{"name":"s"},"gordonOmitIfEmpty":true}}`)}, "env[0]", notOnEnv},
+		"on volume":       {dispatch.Pod{Volumes: raw(markedVol)}, "volumes[0]", notOnEnv},
+		"on volume mount": {dispatch.Pod{VolumeMounts: raw(`{"name":"v","mountPath":"/v","gordonOmitIfEmpty":true}`)}, "volumeMounts[0]", notOnEnv},
+		"on init container": {dispatch.Pod{LastInitContainers: raw(`{"name":"i","image":"x","gordonOmitIfEmpty":true}`)},
+			"lastInitContainers[0]", notOnEnv},
+		"in init container volume mount": {dispatch.Pod{ExtraInitContainers: raw(
+			`{"name":"i","volumeMounts":[{"name":"v","mountPath":"/v","gordonOmitIfEmpty":true}]}`)}, "extraInitContainers[0]", notOnEnv},
+	}
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			c := fixture(t)
-			c.Workspaces = map[string]dispatch.Pod{"gordon": pod}
-			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "workspace gordon: pod ") ||
-				!strings.HasSuffix(err.Error(), want) {
-				t.Fatalf("Validate = %v, want %q", err, want)
+			c.Workspaces = map[string]dispatch.Pod{"gordon": tc.pod}
+			want := "workspace gordon: pod " + tc.field + ": " + tc.wantError
+			if err := c.Validate(); err == nil || !strings.HasSuffix(err.Error(), want) {
+				t.Fatalf("Validate = %v, want suffix %q", err, want)
 			}
 		})
 	}
