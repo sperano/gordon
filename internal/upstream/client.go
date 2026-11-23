@@ -46,10 +46,11 @@ type Error struct {
 	Class    Class
 	Status   int
 	// Path is the route's path relative to BaseURL, without its query. Every
-	// failure once the route is known carries it, including a limiter wait or
-	// request build that fails before anything is sent; it is "" only for a
-	// failure before the route is chosen (an invalid id). It names the route a
-	// token was refused on, so the missing permission can be told apart.
+	// failure of a single GET carries it, including a limiter wait or request
+	// build that fails before anything is sent. It is "" for errors raised
+	// outside a GET: an invalid id before the route is chosen, or a list
+	// over its page limit. It names the route a token was refused on, so the
+	// missing permission can be told apart.
 	Path string
 	Err  error
 }
