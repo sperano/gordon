@@ -208,6 +208,8 @@ func TestValidateRefusesMisplacedOmitIfEmpty(t *testing.T) {
 	}{
 		"false": {dispatch.Pod{Env: raw(`{"name":"A","value":"","gordonOmitIfEmpty":false}`)}, "env[0]", notTrue},
 		"false in init env": {dispatch.Pod{ExtraInitContainers: raw(
+			`{"name":"i","env":[{"name":"A","value":"","gordonOmitIfEmpty":false}]}`)}, "extraInitContainers[0] env[0]", notTrue},
+		"string in init env": {dispatch.Pod{ExtraInitContainers: raw(
 			`{"name":"i","env":[{"name":"A","value":"","gordonOmitIfEmpty":"yes"}]}`)}, "extraInitContainers[0] env[0]", notTrue},
 		"on resources": {dispatch.Pod{Resources: json.RawMessage(`{"limits":{},"gordonOmitIfEmpty":true}`)}, "resources", notOnEnv},
 		"in affinity array": {dispatch.Pod{Affinity: json.RawMessage(`{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":` +
