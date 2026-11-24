@@ -122,6 +122,26 @@ func TestWorkerRefusesUnknownAutoAssignVariant(t *testing.T) {
 	}
 }
 
+func TestWorkerOpsMode(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"ops_profile":"cluster-operator",`+
+		`"profiles":{"cluster-operator":{"service_account":"kelos-cluster-operator",`+
+		`"capabilities":["github-write","github-readonly","cluster-read","cluster-write"]}},`+
+		`"policy":{"ops_label":"ops","ops_owner":"eric","ops_projects":["hollingsworth"]}}`)
+	c, err := LoadWorker(envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := c.Routing.Policy; !p.OpsCovers("hollingsworth") || p.OpsOwner != "eric" || c.Routing.OpsProfile != "cluster-operator" {
+		t.Fatalf("ops policy %+v profile %q", p, c.Routing.OpsProfile)
+	}
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"policy":{"ops_label":"ops","ops_projects":["hollingsworth"]}}`)
+	if _, err := LoadWorker(envOf(env)); err == nil || !strings.Contains(err.Error(),
+		"GORDON_ROUTING_CONFIG_FILE: policy ops_owner is required with ops_label") {
+		t.Fatalf("ops without an owner: %v", err)
+	}
+}
+
 func TestWorkerRefusals(t *testing.T) {
 	cases := map[string]struct {
 		set  map[string]string

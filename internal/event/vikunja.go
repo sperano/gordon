@@ -49,6 +49,9 @@ type vikunjaData struct {
 		Buckets *[]struct {
 			Title string `json:"title"`
 		} `json:"buckets"`
+		CreatedBy *struct {
+			Username string `json:"username"`
+		} `json:"created_by"`
 	} `json:"task"`
 	Comment *struct {
 		ID      int64  `json:"id"`
@@ -113,6 +116,9 @@ func taskCreated(ev Event) Event {
 func vikunjaTask(data vikunjaData) Task {
 	t := data.Task
 	task := Task{ID: *t.ID, ProjectID: t.ProjectID, Title: t.Title, Description: t.Description, Done: t.Done}
+	if t.CreatedBy != nil {
+		task.CreatedBy = t.CreatedBy.Username
+	}
 	for _, l := range t.Labels {
 		task.Labels = append(task.Labels, l.Title)
 	}

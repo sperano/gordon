@@ -41,6 +41,21 @@ func TestParseVikunjaTaskUpdated(t *testing.T) {
 	}
 }
 
+func TestParseVikunjaTaskCreator(t *testing.T) {
+	ev, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3,` +
+		`"created_by":{"username":"eric"}},"doer":{"username":"claude-opus"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Vikunja.Task.CreatedBy != "eric" || ev.Actor != "claude-opus" {
+		t.Fatalf("creator %q doer %q", ev.Vikunja.Task.CreatedBy, ev.Actor)
+	}
+	none, err := ParseVikunja([]byte(`{"event_name":"task.updated","data":{"task":{"id":7,"project_id":3}}}`))
+	if err != nil || none.Vikunja.Task.CreatedBy != "" {
+		t.Fatalf("no creator: %q, %v", none.Vikunja.Task.CreatedBy, err)
+	}
+}
+
 func TestParseVikunjaTaskCreated(t *testing.T) {
 	body := []byte(`{"event_name":"task.created","data":{"task":{"id":7,"project_id":3}}}`)
 	ev, err := ParseVikunja(body)

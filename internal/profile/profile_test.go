@@ -223,7 +223,7 @@ func TestCapabilityWrites(t *testing.T) {
 	cases := map[Capability][2]bool{
 		GitHubWrite: {true, true}, ImageBuildSubmit: {true, true},
 		GitHubReadOnly: {false, true}, ClusterRead: {false, true}, PostgresTest: {false, true},
-		PuckDBProdReadOnly: {false, true}, Mactest: {false, true}, "vault-admin": {false, false},
+		PuckDBProdReadOnly: {false, true}, Mactest: {false, true}, ClusterWrite: {true, true}, "vault-admin": {false, false},
 	}
 	for c, want := range cases {
 		if writing, known := c.Writes(); writing != want[0] || known != want[1] {

@@ -53,6 +53,19 @@ const (
 	AgentConfigVikunja = "@vikunja"
 )
 
+// OpsFamily is the Families key of the ops runs' taskTemplate (the legacy
+// vikunja-ops-* spawners): ops runs belong to run.VikunjaImplement, but
+// their prompt and PR-opener Task pattern are the ops spawners'.
+const OpsFamily run.Family = "vikunja-ops"
+
+// templateFamily is the Families key of a run's taskTemplate.
+func templateFamily(id run.Identity) run.Family {
+	if id.Family == run.VikunjaImplement && id.Ops {
+		return OpsFamily
+	}
+	return id.Family
+}
+
 // DefaultCommentsMaxBytes caps the task comments a prompt quotes (the
 // legacy contextSources maxResponseBytes).
 const DefaultCommentsMaxBytes = 256 << 10

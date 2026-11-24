@@ -51,7 +51,7 @@ func (c Config) Validate() error {
 
 func (c Config) validateFamilies() error {
 	for _, f := range slices.Sorted(maps.Keys(c.Families)) {
-		if !slices.Contains(run.Families, f) || (run.Identity{Family: f}).Name() == "" {
+		if f != OpsFamily && (!slices.Contains(run.Families, f) || (run.Identity{Family: f}).Name() == "") {
 			return fmt.Errorf("family %q submits no Task", f)
 		}
 		if err := c.Families[f].validate(); err != nil {

@@ -15,6 +15,10 @@ const (
 	ModeFollowUp  Mode = "followup"
 	ModeAnswer    Mode = "answer"
 	ModeReview    Mode = "review"
+	// ModeOps is an implementation run that may change the live cluster
+	// (the legacy clusterOperator mode): its profile is the configuration's
+	// OpsProfile, never a project's.
+	ModeOps Mode = "ops"
 )
 
 // Capability is a named grant a profile carries. Gordon 02 binds each one
@@ -40,12 +44,15 @@ const (
 	PuckDBProdReadOnly Capability = "puckdb-prod-readonly"
 	// Mactest is the mactest client certificate (Secret mactest-client).
 	Mactest Capability = "mactest"
+	// ClusterWrite is the cluster operator's write ClusterRole: only the
+	// ops profile may grant it, and only to an ops run.
+	ClusterWrite Capability = "cluster-write"
 )
 
 // writes classifies every known capability: true when it can change
 // something outside the pod. A capability missing here is unknown.
 var writes = map[Capability]bool{
-	GitHubWrite: true, ImageBuildSubmit: true,
+	GitHubWrite: true, ImageBuildSubmit: true, ClusterWrite: true,
 	GitHubReadOnly: false, ClusterRead: false, PostgresTest: false, PuckDBProdReadOnly: false, Mactest: false,
 }
 
@@ -113,13 +120,16 @@ type Reviewer struct {
 // Config is Gordon's trusted routing configuration.
 type Config struct {
 	// Version names the configuration; each run records it.
-	Version        string              `json:"version"`
-	DefaultVariant string              `json:"default_variant"`
-	Runners        map[string]Runner   `json:"runners"`
-	Variants       map[string]Variant  `json:"variants"`
-	Profiles       map[string]Profile  `json:"profiles"`
-	Projects       []Project           `json:"projects"`
-	ReviewProfile  string              `json:"review_profile"`
+	Version        string             `json:"version"`
+	DefaultVariant string             `json:"default_variant"`
+	Runners        map[string]Runner  `json:"runners"`
+	Variants       map[string]Variant `json:"variants"`
+	Profiles       map[string]Profile `json:"profiles"`
+	Projects       []Project          `json:"projects"`
+	ReviewProfile  string             `json:"review_profile"`
+	// OpsProfile is the ops mode's profile (executionProfiles.system.ops),
+	// "" while the ops mode is off.
+	OpsProfile     string              `json:"ops_profile,omitempty"`
 	CommonReviewer []Reviewer          `json:"common_reviewers"`
 	StackReviewers map[string]Reviewer `json:"stack_reviewers"`
 	Policy         Policy              `json:"policy"`
@@ -146,6 +156,13 @@ type Policy struct {
 	FixSuggestionsLabel string   `json:"fix_suggestions_label"`
 	NoReviewLabel       string   `json:"no_review_label"`
 	ReviewBots          []Bot    `json:"review_bots"`
+	// The ops mode (clusterOperator): a task of an OpsProjects project
+	// carrying OpsLabel, created by OpsOwner and started by OpsOwner,
+	// gets an ops run instead of its implementation run. An empty
+	// OpsLabel turns the mode off.
+	OpsLabel    string   `json:"ops_label,omitempty"`
+	OpsOwner    string   `json:"ops_owner,omitempty"`
+	OpsProjects []string `json:"ops_projects,omitempty"`
 	// The Vikunja lifecycle (Gordon 06): the bucket a stopped card goes
 	// back to, the labels a start clears and a failure sets, the chain's
 	// auto-merge label and its trusted creator, Gordon's own Vikunja
