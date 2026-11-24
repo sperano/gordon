@@ -128,7 +128,7 @@ the legacy ones.
 | `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`, and `vikunja-ops`, the ops runs' template: the `vikunja-ops-*` spawners' `taskTemplate`, required once the ops mode is on, an ops run without it is rejected `task-spec-no-task-template`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
 | `workspaces`, `profiles`, `variants` | pod pieces per Workspace (keyed by the project's writing Workspace; they apply to its read-only copy too), per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant and profile needs an entry, `{}` at least: a run without one is rejected (`task-spec-unknown-variant`, `task-spec-unknown-profile`) |
 | `pod` (each piece) | `labels` (profiles only), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`: `resources` and `affinity` objects, each list entry an object with a `name`. Lists concatenate family, Workspace, profile, variant, then volumes repeated by `name` and volume mounts repeated by `mountPath` collapse to the first when equal and reject the Task (`task-spec-pod-invalid`) when they differ; an `env` entry, top-level or in an init container's `env`, marked `"gordonOmitIfEmpty": true` is dropped when its rendered `value` is empty and it has no `valueFrom` (a kept one loses the key), and the key is refused anywhere else; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
-| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); `0` is unbounded; a `variants` key not in `variants` is refused |
+| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); a Task still without a phase 15 minutes (`submit.UnstartedGrace`) after its creation was refused by the controller and is not counted, but logged and reported by `gordon_kelos_unstarted_tasks`; `0` is unbounded; a `variants` key not in `variants` is refused |
 
 Prompt, label and annotation values, agent config names and pod strings
 (pod `labels` aside: they are literal, and a `{{` in one is refused)
@@ -496,7 +496,9 @@ a duplicate.
   `gordon_upstream_requests_total{provider,result}`, `gordon_upstream_request_duration_seconds{provider}`,
   `gordon_kelos_requests_total{op,result}`, `gordon_kelos_request_duration_seconds{op}`,
   `gordon_kelos_submissions_total{result}` (`created`, `recovered`, `collision`, `deferred-limit`,
-  `deferred-branch`, `deferred-admission`, `refused`, `ambiguous`, `error`), `gordon_run_observations_total{state}`,
+  `deferred-branch`, `deferred-admission`, `refused`, `ambiguous`, `error`), `gordon_kelos_unstarted_tasks`
+  (Tasks without a phase 15 minutes after their creation at the last admission check, not counted against
+  their variant's limit), `gordon_run_observations_total{state}`,
   `gordon_shadow_comparisons_total{family,result}` (`match`, `differ`, `missing`),
   `gordon_reconcile_runs_total{result}`, `gordon_reconcile_duration_seconds`,
   `gordon_reconcile_last_success_timestamp_seconds`, `gordon_leases_expired_total{queue}`,
