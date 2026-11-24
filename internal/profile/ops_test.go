@@ -124,3 +124,24 @@ func TestValidateOps(t *testing.T) {
 		}
 	}
 }
+
+// TestNamespaceReadResolves: a namespaced reader's profile (writing or
+// read-only) resolves.
+func TestNamespaceReadResolves(t *testing.T) {
+	c := Defaults()
+	c.Profiles["reader"] = Profile{ServiceAccount: "kelos-read-vigie",
+		Capabilities: []Capability{GitHubWrite, GitHubReadOnly, NamespaceRead}}
+	c.Profiles["reader-discuss"] = Profile{ServiceAccount: "kelos-read-vigie", ReadOnly: true,
+		Capabilities: []Capability{GitHubReadOnly, NamespaceRead}}
+	for i := range c.Projects {
+		if c.Projects[i].Name == "vigie" {
+			c.Projects[i].Profiles = map[Mode]string{ModeImplement: "reader", ModeDiscuss: "reader-discuss"}
+		}
+	}
+	for mode, want := range map[Mode]string{ModeImplement: "reader", ModeDiscuss: "reader-discuss", ModeFollowUp: "reader"} {
+		got, err := c.Resolve(Request{Project: "vigie", Variant: "claude-opus", Mode: mode})
+		if err != nil || got.Profile != want || !slices.Contains(got.Capabilities, NamespaceRead) {
+			t.Errorf("%s: %+v, %v", mode, got, err)
+		}
+	}
+}

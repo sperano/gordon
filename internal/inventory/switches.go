@@ -29,7 +29,7 @@ const (
 	needDelete    = "`list` and `delete` on `tasks` in `kelos-agents`"
 	needReconcile = "`GORDON_VIKUNJA_RECONCILE_INTERVAL` > 0 and a read token that may list tasks (`tasks.read_all`)"
 	needSillage   = "`GORDON_SILLAGE_API_URL` (Sillage's in-cluster read API, `/api/v1/cost/task/`, from sperano/sillage#57 or later) and egress to it"
-	needOps       = "for a project the cluster operator covers, the routing config's ops policy (`ops_label`, `ops_owner`, `ops_projects`, `ops_profile`) and the dispatch config's `vikunja-ops` family"
+	needOps       = "for a project the cluster operator covers, the routing config's ops policy (`ops_label`, `ops_owner`, `ops_projects`, `ops_profile`) and the dispatch config's `vikunja-ops` family, which keeps `wait-for-blockers` (an ops run is submitted blocked and its pod waits)"
 	needNoWait    = "a dispatch config whose Tasks of the family carry no `wait-for-blockers`, `announce-start` or `sillage-marker` init container (Gordon waits and announces)"
 )
 

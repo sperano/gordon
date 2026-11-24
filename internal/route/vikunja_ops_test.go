@@ -137,6 +137,31 @@ func TestOpsStartPrecedence(t *testing.T) {
 	}
 }
 
+// TestBlockedOpsStartDispatches: the owner's start of a blocked ops task
+// submits the ops run at once (its pod waits for the blockers, as
+// legacy's); a requeue after a blocker is done has no doer and starts
+// nothing; a blocked implementation run still waits in Gordon.
+func TestBlockedOpsStartDispatches(t *testing.T) {
+	blocked := func(labels ...string) *event.Task {
+		tk := createdBy(opsOwner, hollingsworthID, labels...)
+		tk.Relations.BlockedBy = []event.Related{{ID: 9, ProjectID: hollingsworthID}}
+		return tk
+	}
+	d := opsRouter().Decide(startedBy(t, task(opsTask, hollingsworthID, []string{opsLabel}, "claude-opus"), opsOwner),
+		route.State{Task: blocked(opsLabel)}, replay.Ledger{})
+	fd := d.Families[0]
+	expectFamily(t, fd, run.VikunjaImplement, route.Dispatch, "")
+	if len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-ops-hollingsworth-claude-opus-5" {
+		t.Fatalf("blocked ops start runs %+v", fd.Runs)
+	}
+	requeue := synthetic(t, opsTask, hollingsworthID, map[string]any{"requeue": "k", "depth": 1})
+	expectFamily(t, opsRouter().Decide(requeue, route.State{Task: blocked(opsLabel)}, replay.Ledger{}).Families[0],
+		run.VikunjaImplement, route.Ignore, route.ReasonOpsDoer)
+	impl := opsRouter().Decide(startedBy(t, task(opsTask, hollingsworthID, nil, "claude-opus"), opsOwner),
+		route.State{Task: blocked()}, replay.Ledger{})
+	expectFamily(t, impl.Families[0], run.VikunjaImplement, route.Ignore, route.ReasonBlocked)
+}
+
 func TestOpsRunDeduplicates(t *testing.T) {
 	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-hollingsworth-claude-opus-5", Active: true,
 		Exists: true, Family: run.VikunjaImplement, TaskID: opsTask}}}

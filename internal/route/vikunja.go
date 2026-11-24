@@ -151,7 +151,10 @@ func (r Router) agentStart(proj profile.Project, ev event.Event, fresh event.Tas
 			return fd
 		}
 	}
-	if len(fresh.OpenBlockers()) > 0 {
+	// An ops run starts on the owner's event or never (a requeue has no
+	// doer), so it does not wait in Gordon: its pod waits for the
+	// blockers (the ops template's wait-for-blockers), as legacy's did.
+	if mode != profile.ModeOps && len(fresh.OpenBlockers()) > 0 {
 		fd.Outcome, fd.Reason = Ignore, ReasonBlocked
 		return fd
 	}

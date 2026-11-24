@@ -37,6 +37,9 @@ const (
 	ImageBuildSubmit Capability = "image-build-submit"
 	// ClusterRead is the kelos-discuss read ClusterRole.
 	ClusterRead Capability = "cluster-read"
+	// NamespaceRead is the same read in a namespaced reader account's
+	// namespaces only.
+	NamespaceRead Capability = "namespace-read"
 	// PostgresTest is the pod-local throwaway test Postgres sidecar.
 	PostgresTest Capability = "postgres-test"
 	// PuckDBProdReadOnly is the puckdb_readonly role on the
@@ -53,7 +56,7 @@ const (
 // something outside the pod. A capability missing here is unknown.
 var writes = map[Capability]bool{
 	GitHubWrite: true, ImageBuildSubmit: true, ClusterWrite: true,
-	GitHubReadOnly: false, ClusterRead: false, PostgresTest: false, PuckDBProdReadOnly: false, Mactest: false,
+	GitHubReadOnly: false, ClusterRead: false, NamespaceRead: false, PostgresTest: false, PuckDBProdReadOnly: false, Mactest: false,
 }
 
 // Writes reports whether the capability can change state outside the

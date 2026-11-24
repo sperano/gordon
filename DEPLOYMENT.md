@@ -176,7 +176,7 @@ pr-open notice promises a ready-to-merge one).
   unknown or inaccessible user. The executor rechecks assignment, labels,
   and project before writing, so a retry never adds a second assignee.
 - **Blockers and claims** (`vikunja-implement`, `vikunja-discuss`): a run
-  waits, unsubmitted, while a task blocking it (any project) is open; a
+  (an ops run aside, below) waits, unsubmitted, while a task blocking it (any project) is open; a
   blocker getting done requeues the tasks it blocked. Once submitted, the
   run claims the task: `in progress` (not on a card dragged back since),
   the stale `agent-error` and `action-needed` labels off, Doing in every
@@ -189,9 +189,14 @@ pr-open notice promises a ready-to-merge one).
   (mode `ops`, profile `ops_profile`) instead of its implementation run,
   when its creator and the starting event's doer are both
   `policy.ops_owner`; otherwise it runs nothing (`ops-creator-not-owner`,
-  `ops-doer-not-owner`). A synthetic delivery (a requeue after a blocker,
-  the reconciliation) has no doer, so an ops task only starts on the
-  owner's own update. `discuss` and `chain` win over the ops label. The
+  `ops-doer-not-owner`). The owner's event is the authorization, so a
+  blocked ops task does not wait in Gordon: its run is submitted at once
+  and its pod waits for the blockers, as the legacy spawner's did, which
+  is why the `vikunja-ops` family keeps the `wait-for-blockers` init
+  container. A synthetic delivery (a requeue after a blocker, the
+  reconciliation) has no doer and never starts an ops run: after a missed
+  webhook the owner has to touch the task again. `discuss` and `chain`
+  win over the ops label. The
   ops run is the task's implementation run for the claim, drag-cancel,
   failures, costs and limit restarts; follow-ups, reviews and conflict
   runs on it use their usual profiles. The worker refuses an ops label
