@@ -121,6 +121,9 @@ type Task struct {
 	Index int64 `json:"index,omitempty"`
 	// Relations are the task's related tasks, fresh reads only.
 	Relations Relations `json:"relations,omitzero"`
+	// CreatedBy is the username of the task's creator: the ops mode
+	// starts only on the owner's tasks.
+	CreatedBy string `json:"created_by,omitempty"`
 	// LabelCreators maps each label title to the usernames that created
 	// a label of that title on the task (a fresh read only): an auto-merge
 	// label counts only when its trusted creator made it.

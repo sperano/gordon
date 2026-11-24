@@ -76,6 +76,10 @@ type Metrics struct {
 	// reconciliation's passes and the heads it queued.
 	ReadinessReconciles      *prometheus.CounterVec
 	ReadinessReconcileQueued prometheus.Counter
+	// UnstartedTasks is how many unfinished Kelos Tasks had no phase past
+	// submit.UnstartedGrace at the last admission check: refused by the
+	// controller, they are not counted against their variant's limit.
+	UnstartedTasks prometheus.Gauge
 }
 
 // New registers Gordon's metrics, with the Go and process collectors, on
@@ -131,7 +135,7 @@ func New() *Metrics {
 		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
 		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued,
 		m.GitHubReconciles, m.GitHubReconcileQueued, m.LimitRestarts, m.ConflictReconciles, m.ConflictReconcileQueued,
-		m.ReadinessReconciles, m.ReadinessReconcileQueued, m.CostChecks)
+		m.ReadinessReconciles, m.ReadinessReconcileQueued, m.CostChecks, m.UnstartedTasks)
 	return m
 }
 
@@ -153,6 +157,8 @@ func (m *Metrics) lifecycle() {
 	m.ReadinessReconciles = counter("readiness_reconcile_runs_total", "Readiness reconciliation passes by result.", "result")
 	m.ReadinessReconcileQueued = prometheus.NewCounter(prometheus.CounterOpts{Namespace: namespace,
 		Name: "readiness_reconcile_queued_total", Help: "Pull-request heads the readiness reconciliation queued."})
+	m.UnstartedTasks = prometheus.NewGauge(prometheus.GaugeOpts{Namespace: namespace, Name: "kelos_unstarted_tasks",
+		Help: "Unfinished Kelos Tasks without a phase past the unstarted grace at the last admission check."})
 }
 
 func counter(name, help string, labels ...string) *prometheus.CounterVec {

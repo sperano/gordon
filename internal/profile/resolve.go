@@ -21,6 +21,10 @@ const (
 	CodeIncompleteVariant  = "incomplete-variant"
 	CodeConflictingProfile = "conflicting-profile"
 	CodeUnknownCapability  = "unknown-capability"
+	// CodeOpsOff refuses an ops run where the ops mode does not cover
+	// the project; CodeOpsOnly an ops profile or capability outside one.
+	CodeOpsOff  = "ops-not-enabled"
+	CodeOpsOnly = "ops-only"
 )
 
 // Error is a refused resolution; Code is stable for decisions and metrics.
@@ -64,7 +68,7 @@ type Resolved struct {
 	Capabilities     []Capability `json:"capabilities"`
 }
 
-var modes = []Mode{ModeImplement, ModeDiscuss, ModeFollowUp, ModeAnswer, ModeReview}
+var modes = []Mode{ModeImplement, ModeDiscuss, ModeFollowUp, ModeAnswer, ModeReview, ModeOps}
 
 // Resolve returns the run's profile, or an *Error.
 func (c Config) Resolve(r Request) (Resolved, error) {
@@ -74,6 +78,9 @@ func (c Config) Resolve(r Request) (Resolved, error) {
 	proj, ok := c.projectByName(r.Project)
 	if !ok {
 		return Resolved{}, refuse(CodeUnknownProject, "project %q", r.Project)
+	}
+	if r.Mode == ModeOps && !c.Policy.OpsCovers(proj.Name) {
+		return Resolved{}, refuse(CodeOpsOff, "ops in %s", proj.Name)
 	}
 	out, err := c.agent(r)
 	if err != nil {
@@ -119,16 +126,20 @@ func (c Config) agent(r Request) (Resolved, error) {
 // pickProfile returns the mode's profile: the override when the project
 // allows it, else the default. Follow-ups and answers default to the
 // implementation profile and reviews to the review profile, as legacy does.
+// An ops run takes the ops profile and nothing else; no other mode may.
 func (c Config) pickProfile(p Project, r Request) (string, Profile, error) {
 	name := c.defaultProfile(p, r.Mode)
 	if r.Profile != "" && r.Profile != name {
-		if !slices.Contains(p.Allowed[r.Mode], r.Profile) {
+		if r.Mode == ModeOps || !slices.Contains(p.Allowed[r.Mode], r.Profile) {
 			return "", Profile{}, refuse(CodeProfileNotAllowed, "profile %q for %s in %s", r.Profile, r.Mode, p.Name)
 		}
 		name = r.Profile
 	}
 	if name == "" {
 		return "", Profile{}, refuse(CodeNoProfileForMode, "%s in %s", r.Mode, p.Name)
+	}
+	if r.Mode != ModeOps && name == c.OpsProfile {
+		return "", Profile{}, refuse(CodeOpsOnly, "profile %q is the ops profile, not %s's", name, r.Mode)
 	}
 	prof, ok := c.Profiles[name]
 	if !ok {
@@ -138,6 +149,9 @@ func (c Config) pickProfile(p Project, r Request) (string, Profile, error) {
 }
 
 func (c Config) defaultProfile(p Project, m Mode) string {
+	if m == ModeOps {
+		return c.OpsProfile
+	}
 	if name, ok := p.Profiles[m]; ok {
 		return name
 	}
@@ -152,7 +166,8 @@ func (c Config) defaultProfile(p Project, m Mode) string {
 }
 
 // checkProfile enforces that a discuss run is read-only whatever else it
-// asks for, that every capability is classified, that a read-only profile
+// asks for, that only an ops run gets ClusterWrite, that every capability
+// is classified, that a read-only profile
 // carries no writing capability, and that a writing mode gets a profile
 // that is not read-only and grants at least one writing capability.
 func checkProfile(name string, p Profile, m Mode) error {
@@ -164,6 +179,9 @@ func checkProfile(name string, p Profile, m Mode) error {
 		}
 		if p.ReadOnly && writing {
 			return refuse(CodeConflictingProfile, "profile %q is read-only but grants %s", name, capability)
+		}
+		if capability == ClusterWrite && m != ModeOps {
+			return refuse(CodeOpsOnly, "profile %q grants %s to %s", name, capability, m)
 		}
 		grantsWrite = grantsWrite || writing
 	}

@@ -181,7 +181,12 @@ func conflictedTitled(title string) sample {
 // prepared routes and prepares a sample, returning its one run.
 func prepared(t *testing.T, cfg dispatch.Config, s sample, family run.Family) (route.Run, route.FamilyDecision) {
 	t.Helper()
-	routing := profile.Defaults()
+	return preparedWith(t, profile.Defaults(), cfg, s, family)
+}
+
+// preparedWith is prepared with the routing configuration routing.
+func preparedWith(t *testing.T, routing profile.Config, cfg dispatch.Config, s sample, family run.Family) (route.Run, route.FamilyDecision) {
+	t.Helper()
 	dec := route.Router{Config: routing}.DecideAuthenticated(s.delivery, s.state, ledger{})
 	ev, err := event.Parse(s.delivery)
 	if err != nil {

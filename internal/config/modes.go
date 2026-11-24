@@ -175,6 +175,9 @@ func LoadWorker(env Getenv) (Worker, error) {
 				project.Name, project.AutoAssignVariant)
 		}
 	}
+	if err := c.Routing.ValidateOps(); err != nil {
+		r.fail("GORDON_ROUTING_CONFIG_FILE: %v", err)
+	}
 	if p := c.Routing.Policy; p.MaxRoundsPerPR < 0 || p.SuggestionsMaxRounds < 0 {
 		r.fail("GORDON_ROUTING_CONFIG_FILE policy max_rounds_per_pr and suggestions_max_rounds must not be negative")
 	}

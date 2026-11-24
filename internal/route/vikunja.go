@@ -19,6 +19,10 @@ const (
 	ReasonNotInDoing           = "not-in-doing"
 	ReasonInProgress           = "in-progress"
 	ReasonChain                = "chain-parent"
+	// An ops-labelled task whose creator or starting event is not the
+	// ops owner's runs nothing: never its implementation run either.
+	ReasonOpsCreator = "ops-creator-not-owner"
+	ReasonOpsDoer    = "ops-doer-not-owner"
 )
 
 // Notice kinds, the legacy `<!-- kelos:<kind> -->` markers.
@@ -101,7 +105,7 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 		return Decision{Outcome: Stale, Reason: ReasonProjectNotConfigured}
 	}
 	fresh := *st.Task
-	dec := Decision{Families: []FamilyDecision{r.agentStart(proj, ev.Vikunja.Task, fresh, led)}}
+	dec := Decision{Families: []FamilyDecision{r.agentStart(proj, ev, fresh, led)}}
 	for _, f := range []func() (FamilyDecision, bool){
 		func() (FamilyDecision, bool) { return r.dragCancel(proj, fresh, led) },
 		func() (FamilyDecision, bool) { return r.doneCleanup(proj, fresh) },
@@ -127,32 +131,71 @@ func (r Router) unconfiguredDone(ev event.Event, st State) Decision {
 	return dec
 }
 
-// agentStart decides a task's implementation or discuss run
+// agentStart decides a task's implementation, discuss or ops run
 // (taskspawners.yaml): eligible in the fresh state, and waiting while a
 // task blocking it is open; a dispatched run claims the task once
 // submitted.
-func (r Router) agentStart(proj profile.Project, sent, fresh event.Task, led Ledger) FamilyDecision {
+func (r Router) agentStart(proj profile.Project, ev event.Event, fresh event.Task, led Ledger) FamilyDecision {
+	sent := ev.Vikunja.Task
 	if sent.Buckets == nil {
 		sent.Buckets = fresh.Buckets
 	}
-	family, mode := run.VikunjaImplement, profile.ModeImplement
-	if fresh.HasLabel(r.Config.Policy.DiscussLabel) {
-		family, mode = run.VikunjaDiscuss, profile.ModeDiscuss
-	}
+	family, mode := r.startMode(proj, fresh)
 	fd := r.family(family, proj.Name)
 	if !judge(&fd, r.startBlocker(sent), r.startBlocker(fresh)) {
 		return fd
 	}
-	if len(fresh.OpenBlockers()) > 0 {
+	if mode == profile.ModeOps {
+		if reason := r.opsBlocker(ev.Actor, fresh); reason != "" {
+			fd.Outcome, fd.Reason = Ignore, reason
+			return fd
+		}
+	}
+	// An ops run starts on the owner's event or never (a requeue has no
+	// doer), so it does not wait in Gordon: its pod waits for the
+	// blockers (the ops template's wait-for-blockers), as legacy's did.
+	if mode != profile.ModeOps && len(fresh.OpenBlockers()) > 0 {
 		fd.Outcome, fd.Reason = Ignore, ReasonBlocked
 		return fd
 	}
 	variant, _ := r.assignment(fresh)
-	id := run.Identity{Family: family, Project: proj.Name, Variant: variant, TaskID: fresh.ID}
+	id := run.Identity{Family: family, Project: proj.Name, Variant: variant, TaskID: fresh.ID, Ops: mode == profile.ModeOps}
 	if rn, submit, ok := r.submit(&fd, led, id, profile.Request{Project: proj.Name, Variant: variant, Mode: mode}); ok {
 		r.claim(&fd, fresh, rn, submit)
 	}
 	return fd
+}
+
+// startMode is the run a task.updated starts: discuss with its label,
+// else ops with the ops label in a project the ops mode covers, else
+// implementation. An ops run is the task's implementation run, in the
+// implementation family.
+func (r Router) startMode(proj profile.Project, t event.Task) (run.Family, profile.Mode) {
+	p := r.Config.Policy
+	switch {
+	case t.HasLabel(p.DiscussLabel):
+		return run.VikunjaDiscuss, profile.ModeDiscuss
+	case p.OpsCovers(proj.Name) && t.HasLabel(p.OpsLabel):
+		return run.VikunjaImplement, profile.ModeOps
+	default:
+		return run.VikunjaImplement, profile.ModeImplement
+	}
+}
+
+// opsBlocker is why an ops start is not the owner's
+// (kelos.clusterOperator.filters): the task's creator and the event's
+// doer must both be the ops owner. A synthetic delivery has no doer, so
+// only the owner's own update starts an ops run.
+func (r Router) opsBlocker(doer string, t event.Task) string {
+	owner := r.Config.Policy.OpsOwner
+	switch {
+	case t.CreatedBy != owner:
+		return ReasonOpsCreator
+	case doer != owner:
+		return ReasonOpsDoer
+	default:
+		return ""
+	}
 }
 
 // projectOf is the task's configured project: the fresh task's when it

@@ -50,11 +50,12 @@ func TestVikunjaTask(t *testing.T) {
 			t.Errorf("request %s %s auth %q", r.Method, r.URL, r.Header.Get("Authorization"))
 		}
 		fmt.Fprint(w, `{"id":42,"project_id":7,"title":"T","description":"<p>D</p>","done":false,"labels":[{"title":"in progress"}],
-			"assignees":[{"username":"claude-opus"},{"username":"eric"}],"buckets":[{"title":"Doing"}]}`)
+			"assignees":[{"username":"claude-opus"},{"username":"eric"}],"buckets":[{"title":"Doing"}],
+			"created_by":{"username":"eric"}}`)
 	})
 	got, err := Vikunja{c}.Task(ctx, 42)
 	want := event.Task{ID: 42, ProjectID: 7, Title: "T", Description: "<p>D</p>", Labels: []string{"in progress"},
-		Assignees: []string{"claude-opus", "eric"}, Buckets: []string{"Doing"}}
+		Assignees: []string{"claude-opus", "eric"}, Buckets: []string{"Doing"}, CreatedBy: "eric"}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Task = %+v, %v; want %+v", got, err, want)
 	}

@@ -33,7 +33,10 @@ type vikunjaTask struct {
 	Buckets []struct {
 		Title string `json:"title"`
 	} `json:"buckets"`
-	Index        int64                      `json:"index"`
+	Index     int64 `json:"index"`
+	CreatedBy *struct {
+		Username string `json:"username"`
+	} `json:"created_by"`
 	RelatedTasks map[string][]event.Related `json:"related_tasks"`
 }
 
@@ -49,6 +52,9 @@ const (
 func (raw vikunjaTask) toTask() event.Task {
 	t := event.Task{ID: raw.ID, ProjectID: raw.ProjectID, Title: raw.Title, Description: raw.Description,
 		Done: raw.Done, Buckets: []string{}, Index: raw.Index}
+	if raw.CreatedBy != nil {
+		t.CreatedBy = raw.CreatedBy.Username
+	}
 	for _, l := range raw.Labels {
 		t.Labels = append(t.Labels, l.Title)
 		if l.CreatedBy != nil && l.CreatedBy.Username != "" {

@@ -48,9 +48,10 @@ type Builder struct {
 // Build returns the Task of one run.
 func (b Builder) Build(in Input) (kelos.Task, error) {
 	id, prof := in.Run.Identity, in.Run.Profile
-	fam, ok := b.Config.Families[id.Family]
+	key := templateFamily(id)
+	fam, ok := b.Config.Families[key]
 	if !ok {
-		return kelos.Task{}, refuse(CodeNoTemplate, "family %s", id.Family)
+		return kelos.Task{}, refuse(CodeNoTemplate, "family %s", key)
 	}
 	proj, ok := b.project(id.Project)
 	if !ok {

@@ -83,8 +83,10 @@ type Executor struct {
 	Limits dispatch.Limits
 	// BusyDelay is how long a deferred submission waits.
 	BusyDelay time.Duration
-	Metrics   *metrics.Metrics
-	Log       *slog.Logger
+	// Now is the clock the unstarted Tasks are aged by (nil: time.Now).
+	Now     func() time.Time
+	Metrics *metrics.Metrics
+	Log     *slog.Logger
 }
 
 // taskName is the Task name of a submit action's target,
@@ -261,7 +263,8 @@ func (e *Executor) existing(ctx context.Context, r store.SubmitRun) (bool, error
 }
 
 // admit defers a submission Kelos cannot run yet: its variant's limit is
-// full, or its branch is held in its Workspace.
+// full, or its branch is held in its Workspace. A Task that never started
+// (unstarted) holds no slot: it is reported, loudly, not counted.
 func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 	limit := e.Limits.For(r.Variant)
 	branch, ws := r.Task.Spec.Branch, r.Task.WorkspaceName()
@@ -274,7 +277,8 @@ func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 	if err != nil {
 		return err
 	}
-	running := 0
+	now := e.now()
+	running, stale, skipped := 0, 0, []string(nil)
 	for _, t := range tasks {
 		if t.Metadata.Name == r.Name || t.Finished() {
 			continue
@@ -283,9 +287,23 @@ func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 			e.count(ResultBranch)
 			return worker.Deferred(fmt.Errorf("branch %s held by %s", branch, t.Metadata.Name), LimitBranch, e.BusyDelay)
 		}
-		if t.Metadata.Labels[dispatch.VariantLabel] == r.Variant && t.Phase() != kelos.PhaseWaiting {
-			running++
+		never := unstarted(t, now)
+		if never {
+			stale++
 		}
+		if t.Metadata.Labels[dispatch.VariantLabel] != r.Variant || t.Phase() == kelos.PhaseWaiting {
+			continue
+		}
+		if never {
+			skipped = append(skipped, t.Metadata.Name)
+			continue
+		}
+		running++
+	}
+	e.Metrics.UnstartedTasks.Set(float64(stale))
+	if len(skipped) > 0 {
+		e.Log.Warn("variant limit skips Tasks that never started", "variant", r.Variant, "tasks", skipped,
+			"grace", UnstartedGrace.String())
 	}
 	if limit > 0 && running >= limit {
 		e.count(ResultLimit)

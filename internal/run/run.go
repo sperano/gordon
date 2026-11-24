@@ -96,7 +96,15 @@ type Identity struct {
 	// Retry is the limit restart this run is (limit_reaper.restart_name),
 	// 0 for the original run.
 	Retry int `json:"retry,omitempty"`
+	// Ops marks a VikunjaImplement run in the ops mode (the legacy
+	// vikunja-ops-* spawners): the task's implementation run, named
+	// OpsNamePrefix-<project>-<variant>-<task>.
+	Ops bool `json:"ops,omitempty"`
 }
+
+// OpsNamePrefix starts an ops run's Task name (the legacy vikunja-ops-*
+// spawners' nameTemplate).
+const OpsNamePrefix = "vikunja-ops"
 
 // Name is the Kelos Task name, or "" for a family that submits no Task;
 // a limit restart's is its original's with -retry<n>.
@@ -111,6 +119,9 @@ func (i Identity) Name() string {
 func (i Identity) baseName() string {
 	switch i.Family {
 	case VikunjaImplement:
+		if i.Ops {
+			return fmt.Sprintf("%s-%s-%s-%d", OpsNamePrefix, i.Project, i.Variant, i.TaskID)
+		}
 		return fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
 	case VikunjaDiscuss:
 		return fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
