@@ -80,7 +80,7 @@ func TestFailedNoticeWaitsForTheMessage(t *testing.T) {
 // configured maximum and its run link; the gave-up notice names the
 // stopped Task. Each is posted once, and the legacy reaper's counts.
 func TestRestartNotices(t *testing.T) {
-	const restarted = "vikunja-gordon-claude-opus-5-retry2"
+	const restarted = "vikunja-5-gordon-opus-retry2"
 	id := run.Identity{Family: run.VikunjaImplement, Project: "gordon", Variant: "claude-opus", TaskID: 5, Retry: 2}
 	rs := runs{restarted: {Name: restarted, Family: run.VikunjaImplement, Identity: id, TaskUID: "uid-7"}}
 	var asked []string
@@ -93,10 +93,10 @@ func TestRestartNotices(t *testing.T) {
 		want string
 	}{
 		{action.Notice(action.VikunjaTask(5), notice.Restart, restarted), notice.RestartText(notice.RestartInfo{
-			Stopped: "vikunja-gordon-claude-opus-5-retry1", Restart: restarted, LimitType: "weekly", Attempt: 2, Max: 4,
+			Stopped: "vikunja-5-gordon-opus-retry1", Restart: restarted, LimitType: "weekly", Attempt: 2, Max: 4,
 			RunURL: "https://lucarne.example/runs/c/kelos-agents/uid-7"})},
-		{action.Notice(action.VikunjaTask(5), notice.RestartGaveUp, "vikunja-gordon-claude-opus-5-retry3"),
-			notice.GaveUpText("vikunja-gordon-claude-opus-5-retry3", "weekly", 4)},
+		{action.Notice(action.VikunjaTask(5), notice.RestartGaveUp, "vikunja-5-gordon-opus-retry3"),
+			notice.GaveUpText("vikunja-5-gordon-opus-retry3", "weekly", 4)},
 	}
 	for _, c := range cases {
 		f := newFake(t)
@@ -121,7 +121,7 @@ func TestRestartNotices(t *testing.T) {
 			t.Fatalf("%s after the legacy notice: %v, %d comments", c.a.Value, err, len(legacy.comments[5]))
 		}
 	}
-	if !slices.Contains(asked, "vikunja-gordon-claude-opus-5-retry1") || !slices.Contains(asked, "vikunja-gordon-claude-opus-5-retry3") {
+	if !slices.Contains(asked, "vikunja-5-gordon-opus-retry1") || !slices.Contains(asked, "vikunja-5-gordon-opus-retry3") {
 		t.Errorf("limits read for %v", asked)
 	}
 }
@@ -130,23 +130,23 @@ func TestRestartNoticeFailures(t *testing.T) {
 	f := newFake(t)
 	f.put(Task{ID: 5, ProjectID: 3})
 	original := run.Identity{Family: run.VikunjaImplement, Project: "gordon", Variant: "claude-opus", TaskID: 5}
-	ex := executor(f, runs{"vikunja-gordon-claude-opus-5": {Identity: original}})
+	ex := executor(f, runs{"vikunja-5-gordon-opus": {Identity: original}})
 	// The notice of a run that restarts nothing is refused for good.
-	a := action.Notice(action.VikunjaTask(5), notice.Restart, "vikunja-gordon-claude-opus-5")
+	a := action.Notice(action.VikunjaTask(5), notice.Restart, "vikunja-5-gordon-opus")
 	if err := ex.Execute(ctx, a); !worker.IsPermanent(err) {
 		t.Fatalf("restart notice of an original run: %v, want permanent", err)
 	}
 	// A failed limit read posts nothing: the action retries.
 	readErr := errors.New("kelos down")
 	ex.Limits = func(context.Context, string) (string, error) { return "", readErr }
-	gave := action.Notice(action.VikunjaTask(5), notice.RestartGaveUp, "vikunja-gordon-claude-opus-5-retry3")
+	gave := action.Notice(action.VikunjaTask(5), notice.RestartGaveUp, "vikunja-5-gordon-opus-retry3")
 	if err := ex.Execute(ctx, gave); !errors.Is(err, readErr) || len(f.comments[5]) != 0 {
 		t.Fatalf("failed limit read: %v, %d comments", err, len(f.comments[5]))
 	}
 	// Without a reader the notice names no limit, and the default maximum.
 	ex.Limits = nil
 	if err := ex.Execute(ctx, gave); err != nil || len(f.comments[5]) != 1 ||
-		!strings.HasPrefix(f.comments[5][0].Comment, notice.GaveUpText("vikunja-gordon-claude-opus-5-retry3", "", 3)) {
+		!strings.HasPrefix(f.comments[5][0].Comment, notice.GaveUpText("vikunja-5-gordon-opus-retry3", "", 3)) {
 		t.Fatalf("gave-up without a limit reader: %v, %+v", err, f.comments[5])
 	}
 }

@@ -160,6 +160,19 @@ func existing(led Ledger, name string) (string, bool) {
 	}
 }
 
+// existingRun is existing for a run's name, then for the name it had
+// before the task id led it (run.Identity.PreviousName), so a run started
+// before the rename is not submitted again under the new name.
+func existingRun(led Ledger, id run.Identity) (string, bool) {
+	if reason, dup := existing(led, id.Name()); dup {
+		return reason, true
+	}
+	if prev := id.PreviousName(); prev != "" {
+		return existing(led, prev)
+	}
+	return "", false
+}
+
 // isRequest matches an owner command the way the legacy filters do: the
 // trigger at the start of the text (after an optional <p> in Vikunja's
 // HTML), then whitespace, a tag or the end.

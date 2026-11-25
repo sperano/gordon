@@ -3589,7 +3589,7 @@
               },
               {
                 "name": "PR_OPENER_TASK_PATTERN",
-                "value": "vikunja-{{.project}}-{{.variant}}-([0-9]+)(?:-retry[0-9]+)?"
+                "value": "vikunja-([0-9]+)-{{.project}}-{{.short_variant}}(?:-retry[0-9]+)?"
               },
               {
                 "name": "PR_OPENER_HEAD_PREFIX",

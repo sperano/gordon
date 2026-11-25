@@ -1,18 +1,23 @@
 // Package run defines run identities: which dispatch family a Kelos Task
 // belongs to and the deterministic Task name and branch it gets.
 //
-// Names are exactly the legacy TaskSpawner nameTemplates (hollingsworth
-// helm/kelos/templates/taskspawners.yaml, commentspawners.yaml,
-// followupspawners.yaml, reviewspawners.yaml), because legacy pod hooks
-// (wait_for_blockers.py, announce_start.py, dedupe_pr_task.py,
-// limit_reaper.py) parse ids back out of them; a Task Gordon submits during
-// the migration must look like the one the spawner would have made.
+// Follow-up, PR follow-up, review and conflict names are the legacy
+// TaskSpawner nameTemplates (hollingsworth helm/kelos/templates/
+// commentspawners.yaml, followupspawners.yaml, reviewspawners.yaml),
+// because pod hooks (followup_queued_notice.py, limit_reaper.py) match
+// them. An implementation or discuss run's name departs from the legacy
+// taskspawners.yaml template: it leads with the Vikunja task id and
+// carries the variant without its vendor prefix
+// (vikunja-<task>-<project>-<short variant>, ShortVariant; a discuss run
+// adds -discuss), so runs of one task sort together; PreviousName gives the legacy shape, for
+// deduplication against runs started before the rename.
 package run
 
 import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // Family is a dispatch family: one legacy spawner family, or one group of
@@ -98,13 +103,32 @@ type Identity struct {
 	Retry int `json:"retry,omitempty"`
 	// Ops marks a VikunjaImplement run in the ops mode (the legacy
 	// vikunja-ops-* spawners): the task's implementation run, named
-	// OpsNamePrefix-<project>-<variant>-<task>.
+	// OpsNamePrefix-<task>-<project>-<short variant>.
 	Ops bool `json:"ops,omitempty"`
 }
 
 // OpsNamePrefix starts an ops run's Task name (the legacy vikunja-ops-*
 // spawners' nameTemplate).
 const OpsNamePrefix = "vikunja-ops"
+
+// discussNameSuffix ends a discuss run's Task name (before any -retry<n>),
+// so it sorts with the task's implementation runs.
+const discussNameSuffix = "discuss"
+
+// vendorSeparator ends a variant's vendor prefix (claude-opus, gpt-sol).
+const vendorSeparator = "-"
+
+// ShortVariant is a variant as an implementation or discuss run's name
+// carries it: without its vendor prefix (claude-opus is opus, gpt-sol is
+// sol); a variant with no prefix stays whole. Distinct variants must keep
+// distinct short names (dispatch.Config.Validate refuses a collision), or
+// their runs of one task would share a name.
+func ShortVariant(variant string) string {
+	if _, rest, ok := strings.Cut(variant, vendorSeparator); ok && rest != "" {
+		return rest
+	}
+	return variant
+}
 
 // Name is the Kelos Task name, or "" for a family that submits no Task;
 // a limit restart's is its original's with -retry<n>.
@@ -116,15 +140,39 @@ func (i Identity) Name() string {
 	return name
 }
 
+// PreviousName is the name an implementation, ops or discuss run had
+// before its name led with the task id and shortened the variant
+// (vikunja-<project>-<variant>-<task>, vikunja-ops-<project>-<variant>-<task>
+// or vikunja-discuss-<project>-<variant>-<task>, each with any -retry<n>),
+// so a run started under it still deduplicates; "" for every other family,
+// whose name did not change.
+func (i Identity) PreviousName() string {
+	var name string
+	switch {
+	case i.Family == VikunjaImplement && i.Ops:
+		name = fmt.Sprintf("%s-%s-%s-%d", OpsNamePrefix, i.Project, i.Variant, i.TaskID)
+	case i.Family == VikunjaImplement:
+		name = fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+	case i.Family == VikunjaDiscuss:
+		name = fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+	default:
+		return ""
+	}
+	if i.Retry > 0 {
+		name += fmt.Sprintf("-retry%d", i.Retry)
+	}
+	return name
+}
+
 func (i Identity) baseName() string {
 	switch i.Family {
 	case VikunjaImplement:
 		if i.Ops {
-			return fmt.Sprintf("%s-%s-%s-%d", OpsNamePrefix, i.Project, i.Variant, i.TaskID)
+			return fmt.Sprintf("%s-%d-%s-%s", OpsNamePrefix, i.TaskID, i.Project, ShortVariant(i.Variant))
 		}
-		return fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+		return fmt.Sprintf("vikunja-%d-%s-%s", i.TaskID, i.Project, ShortVariant(i.Variant))
 	case VikunjaDiscuss:
-		return fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+		return fmt.Sprintf("vikunja-%d-%s-%s-%s", i.TaskID, i.Project, ShortVariant(i.Variant), discussNameSuffix)
 	case VikunjaFollowUp, VikunjaFollowUpAnswer, VikunjaFollowUpDiscuss:
 		// One name across the three modes, so a task whose labels change
 		// between deliveries still deduplicates (commentspawners.yaml).

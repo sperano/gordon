@@ -39,14 +39,17 @@ type Deleter interface {
 // runs (a queued submission is never created) and deletes every live
 // agent Task of the task, the limit reaper's restarts and a legacy
 // spawner's included: Tasks labelled with the task and no role, named
-// vikunja-<...>-<task>[-retry<n>] but not vikunja-fu-*.
+// vikunja-[ops-]<task>-<...>[-retry<n>], or in the shape before
+// the task id led, vikunja-<...>-<task>[-retry<n>] but not vikunja-fu-*
+// (a run started before the rename is still stopped).
 type Canceller struct {
 	Store CancelStore
 	Kelos Deleter
 }
 
 func agentTaskName(task string) *regexp.Regexp {
-	return regexp.MustCompile(`^vikunja-(?:[^f]|f[^u]|fu[^-]).*-` + regexp.QuoteMeta(task) + `(?:-retry[0-9]+)?$`)
+	t := regexp.QuoteMeta(task)
+	return regexp.MustCompile(`^vikunja-(?:(?:ops-)?` + t + `-.+|(?:[^f]|f[^u]|fu[^-]).*-` + t + `(?:-retry[0-9]+)?)$`)
 }
 
 func (c *Canceller) task(a action.Action) (string, error) {

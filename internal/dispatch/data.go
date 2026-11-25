@@ -26,8 +26,10 @@ type Input struct {
 // legacy Kelos variable names:
 //
 //   - every run: name, family, project, project_title, workspace,
-//     repository, variant, reviewer, profile, mode, model, effort,
-//     branch (the Task's spec.branch);
+//     repository, variant, short_variant (run.ShortVariant: the variant
+//     without its vendor prefix, as in an implementation or discuss run's
+//     name), reviewer, profile, mode, model, effort, branch (the Task's
+//     spec.branch);
 //   - Vikunja families: task, comment, Title (the fresh task title), Body
 //     (the description for implement and discuss, the request comment
 //     for follow-ups), description, author, Context.comments, Branch;
@@ -46,7 +48,8 @@ func (b Builder) data(in Input, proj profile.Project) Data {
 	d := Data{
 		"name": in.Run.Name, "family": string(id.Family), "project": proj.Name, "project_title": proj.Title,
 		"workspace": proj.Workspace, "repository": proj.Repository, "variant": id.Variant,
-		"reviewer": id.Reviewer, "profile": prof.Profile, "mode": string(prof.Mode), "model": prof.Model,
+		"short_variant": run.ShortVariant(id.Variant),
+		"reviewer":      id.Reviewer, "profile": prof.Profile, "mode": string(prof.Mode), "model": prof.Model,
 		"effort": prof.Effort, "branch": in.Run.Branch, "Branch": in.Run.Branch,
 	}
 	switch {

@@ -46,7 +46,7 @@
   "ledger": {
     "runs": [
       {
-        "name": "vikunja-hollingsworth-claude-opus-4122",
+        "name": "vikunja-4122-hollingsworth-opus",
         "active": false,
         "exists": true,
         "family": "vikunja-implement",

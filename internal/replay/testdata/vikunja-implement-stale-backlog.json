@@ -53,7 +53,7 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-hollingsworth-claude-opus-4101"
+      "vikunja-4101-hollingsworth-opus"
     ],
     "divergence": "legacy matched the enriched Doing bucket; wait-for-blockers later exited 143 on the To-Do card"
   },

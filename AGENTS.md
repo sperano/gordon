@@ -42,9 +42,11 @@ permissions, rollout ownership, database roles, or deployment behaviour.
 - Keep routing and execution profiles in trusted configuration. Never derive
   credentials, ServiceAccounts, secret access, permission modes, or pod pieces
   from an untrusted webhook payload.
-- Preserve shadow mode: it records decisions and comparisons but performs no
-  external writes. A routing family has exactly one active owner per scope;
-  ownership changes must retain a safe rollback to legacy handling.
+- While shadow mode exists, it records decisions and comparisons but performs
+  no external writes. A routing family has exactly one active owner per scope.
+  No rollback path to legacy handling is required: the owner fixes forward, so
+  do not keep legacy handling, shadow comparison, or ownership switches alive
+  only for rollback, and do not hold back a change for rollback safety.
 - Keep provider and project concurrency bounded. Deferrals caused by limits or
   held branches are not failed attempts.
 - Do not log webhook bodies, prompts, credentials, tokens, secret contents, or

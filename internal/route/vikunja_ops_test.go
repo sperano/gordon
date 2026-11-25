@@ -62,7 +62,7 @@ func TestOpsStartDispatchesTheOpsRun(t *testing.T) {
 		t.Fatalf("runs %+v", fd.Runs)
 	}
 	rn := fd.Runs[0]
-	if rn.Name != "vikunja-ops-hollingsworth-claude-opus-5" || rn.Branch != "kelos/vikunja-5" || !rn.Identity.Ops ||
+	if rn.Name != "vikunja-ops-5-hollingsworth-opus" || rn.Branch != "kelos/vikunja-5" || !rn.Identity.Ops ||
 		rn.Profile.Mode != profile.ModeOps || rn.Profile.Profile != opsProfile ||
 		rn.Profile.ServiceAccount != opsServiceAccount || rn.Profile.Workspace != "hollingsworth" {
 		t.Fatalf("ops run %+v", rn)
@@ -110,11 +110,11 @@ func TestOpsStartPrecedence(t *testing.T) {
 		run     string
 	}{
 		{"discuss wins", opsRouter(), hollingsworthID, []string{opsLabel, "discuss"}, route.Dispatch, "",
-			"vikunja-discuss-hollingsworth-claude-opus-5"},
+			"vikunja-5-hollingsworth-opus-discuss"},
 		{"chain wins", opsRouter(), hollingsworthID, []string{opsLabel, "chain"}, route.Ignore, route.ReasonChain, ""},
-		{"ops off", router(), hollingsworthID, []string{opsLabel}, route.Dispatch, "", "vikunja-hollingsworth-claude-opus-5"},
-		{"project uncovered", opsRouter(), vigieID, []string{opsLabel}, route.Dispatch, "", "vikunja-vigie-claude-opus-5"},
-		{"no ops label", opsRouter(), hollingsworthID, nil, route.Dispatch, "", "vikunja-hollingsworth-claude-opus-5"},
+		{"ops off", router(), hollingsworthID, []string{opsLabel}, route.Dispatch, "", "vikunja-5-hollingsworth-opus"},
+		{"project uncovered", opsRouter(), vigieID, []string{opsLabel}, route.Dispatch, "", "vikunja-5-vigie-opus"},
+		{"no ops label", opsRouter(), hollingsworthID, nil, route.Dispatch, "", "vikunja-5-hollingsworth-opus"},
 		{"in progress", opsRouter(), hollingsworthID, []string{opsLabel, "in progress"}, route.Ignore, route.ReasonInProgress, ""},
 	}
 	for _, c := range cases {
@@ -151,7 +151,7 @@ func TestBlockedOpsStartDispatches(t *testing.T) {
 		route.State{Task: blocked(opsLabel)}, replay.Ledger{})
 	fd := d.Families[0]
 	expectFamily(t, fd, run.VikunjaImplement, route.Dispatch, "")
-	if len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-ops-hollingsworth-claude-opus-5" {
+	if len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-ops-5-hollingsworth-opus" {
 		t.Fatalf("blocked ops start runs %+v", fd.Runs)
 	}
 	requeue := synthetic(t, opsTask, hollingsworthID, map[string]any{"requeue": "k", "depth": 1})
@@ -163,6 +163,16 @@ func TestBlockedOpsStartDispatches(t *testing.T) {
 }
 
 func TestOpsRunDeduplicates(t *testing.T) {
+	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-5-hollingsworth-opus", Active: true,
+		Exists: true, Family: run.VikunjaImplement, TaskID: opsTask}}}
+	d := opsRouter().Decide(startedBy(t, task(opsTask, hollingsworthID, []string{opsLabel}, "claude-opus"), opsOwner),
+		route.State{Task: createdBy(opsOwner, hollingsworthID, opsLabel)}, led)
+	expectFamily(t, d.Families[0], run.VikunjaImplement, route.Duplicate, route.ReasonRunActive)
+}
+
+// TestOpsRunDeduplicatesAgainstItsPreviousName: an ops run started
+// under the name it had before the task id led it is not submitted again.
+func TestOpsRunDeduplicatesAgainstItsPreviousName(t *testing.T) {
 	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-hollingsworth-claude-opus-5", Active: true,
 		Exists: true, Family: run.VikunjaImplement, TaskID: opsTask}}}
 	d := opsRouter().Decide(startedBy(t, task(opsTask, hollingsworthID, []string{opsLabel}, "claude-opus"), opsOwner),
@@ -171,14 +181,14 @@ func TestOpsRunDeduplicates(t *testing.T) {
 }
 
 func TestDragCancelStopsTheOpsRun(t *testing.T) {
-	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-hollingsworth-claude-opus-5", Active: true,
+	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-5-hollingsworth-opus", Active: true,
 		Exists: true, Family: run.VikunjaImplement, TaskID: opsTask}}}
 	dragged := createdBy(opsOwner, hollingsworthID, opsLabel, "in progress")
 	dragged.Buckets = []string{"To-Do"}
 	d := opsRouter().Decide(startedBy(t, task(opsTask, hollingsworthID, nil), opsOwner), route.State{Task: dragged}, led)
 	fd, ok := familyOf(d, run.VikunjaDragCancel)
 	if !ok || fd.Outcome != route.Act || len(fd.Actions) == 0 || fd.Actions[0].Kind != action.CancelRun ||
-		fd.Actions[0].Detail != "vikunja-ops-hollingsworth-claude-opus-5" {
+		fd.Actions[0].Detail != "vikunja-ops-5-hollingsworth-opus" {
 		t.Fatalf("drag of an ops task: %+v (found %v), want its ops run cancelled", fd, ok)
 	}
 }

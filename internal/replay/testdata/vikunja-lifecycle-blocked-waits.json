@@ -50,7 +50,7 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-hollingsworth-claude-opus-4110"
+      "vikunja-4110-hollingsworth-opus"
     ],
     "divergence": "legacy created the Task at once and its pod waited in the wait-for-blockers init container (up to 7 days, then a blocker-timeout notice); Gordon submits nothing until the blocker is done, so no pod waits and no timeout exists",
     "writes": []

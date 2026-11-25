@@ -15,7 +15,7 @@
       "vikunja.spe.quebec/task": "1624",
       "vikunja.spe.quebec/variant": "claude-opus"
     },
-    "name": "vikunja-puckdb-claude-opus-1624",
+    "name": "vikunja-1624-puckdb-opus",
     "namespace": "kelos-agents"
   },
   "spec": {
@@ -564,7 +564,7 @@
               },
               {
                 "name": "PR_OPENER_TASK_PATTERN",
-                "value": "vikunja-puckdb-claude-opus-([0-9]+)(?:-retry[0-9]+)?"
+                "value": "vikunja-([0-9]+)-puckdb-opus(?:-retry[0-9]+)?"
               },
               {
                 "name": "PR_OPENER_HEAD_PREFIX",

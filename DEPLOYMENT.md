@@ -185,7 +185,7 @@ pr-open notice promises a ready-to-merge one).
   a refused submission claims nothing.
 - **Ops runs** (`vikunja-implement`): with the routing config's
   `policy.ops_label` set, a task of a `policy.ops_projects` project carrying
-  that label gets the ops run `vikunja-ops-<project>-<variant>-<task>`
+  that label gets the ops run `vikunja-ops-<task>-<project>-<short variant>` (the variant without its vendor prefix: `claude-opus` is `opus`)
   (mode `ops`, profile `ops_profile`) instead of its implementation run,
   when its creator and the starting event's doer are both
   `policy.ops_owner`; otherwise it runs nothing (`ops-creator-not-owner`,
