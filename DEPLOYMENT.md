@@ -10,7 +10,7 @@ first argument. Nothing here is deployed by this repository.
 |---|---|---|---|---|
 | `gordon migrate` | Job or init container, before each rollout | schema owner (DDL) | owner URL | none |
 | `gordon receiver` | Deployment behind the webhook ingress | receiver: `INSERT` on `inbox`, `SELECT (id, delivery_key)` on `inbox`, `SELECT` on `schema_migrations` | receiver URL, webhook keys | none (no ServiceAccount token: `automountServiceAccountToken: false`) |
-| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions`, `shadow_tasks`, `run_completions` and `cost_notices`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a shadow Task's comparison, a cost notice's publication (`state`, `rev`, `body`, `digest`, `failures`, `last_error`, `next_check`, `published_at`, `live_until`, `updated_at`); nothing on `decisions` and `run_completions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source` `vikunja` or `github` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read token, read-only GitHub token, optionally the Vikunja write token and the GitHub App's keys | with `GORDON_DISPATCH_CONFIG_FILE`: `get`, `list` and (outside shadow) `create` on `kelos.dev` `tasks` in `kelos-agents`, plus `delete` once Gordon owns `vikunja-drag-cancel` or `pr-review` (superseded reviews); nothing else (no Secrets, no pods) |
+| `gordon worker` | Deployment, no ingress | worker: `SELECT, INSERT` on `decisions`, `requests`, `runs`, `actions`, `run_completions` and `cost_notices`, and `UPDATE` of their mutable columns only (a request's outcome and `executed`, a run's state, rerun fields, built Task and observed Task (`task_exists`, `task_uid`, `phase`, `observed_at`), an action's queue columns, a cost notice's publication (`state`, `rev`, `body`, `digest`, `failures`, `last_error`, `next_check`, `published_at`, `live_until`, `updated_at`); nothing on `decisions` and `run_completions`; `internal/store/grants.go` lists the exact columns); on `inbox` `SELECT`, `UPDATE` of its queue columns and `body`, and `INSERT` of its own synthetic deliveries (requeues and reconciliation: `source, delivery_key, request_key, kind, scope, headers, body`, never `body_digest`; a row policy refuses any row but `source` `vikunja` or `github` with the `X-Gordon-Synthetic` header); no `DELETE`, no DDL; a role distinct from the receiver's (`migrate` refuses one role for both) | worker URL, Vikunja read and write tokens, read-only GitHub token, the GitHub App's keys, the ntfy token | `get`, `list`, `create` and `delete` (drag-cancel, superseded reviews) on `kelos.dev` `tasks` in `kelos-agents`; nothing else (no Secrets, no pods) |
 
 `gordon migrate` grants the receiver and worker roles (`GORDON_RECEIVER_ROLE`,
 `GORDON_WORKER_ROLE`) at every run, revoking first every right a role holds on Gordon's tables, so a role moved
@@ -20,8 +20,11 @@ the release that adds the migration. The roles themselves (logins and passwords)
 provisioned outside Gordon (shared Postgres, `tofu/kelos`). Migrations run
 under an advisory lock, each in its own transaction with its version row:
 concurrent or interrupted runs are safe, and an already migrated database
-is a no-op. Migrations are additive; readiness accepts a schema newer than
-the binary, so the old pods keep serving during a rollout.
+is a no-op. Migrations are additive (`0006` drops the retired
+`shadow_tasks`: a worker of an earlier release still running only fails
+its shadow comparison and that table's retention, logged and retried,
+until it is replaced); readiness accepts a schema newer than the binary,
+so the old pods keep serving during a rollout.
 
 The receiver never holds an API token and the worker never holds a webhook
 key: the receiver verifies each signature before storing the delivery, and
@@ -64,15 +67,13 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 
 | Variable | Default | |
 |---|---|---|
-| `GORDON_SHADOW` | `true` | record decisions, execute nothing (no outbox loop at all) |
 | `GORDON_WORKER_ID` | hostname | lease owner name (the pod name) |
 | `GORDON_VIKUNJA_URL` | required | API base, e.g. `https://vikunja.example/api/v1` |
 | `GORDON_VIKUNJA_TOKEN_FILE` | required | read token: `GET /tasks/{id}` (`tasks.read_one`) and its comments (`tasks_comments.read_all`); with `pr-readiness` and `policy.readiness.notify` also `GET /tasks/{id}/reactions` (`reactions.read_all`); with the reconciliation also `GET /tasks` (listing, `tasks.read_all`) and `GET /labels` (`labels.read_all`). Vikunja answers a route the token lacks with 401, which the worker logs as `vikunja: unauthorized (HTTP 401) on GET <path>` and retries. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_GITHUB_API_URL` | `https://api.github.com` | |
 | `GORDON_GITHUB_TOKEN_FILE` | required | read-only token for pull requests and their files. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_ROUTING_CONFIG_FILE` | `profile.Defaults()` | JSON `profile.Config` (unknown fields refused) |
-| `GORDON_OWNERSHIP_FILE` | empty (all legacy) | JSON `rollout.Table`; refused when invalid or ungated |
-| `GORDON_WORKER_CONCURRENCY` | `4` | per queue: inbox items decided at once, and separately outbox actions performed at once (up to twice this in flight per process outside shadow mode) |
+| `GORDON_WORKER_CONCURRENCY` | `4` | per queue: inbox items decided at once, and separately outbox actions performed at once (up to twice this in flight per process) |
 | `GORDON_PROJECT_LIMIT` | `2` | per project or repository (the delivery's Vikunja project or GitHub repository), inbox and outbox together; `0` is unbounded |
 | `GORDON_UPSTREAM_LIMITS` | `vikunja=4,github=4` | per provider: reads in flight, and separately outbox actions in flight; each provider at most once. Kelos submissions take the default, 4 |
 | `GORDON_LEASE_TTL` | `2m` | must exceed `GORDON_UPSTREAM_TIMEOUT`; an item's fresh-state reads, and each outbox attempt (recovery and write), are cut at half of it, the write then being ambiguous |
@@ -82,29 +83,34 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_RETRY_BASE`, `GORDON_RETRY_MAX` | `5s`, `10m` | exponential backoff |
 | `GORDON_DEFER_DELAY` | `2s` | wait of a row deferred by a full provider or project limit; a full Kelos variant limit, a held branch or a timed-out admission lock wait waits `GORDON_KELOS_BUSY_DELAY` |
 | `GORDON_RECONCILE_INTERVAL` | `30s` | lease expiry, queue gauges, body pruning |
-| `GORDON_BODY_RETENTION` | `168h` | stored bodies of finished rows, and the built Tasks (prompts) of finished runs and compared shadow Tasks, are dropped after this; keys, decisions, requests and runs stay |
+| `GORDON_BODY_RETENTION` | `168h` | stored bodies of finished rows, and the built Tasks (prompts) of finished runs, are dropped after this; keys, decisions, requests and runs stay |
 | `GORDON_SHUTDOWN_GRACE` | `25s` | in-flight items on SIGTERM; past it their leases expire and another worker recovers them |
-| `GORDON_DISPATCH_CONFIG_FILE` | empty | JSON `dispatch.Config` (unknown fields refused; below). Without it runs carry no Task, nothing touches Kelos, and `GORDON_SHADOW=false` is refused |
+| `GORDON_DISPATCH_CONFIG_FILE` | required | JSON `dispatch.Config` (unknown fields refused; below) |
 | `GORDON_KELOS_API_URL` | `https://kubernetes.default.svc` | Kubernetes API base |
 | `GORDON_KELOS_TOKEN_FILE` | the pod's ServiceAccount token | re-read per request (projected tokens rotate) |
 | `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
 | `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit, a held branch or a timed-out wait for the admission lock |
-| `GORDON_SHADOW_WINDOW` | `15m` | how long a shadow Task waits for the legacy Task of its name before it is recorded `missing` |
-| `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | empty | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. Without it Vikunja actions stay queued (deferred); outside shadow a Gordon-owned family that writes to Vikunja is refused without it, or with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction`. Re-read per request, so a rotated Secret applies without a restart |
+| `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | required | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. The worker is also refused with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction`. Re-read per request, so a rotated Secret applies without a restart |
 | `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
 | `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`, on a pull request `<sillage>/open?url=<PR URL>`, only on a private repository); unset, no link |
-| `GORDON_GITHUB_APP_DIR` | empty | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry. Without it GitHub actions stay queued (deferred); outside shadow a Gordon-owned `pr-followup`, `pr-review`, `pr-conflict` or `pr-readiness` is refused without it, and a shadow `pr-readiness` too (it reads check runs as the App) |
+| `GORDON_GITHUB_APP_DIR` | required | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry; readiness reads check runs as the App |
 | `GORDON_GITHUB_RECONCILE_INTERVAL` | `0` (off) | pace of the GitHub reconciliation: for each configured repository's open pull requests by a pull-request author, the owner's `/gordon` comments, inline comments and reviews and each review bot's latest review with a body, not handled yet, and those pull requests closed from an agent branch, are queued as synthetic deliveries, each once |
 | `GORDON_GITHUB_RECONCILE_LOOKBACK`, `GORDON_GITHUB_RECONCILE_GRACE` | `24h`, `10m` | its window: submitted, created or closed within the first, and longer ago than the second (the webhook may still be on its way) |
-| `GORDON_CONFLICT_RECONCILE_INTERVAL` | `0` (off) | pace of the conflict reconciliation: for each Workspace of a project whose `pr-conflict` is not legacy's, the repository's open agent PRs based on the Workspace's ref (`base_ref` of its first project, `main` by default) or stacked on another such PR are read one by one, and each GitHub reports in conflict (mergeable `false`, `dirty`) whose episode has no run left is queued, once an hour. Push and `pull_request` events start no scan: this interval is the detection delay. One read-only GitHub read per candidate PR and pass |
+| `GORDON_CONFLICT_RECONCILE_INTERVAL` | `0` (off) | pace of the conflict reconciliation: for each configured Workspace, the repository's open agent PRs based on the Workspace's ref (`base_ref` of its first project, `main` by default) or stacked on another such PR are read one by one, and each GitHub reports in conflict (mergeable `false`, `dirty`) whose episode has no run left is queued, once an hour. Push and `pull_request` events start no scan: this interval is the detection delay. One read-only GitHub read per candidate PR and pass |
 | `GORDON_LIMIT_RESTART_MAX` | `3` | restarts of one chain after a subscription limit; then the gave-up notice |
 | `GORDON_LIMIT_RESTART_GRACE`, `GORDON_LIMIT_RESTART_FALLBACK` | `2m`, `1h` | a limit stop restarts this long after its reset; without a known reset time, the fallback after its Task's completion |
-| `GORDON_SILLAGE_API_URL` | empty (off) | Sillage's read API, reached in the cluster (`http://sillage.sillage.svc`, not the public host behind forward-auth): the completion cost notices read `GET /api/v1/cost/task/<Vikunja host>/<task id>` (sperano/sillage#57 or later). Unset, the cost notice pass is off; outside shadow a Gordon-owned `vikunja-cost` is refused without it |
+| `GORDON_SILLAGE_API_URL` | required | Sillage's read API, reached in the cluster (`http://sillage.sillage.svc`, not the public host behind forward-auth): the completion cost notices read `GET /api/v1/cost/task/<Vikunja host>/<task id>` (sperano/sillage#57 or later) |
 | `GORDON_COST_WAIT`, `GORDON_COST_DEADLINE` | `2m`, `6h` | a finished run's notice is checked every `WAIT` until Sillage's estimate of the run is final; `DEADLINE` after the run finished, it is posted with what Sillage has, marked not final. `WAIT` must be below `DEADLINE` |
 | `GORDON_COST_REFRESH`, `GORDON_COST_LIVE_FOR` | `15m`, `336h` | a task's newest notice is re-read every `REFRESH` and edited in place when its figures change, until `LIVE_FOR` after its last revision |
-| `GORDON_READINESS_RECONCILE_INTERVAL` | `0` (off) | pace of the readiness backstop: every open readiness candidate (an allowed author's non-draft PR from a `kelos/vikunja-<id>` branch of the repository) of each repository whose PR project's `pr-readiness` is not legacy's is queued as a synthetic `pull_request` (action `gordon-readiness`), once per head and interval. It replaces the legacy cron scan and the event waiter's polling (`eventWaitSeconds`, `pollSeconds`): `1m` keeps the legacy latency. Required, with the App and the dispatch config, by a non-legacy `pr-readiness` rule |
-| `GORDON_NTFY_URL`, `GORDON_NTFY_TOPIC`, `GORDON_NTFY_TOKEN_FILE` | empty | the private ntfy publisher of a ready head (`prReadiness.notify`): an HTTPS base URL (refused otherwise), the topic and its bearer token. Outside shadow a Gordon-owned `pr-readiness` is refused without them while `policy.readiness.notify` is on |
+| `GORDON_READINESS_RECONCILE_INTERVAL` | required, > 0 | pace of the readiness backstop: every open readiness candidate (an allowed author's non-draft PR from a `kelos/vikunja-<id>` branch of the repository) of each configured repository is queued as a synthetic `pull_request` (action `gordon-readiness`), once per head and interval. It replaced the legacy cron scan and the event waiter's polling: `1m` keeps their latency |
+| `GORDON_NTFY_URL`, `GORDON_NTFY_TOPIC`, `GORDON_NTFY_TOKEN_FILE` | empty | the private ntfy publisher of a ready head (`prReadiness.notify`): an HTTPS base URL (refused otherwise), the topic and its bearer token; required while `policy.readiness.notify` is on |
+
+Removed settings: `GORDON_SHADOW`, `GORDON_SHADOW_WINDOW` and
+`GORDON_OWNERSHIP_FILE` (whose file is never opened) are ignored, whatever
+their value, and logged once at start (`ignoring removed settings`);
+Gordon executes every family. A deployment may keep setting them until
+its chart drops them (`config.RemovedWorkerVars`).
 
 ## Dispatch configuration
 
@@ -115,8 +121,8 @@ credentials, ServiceAccount and (read-only) Workspace. Hollingsworth's
 `helm/gordon` (Gordon 05) renders it from the same templates as the
 spawners; `internal/dispatch/testdata/hollingsworth.json` is made from the
 TaskSpawners rendered from `helm/kelos` at `bf18aa5`, with their variables
-substituted, and the tests hold Gordon's Tasks equal to
-the legacy ones.
+substituted, and the tests hold Gordon's Tasks equal to the golden Tasks
+in `internal/dispatch/testdata/tasks`.
 
 | Field | |
 |---|---|
@@ -159,9 +165,8 @@ a `Waiting` Task in Kelos. The database must be UTF-8 (built Tasks are
 ## Vikunja lifecycle (Gordon 06)
 
 Gordon decides the Vikunja lifecycle the legacy hooks, init containers and
-reconcilers performed, as durable actions on its families. Nothing changes
-until the ownership table makes Gordon a family's owner, outside shadow,
-with a write token; the routing configuration's `policy` carries the
+reconcilers performed, as durable actions on its families, and writes
+with the write token; the routing configuration's `policy` carries the
 buckets and labels (`backlog_bucket`, `agent_error_label`,
 `action_needed_label`, `auto_merge_label` and its trusted
 `auto_merge_label_creator`, `vikunja_service_user`, `vikunja_web_url`,
@@ -225,40 +230,17 @@ pr-open notice promises a ready-to-merge one).
   marker, or the legacy marker of the same notice, on a comment by its
   own user; a lost answer is recovered the same way, never posted blind.
 
-### Ownership switches
+### What the Vikunja families need
 
-One rule per (project, family); `go run ./cmd/gordon-inventory` prints
-the full table, with a `Legacy` column naming the files acting for each
-family today; below is a summary without that column. When a rule makes Gordon
-the owner (Gordon 07), the same Hollingsworth change turns off, for the
-rule's projects, what the `Off when Gordon owns it` column names; the
-rollout table refuses `vikunja-drag-cancel` where Gordon does not own
-both agent families.
-
-| Family | Off when Gordon owns it | Gordon needs |
-|---|---|---|
-| `vikunja-auto-assign` | no writer; retain the `task.created` webhook relay | the write token and each configured user must have project access |
-| `vikunja-implement`, `vikunja-discuss` | the project's implementation (discuss) TaskSpawners | dispatch config and Task `create`; the write token; Tasks without the `wait-for-blockers`, `announce-start` and `sillage-marker` init containers; the reconciliation |
-| `vikunja-followup`, `-answer`, `-discuss` | the project's `vikunja-fu-*` comment TaskSpawners, the enricher's 👀 reaction, unanswered notice and (discuss) fallback for its requests, the `vikunja-followup-reconciler` | as above |
-| `vikunja-drag-cancel` | the enricher's drag-cancel hook (`BACKLOG_BUCKET`) | the write token; `list` and `delete` on `tasks` |
-| `vikunja-done-cleanup` | the enricher's done-unlabel and action-needed hooks, the failure reporter's done sweeps | the write token; the reconciliation |
-| `vikunja-chain` | the enricher's chain hook (`CHAIN_LABEL`) and the `subtask-chain-reconcile` CronJob | the write token; the reconciliation |
-| `vikunja-failure` | the failure reporter for Tasks labelled `gordon.spe.quebec/managed` (it keeps every other Task) | the write token |
-| `vikunja-cost` | nothing: no legacy component posts cost notices | the write token; `GORDON_SILLAGE_API_URL` and egress to Sillage |
-
-### Rollback
-
-Rollback is one change: the scope's rule back to `shadow` (or removed)
-and its legacy switches back on. Decisions Gordon recorded while it owned
-the scope keep their queued actions and the outbox drains them, so no
-request is lost; each submission looks up its Task name before creating
-(a legacy spawner's Task of that name takes the run, as the legacy name
-deduplication refuses Gordon's), and each notice is found by its marker
-before it is posted, so no Task and no comment is made twice. New
-deliveries are decided by the new owner from then on. Drain first when
-possible: `SELECT family, state, count(*) FROM actions WHERE state NOT IN
-('done', 'failed') GROUP BY 1, 2` empty for the scope's families; `failed`
-actions are dead-lettered (never retried), so review them separately.
+| Family | Needs |
+|---|---|
+| `vikunja-auto-assign` | the write token; each configured user must have project access; the `task.created` webhook relay |
+| `vikunja-implement`, `vikunja-discuss` | dispatch config and Task `create`; the write token; Tasks without the `wait-for-blockers`, `announce-start` and `sillage-marker` init containers; the reconciliation |
+| `vikunja-followup`, `-answer`, `-discuss` | as above |
+| `vikunja-drag-cancel` | the write token; `list` and `delete` on `tasks` |
+| `vikunja-done-cleanup`, `vikunja-chain` | the write token; the reconciliation |
+| `vikunja-failure` | the write token |
+| `vikunja-cost` | the write token; `GORDON_SILLAGE_API_URL` and egress to Sillage |
 
 ## GitHub lifecycle (Gordon 08, 08b)
 
@@ -303,15 +285,14 @@ routing configuration's `policy` carries the round caps
   with the follow-up execution profile, and announces it on the pull
   request once submitted. An episode whose run finished is run again only
   once its Task is gone (its TTL), as the legacy Task name allowed.
-- **Failed PR runs**: a Failed `pr-followup` or `pr-conflict` run of a
-  family Gordon owns gets a failure notice on its pull request (its
+- **Failed PR runs**: a Failed `pr-followup` or `pr-conflict` run gets a
+  failure notice on its pull request (its
   Task's status message and the run link only on a private repository); legacy
   reported neither. A Task the subscription limit stopped is never
   reported failed, on a pull request or a Vikunja task: the limit restarts
   take it.
-- **Limit restarts** (`limit-restart`, Gordon 08b): each reconcile, outside
-  shadow, Gordon's failed runs of the projects it owns the family for are
-  decided once: a Task the subscription limit stopped (the agent image's
+- **Limit restarts** (`limit-restart`, Gordon 08b): each reconcile,
+  Gordon's failed runs of the configured projects are decided once: a Task the subscription limit stopped (the agent image's
   `limit-resets-at`/`limit-type` outputs, or the agent's "hit your ...
   limit" answer) is restarted as `<name>-retry<n>` (its spec, labels,
   correlation and Gordon annotations, `kelos.spe.quebec/limit-restarts`
@@ -354,8 +335,8 @@ permission); the Kelos Tasks of the
 repository's Workspaces and of the task (`list` on `tasks`), the task
 with its label creators, comments and, with ntfy, reactions. The
 routing configuration's `policy` carries it: `ready_to_merge_label`,
-`round_limit_label`, `pr_readiness` (must be `true` once Gordon owns it:
-the pr-open notice's promise) and `readiness` (`ci_checks` per
+`round_limit_label`, `pr_readiness` (must be `true`: the pr-open
+notice's promise) and `readiness` (`ci_checks` per
 repository, a repository without an entry is refused; `cubic_repos`,
 `settle_seconds`, `missing_check_minutes`, `merge_method`, `notify`;
 `profile.Defaults()` mirrors `values-hollingsworth.yaml`).
@@ -401,7 +382,7 @@ repository, a repository without an entry is refused; `cubic_repos`,
 
 Each finished run of a Vikunja task (implementation, discuss and
 follow-up runs, failed and limit-stopped ones included, each generation
-once) gets a cost notice on its task where Gordon owns `vikunja-cost`:
+once) gets a cost notice on its task:
 the run's estimated API-equivalent cost, the task's total to date (with
 how many runs it covers), the run's categories, the run's and task's
 coverage (`complete`, `partial` shown AT LEAST, `unknown` shown UNKNOWN,
@@ -437,10 +418,6 @@ to turn off.
   later) is posted frozen. Publications of one task's notices take the
   task's rows in turn, so concurrent passes leave one live notice. A
   notice unchanged for `GORDON_COST_LIVE_FOR` settles.
-- **Rollback**: remove the rule. No new notice is recorded, and the
-  project's waiting and live notices read and write nothing more
-  (`result="not-owned"`); revisions already queued drain, each found by
-  its marker first.
 
 Hollingsworth (Gordon 13 deploys it):
 
@@ -460,29 +437,20 @@ Hollingsworth (Gordon 13 deploys it):
   today. Add a NetworkPolicy there that admits port `8080` only from the
   Gordon worker's pods and the ingress controller, so agent pods in
   `kelos-agents` cannot read it.
-- The ownership file: a `vikunja-cost` rule per project (or `*`) with
-  its gate evidence; the migration (`0005_cost_notices.sql`) and its
-  grants run with `gordon migrate` before the worker starts.
+- The migration (`0005_cost_notices.sql`) and its grants run with
+  `gordon migrate` before the worker starts.
 
-### GitHub ownership switches
+### What the GitHub families need
 
-`go run ./cmd/gordon-inventory` prints the full table (its second
-switches table). When a rule makes Gordon the owner (Gordon 09), the same
-Hollingsworth change turns off, for the rule's project (its repository's
-PRs), what `Off when Gordon owns it` names. Rollback is the Vikunja
-families' (below): the rule back to `shadow` and the switches back on;
-queued actions drain, each Task-name lookup and notice marker preventing
-a duplicate.
-
-| Family | Off when Gordon owns it | Gordon needs |
-|---|---|---|
-| `pr-followup` | the project's `pr-followup-*` and review-poll spawners, the GitHub reactor's 👀, draft label and conversion for its repository, the review poller's repository entry | dispatch config and Task `create`; the App; Tasks without the `pr-task-dedup`, `review-round-cap` and `announce-github-start` init containers; the GitHub reconciliation |
-| `pr-review` | the project's `pr-review-*` spawners and the reactor's skipped checks for its repository | dispatch config and Task `create`; the App; `list` and `delete` on `tasks`; Tasks without the `pr-task-dedup` and `pr-review-supersede` init containers |
-| `pr-open` | the repository's pr-open merge spawner | the Vikunja write token |
-| `merge-close` | the repository's merge-close spawner and its `merge-close-reconcile` entry | the Vikunja write token; the GitHub reconciliation |
-| `pr-conflict` | the Workspace's `pr-conflict-*` spawners and its `conflict-reconcile-event-*` and `conflict-reconcile-cron-*` reconcilers | dispatch config and Task `create`; the App; Tasks without the `announce-github-start` init container; the conflict reconciliation |
-| `limit-restart` | the limit reaper for Gordon's Tasks (`gordon.spe.quebec/managed`) of the rule's projects; it keeps every other Task | dispatch config, Task `create` and `list`; the Vikunja write token |
-| `pr-readiness` | the repository's `pr-readiness-event-*` and `pr-readiness-cron-*` spawners | the App; Task `list`; the Vikunja write token; the readiness backstop; `pr_readiness` and `readiness.ci_checks` in the policy; `check_run` deliveries mirrored; with `readiness.notify`, the ntfy publisher |
+| Family | Needs |
+|---|---|
+| `pr-followup` | dispatch config and Task `create`; the App; Tasks without the `pr-task-dedup`, `review-round-cap` and `announce-github-start` init containers; the GitHub reconciliation |
+| `pr-review` | dispatch config and Task `create`; the App; `list` and `delete` on `tasks`; Tasks without the `pr-task-dedup` and `pr-review-supersede` init containers |
+| `pr-open` | the Vikunja write token |
+| `merge-close` | the Vikunja write token; the GitHub reconciliation |
+| `pr-conflict` | dispatch config and Task `create`; the App; Tasks without the `announce-github-start` init container; the conflict reconciliation |
+| `limit-restart` | dispatch config, Task `create` and `list`; the Vikunja write token |
+| `pr-readiness` | the App; Task `list`; the Vikunja write token; the readiness backstop; `pr_readiness` and `readiness.ci_checks` in the policy; `check_run` deliveries mirrored; with `readiness.notify`, the ntfy publisher |
 
 ## Probes and metrics
 
@@ -504,7 +472,6 @@ a duplicate.
   `deferred-branch`, `deferred-admission`, `refused`, `ambiguous`, `error`), `gordon_kelos_unstarted_tasks`
   (Tasks without a phase 15 minutes after their creation at the last admission check, not counted against
   their variant's limit), `gordon_run_observations_total{state}`,
-  `gordon_shadow_comparisons_total{family,result}` (`match`, `differ`, `missing`),
   `gordon_reconcile_runs_total{result}`, `gordon_reconcile_duration_seconds`,
   `gordon_reconcile_last_success_timestamp_seconds`, `gordon_leases_expired_total{queue}`,
   `gordon_bodies_pruned_total`,
@@ -514,7 +481,7 @@ a duplicate.
   `gordon_readiness_reconcile_runs_total{result}`, `gordon_readiness_reconcile_queued_total`,
   `gordon_limit_restart_decisions_total{result}` (`restarted`, `superseded`, `gave-up`, `name-too-long`, `none`),
   `gordon_cost_notice_checks_total{result}` (`published`, `updated`, `unchanged`, `waiting`, `settled`,
-  `unavailable`, `incompatible`, `raced`, `not-owned`, `expired`),
+  `unavailable`, `incompatible`, `raced`, `expired`),
   plus the Go and process collectors. `gordon_action_attempts_total`'s
   `kind` includes `assign`, `sync-label`, `cancel-run`, `supersede-reviews`, `notify`, `merge-pull-request` and `publish-cost`.
 
@@ -528,14 +495,14 @@ several intervals (`gordon_vikunja_reconcile_runs_total{result="error"}`,
 `gordon_cost_notice_checks_total{result=~"unavailable|incompatible"}` rising for an hour, `gordon_intake_requests_total{result="unavailable"}`,
 `gordon_kelos_submissions_total{result="refused"}` (the Kelos API refused
 a submission's request: the lookup or the admission list before the
-create, through RBAC or authentication, or the create, admission included), and in shadow `gordon_shadow_comparisons_total{result!="match"}`.
+create, through RBAC or authentication, or the create, admission included).
 
 ## Logs
 
 One JSON object per line on stdout. Correlation keys: `inbox_id`,
 `delivery_key`, `request_key`, `source`, `kind`, `action_id`, `action_key`,
 `task` (a Kelos Task name);
-a decision's run names are in its family's `runs` field. Bodies, comments and prompts are never logged (a built Task, prompt included, lives in `runs.task` or `shadow_tasks.task` until `GORDON_BODY_RETENTION` after the run finished or the comparison); credential-shaped
+a decision's run names are in its family's `runs` field. Bodies, comments and prompts are never logged (a built Task, prompt included, lives in `runs.task` until `GORDON_BODY_RETENTION` after the run finished); credential-shaped
 values in any field are masked and long values truncated.
 
 ## Answers to senders

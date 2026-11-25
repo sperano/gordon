@@ -626,12 +626,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "pr-followup-vigie-42-r800001"
-    ],
-    "divergence": "Gordon decides the review-round cap before submitting: legacy created the follow-up Task, whose review-round-cap init container failed it before the model started."
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "github/delivery/33333333-2222-3333-4444-000000000050",
@@ -640,8 +634,6 @@
       {
         "family": "pr-followup",
         "project": "vigie",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "reason": "review-round-cap",
         "actions": [

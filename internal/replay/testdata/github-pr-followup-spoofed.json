@@ -43,9 +43,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "reject",
     "reason": "not-owner",

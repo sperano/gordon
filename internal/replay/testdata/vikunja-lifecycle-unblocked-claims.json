@@ -43,18 +43,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-4111-hollingsworth-opus"
-    ],
-    "divergence": "legacy's Task already existed (its pod was waiting); Gordon submits it now, under the same name",
-    "writes": [
-      "add-label:vikunja/task/4111:in progress",
-      "remove-label:vikunja/task/4111:agent-error",
-      "move-bucket:vikunja/task/4111:Doing",
-      "post-notice:vikunja/task/4111:start:vikunja-4111-hollingsworth-opus"
-    ]
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "vikunja/task.updated/4111/73e05675b7b8b7d4f903a0bd197e5cdc",
@@ -63,8 +51,6 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {

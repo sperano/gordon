@@ -29,9 +29,6 @@
   },
   "state": {},
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "ignore",
     "reason": "not-a-request",

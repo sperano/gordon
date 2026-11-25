@@ -74,12 +74,6 @@
     ]
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [],
-    "writes": [
-      "remove-label:vikunja/task/4340:in progress"
-    ]
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "vikunja/task.updated/4340/74d544787142e82eaab6c9147970077e",
@@ -88,24 +82,18 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "not-in-doing"
       },
       {
         "family": "vikunja-drag-cancel",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "no-live-agent"
       },
       {
         "family": "vikunja-chain",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "reason": "chain-paused",
         "actions": [

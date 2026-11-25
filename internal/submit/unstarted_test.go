@@ -56,7 +56,7 @@ func TestUnstarted(t *testing.T) {
 // phase past the grace) hold no slot and are reported; a Task still
 // within the grace counts, as it may be starting.
 func TestVariantLimitSkipsUnstartedTasks(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{Default: 1})
+	e := newEnv(t, dispatch.Limits{Default: 1})
 	e.exec.Now = func() time.Time { return clock }
 	e.kelos.Put(phaseless("refused-1", "claude-opus", time.Hour))
 	e.kelos.Put(phaseless("refused-2", "claude-sonnet", time.Hour))
@@ -71,7 +71,7 @@ func TestVariantLimitSkipsUnstartedTasks(t *testing.T) {
 }
 
 func TestVariantLimitCountsStartingTasks(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{Default: 1})
+	e := newEnv(t, dispatch.Limits{Default: 1})
 	e.exec.Now = func() time.Time { return clock }
 	e.kelos.Put(phaseless("starting-1", "claude-opus", time.Minute))
 	name := e.implement(t, implementID, "claude-opus")

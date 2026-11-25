@@ -34,27 +34,23 @@ var requestKinds = map[event.Kind]bool{
 }
 
 // Complete finishes a claimed row with its decision, in one transaction
-// fenced by the lease: the decision; for each family Gordon executes
-// (owner gordon, valid table, shadow false) that has runs or actions, its
-// runs and its actions in the outbox (an unanswered owner request's
-// reaction and notice included); and the handled request. With shadow,
-// nothing is queued for execution and no run is recorded; the Task each
-// run not executed would have submitted is kept for the shadow
-// comparison instead. The decision's requeues (synthetic inbox rows,
-// which write nothing outside Gordon) are queued in shadow as well.
+// fenced by the lease: the decision; for each family that has runs or
+// actions, its runs and its actions in the outbox (an unanswered owner
+// request's reaction and notice included); the decision's requeues
+// (synthetic inbox rows); and the handled request.
 //
 // The owner request is claimed first: when another delivery of it was
 // recorded since the router read the ledger, this one queues nothing and
 // is a duplicate. A run another worker recorded meanwhile is dropped with
 // its submit action, so two deliveries never queue two submissions.
 // Complete returns the decision as recorded.
-func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shadow bool) (route.Decision, error) {
+func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision) (route.Decision, error) {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		kind, requestKey, err := finishItem(ctx, tx, l)
 		if err != nil {
 			return err
 		}
-		claims := requestKinds[event.Kind(kind)] && requestKey != "" && recordsRequest(dec, shadow)
+		claims := requestKinds[event.Kind(kind)] && requestKey != "" && recordsRequest(dec)
 		if claims {
 			if claims, err = claimRequest(ctx, tx, requestKey, l.ID, dec.Outcome); err != nil {
 				return err
@@ -66,12 +62,6 @@ func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shado
 		executed := false
 		for i := range dec.Families {
 			fd := &dec.Families[i]
-			if shadow || !fd.Execute {
-				if err := recordShadow(ctx, tx, l.ID, fd); err != nil {
-					return err
-				}
-				continue
-			}
 			if len(fd.Runs) == 0 && len(fd.Actions) == 0 {
 				continue
 			}
@@ -83,7 +73,6 @@ func (s *Store) Complete(ctx context.Context, l Lease, dec route.Decision, shado
 		if len(dec.Families) > 0 {
 			dec.Outcome = route.Overall(dec.Families)
 		}
-		// Requeues write nothing outside Gordon: queued in shadow too.
 		if _, err := enqueue(ctx, tx, requeues(dec)); err != nil {
 			return err
 		}
@@ -116,7 +105,7 @@ func finishItem(ctx context.Context, tx pgx.Tx, l Lease) (kind, requestKey strin
 // recordsRequest reports a decision that handles its owner request: one
 // that dispatches or acts, or queues writes (an unanswered request's
 // reaction and notice).
-func recordsRequest(dec route.Decision, shadow bool) bool {
+func recordsRequest(dec route.Decision) bool {
 	o := dec.Outcome
 	if len(dec.Families) > 0 {
 		o = route.Overall(dec.Families)
@@ -125,7 +114,7 @@ func recordsRequest(dec route.Decision, shadow bool) bool {
 		return true
 	}
 	for _, fd := range dec.Families {
-		if !shadow && fd.Execute && (len(fd.Runs) > 0 || len(fd.Actions) > 0) {
+		if len(fd.Runs) > 0 || len(fd.Actions) > 0 {
 			return true
 		}
 	}

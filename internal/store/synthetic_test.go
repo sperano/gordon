@@ -40,7 +40,7 @@ func TestCompleteSkipsARequeueOfAnInvalidTask(t *testing.T) {
 	accept(t, s, "k1")
 	dec := route.Decision{Outcome: route.Ignore, DeliveryKey: "k1",
 		Requeue: []route.Requeue{{TaskID: 0, ProjectID: 3, Depth: 1}, {TaskID: 8, ProjectID: 3, Depth: 1}}}
-	if _, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec, false); err != nil {
+	if _, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec); err != nil {
 		t.Fatal(err)
 	}
 	if got := count(t, dbURL, `SELECT count(*) FROM inbox WHERE request_key = 'vikunja/task/8'`); got != 1 {

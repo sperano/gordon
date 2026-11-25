@@ -57,7 +57,7 @@ func supersede(name string) action.Action {
 // Gordon's older runs; nothing newer, finished, of another reviewer or
 // of another PR.
 func TestSupersedeDeletesOlderReviewsOfThePR(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	seedReviews(t, e, map[string]int{olderReview: -60, ownReview: 0,
 		"review-gordon-idiomatic-go-7-aaaaaaaa": -60, "review-gordon-pr-challenger-8-aaaaaaaa": -60})
 	for _, tk := range []kelos.Task{
@@ -96,7 +96,7 @@ func TestSupersedeDeletesOlderReviewsOfThePR(t *testing.T) {
 // TestSupersedeByARestartOrAnUnlistedTaskDoesNothing: a limit restart
 // reviews an older push, and a Task gone already supersedes nothing.
 func TestSupersedeByARestartOrAnUnlistedTaskDoesNothing(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	seedReviews(t, e, map[string]int{ownReview: 0})
 	s := &Superseder{Store: e.store, Kelos: e.api}
 	e.kelos.Put(reviewTask(olderReview, "pr-challenger", "7", kelos.PhaseRunning, "2026-11-21T09:00:00Z"))
@@ -145,7 +145,7 @@ func (d *deletesUnlocked) Delete(ctx context.Context, name, uid string) error {
 // TestSupersedeDeletesOutsideTheAdmissionLock: the Kelos deletes run
 // once the lock is released, so no submission waits behind them.
 func TestSupersedeDeletesOutsideTheAdmissionLock(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	seedReviews(t, e, map[string]int{olderReview: -60, ownReview: 0})
 	e.kelos.Put(reviewTask(ownReview, "pr-challenger", "7", kelos.PhasePending, "2026-11-21T10:00:00Z"))
 	e.kelos.Put(reviewTask(olderReview, "pr-challenger", "7", kelos.PhaseRunning, "2026-11-21T09:00:00Z"))

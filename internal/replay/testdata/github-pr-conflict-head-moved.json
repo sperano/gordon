@@ -71,20 +71,12 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "divergence": "legacy dispatched the refreshed PR's episode in the same scan; Gordon routes only the episode the scan confirmed and leaves the new head to the next scan",
-    "tasks": [
-      "pr-conflict-22fa40d7-7-11111111-fedcba98"
-    ]
-  },
   "expect": {
     "delivery_key": "github/delivery/gordon-conflict/sperano/lucarne/lucarne/y/1",
     "families": [
       {
-        "execute": false,
         "family": "pr-conflict",
         "outcome": "stale",
-        "owner": "legacy",
         "project": "lucarne",
         "reason": "episode-moved"
       }

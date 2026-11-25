@@ -1,5 +1,5 @@
 {
-  "description": "GitHub redelivers the same delivery GUID: duplicate before any routing; the ledger outlives the Task cleanup that ended legacy's name-based deduplication.",
+  "description": "GitHub redelivers the same delivery GUID: duplicate before any routing; the ledger outlives the Task cleanup.",
   "delivery": {
     "source": "github",
     "headers": {
@@ -46,9 +46,6 @@
     "deliveries": [
       "github/delivery/11111111-2222-3333-4444-555555555555"
     ]
-  },
-  "legacy": {
-    "tasks": []
   },
   "expect": {
     "outcome": "duplicate",

@@ -48,13 +48,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-4110-hollingsworth-opus"
-    ],
-    "divergence": "legacy created the Task at once and its pod waited in the wait-for-blockers init container (up to 7 days, then a blocker-timeout notice); Gordon submits nothing until the blocker is done, so no pod waits and no timeout exists",
-    "writes": []
-  },
   "expect": {
     "outcome": "ignore",
     "delivery_key": "vikunja/task.updated/4110/066ae8a96ccfe95a4cb90a7823a8ead2",
@@ -63,8 +56,6 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "blocked"
       }

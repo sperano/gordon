@@ -90,19 +90,6 @@ func (r *reader) integer(name string, def, minimum int) int {
 	return n
 }
 
-func (r *reader) boolean(name string, def bool) bool {
-	v := r.str(name, "")
-	if v == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		r.fail("%s=%q: want true or false", name, v)
-		return def
-	}
-	return b
-}
-
 // secretFile reads the file named by name's value, trimmed of trailing
 // newlines; "" when the variable is unset.
 func (r *reader) secretFile(name string) string {

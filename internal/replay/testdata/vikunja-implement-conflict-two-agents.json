@@ -1,5 +1,5 @@
 {
-  "description": "Two agent assignees select two variants: conflict, no run (legacy started nothing silently, each variant spawner excluding the other variants' assignees).",
+  "description": "Two agent assignees select two variants: conflict, no run.",
   "delivery": {
     "source": "vikunja",
     "body": {
@@ -42,9 +42,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "conflict",
     "delivery_key": "vikunja/task.updated/4101/d2d80b0a00e3c1515c08ce6cb6ea0aae",
@@ -53,8 +50,6 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "conflict",
         "reason": "multiple-agent-assignees"
       }

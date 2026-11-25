@@ -18,11 +18,11 @@ import (
 
 const ntfyHead = "0123456789abcdef0123456789abcdef01234567"
 
-// legacyReadiness are the legacy scripts' texts and reaction values
+// readinessTexts are the exact readiness texts and reaction values
 // (internal/notice/testdata).
-func legacyReadiness(t *testing.T) map[string]string {
+func readinessTexts(t *testing.T) map[string]string {
 	t.Helper()
-	b, err := os.ReadFile("../notice/testdata/legacy_readiness_texts.json")
+	b, err := os.ReadFile("../notice/testdata/readiness_texts.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func reactionValues(f *fakeVikunja, task int64) []string {
 }
 
 func TestNotifySendsOnceWithItsBookkeeping(t *testing.T) {
-	legacy := legacyReadiness(t)
+	texts := readinessTexts(t)
 	f, n := newFake(t), newNtfy(t, http.StatusOK)
 	f.put(Task{ID: 5, ProjectID: 3})
 	ex := executor(f, nil)
@@ -103,11 +103,11 @@ func TestNotifySendsOnceWithItsBookkeeping(t *testing.T) {
 		t.Errorf("body %q, want %q", n.bodies[0], want)
 	}
 	pending := PendingReaction + "01234567-1"
-	if got := reactionValues(f, 5); !slices.Equal(got, []string{pending, legacy["ntfy_marker"]}) {
+	if got := reactionValues(f, 5); !slices.Equal(got, []string{pending, texts["ntfy_marker"]}) {
 		t.Errorf("reactions %v", got)
 	}
-	if legacy["ntfy_pending"] != PendingReaction+"01234567-2" || legacy["ntfy_retried"] != RetryReaction+"01234567-1" {
-		t.Errorf("bookkeeping values differ from legacy: %q %q", legacy["ntfy_pending"], legacy["ntfy_retried"])
+	if texts["ntfy_pending"] != PendingReaction+"01234567-2" || texts["ntfy_retried"] != RetryReaction+"01234567-1" {
+		t.Errorf("bookkeeping values differ from the goldens: %q %q", texts["ntfy_pending"], texts["ntfy_retried"])
 	}
 }
 
@@ -183,7 +183,7 @@ func TestNotifyRefusesWhatWouldLeakTheToken(t *testing.T) {
 }
 
 func TestReadinessNoticesRenderAndDeduplicate(t *testing.T) {
-	legacy := legacyReadiness(t)
+	texts := readinessTexts(t)
 	h := notice.Head{Repo: "sperano/gordon", Number: 12, SHA: ntfyHead}
 	limited := h
 	limited.Extra = notice.LimitedExtra([]notice.Limited{{Author: "gordon-cole-ai[bot]", Review: 99}})
@@ -196,10 +196,10 @@ func TestReadinessNoticesRenderAndDeduplicate(t *testing.T) {
 		h    notice.Head
 		want string
 	}{
-		{notice.Ready, h, legacy["ready"]},
-		{notice.RoundLimit, limited, legacy["round_limit_one"]},
-		{notice.ChecksMissing, missing, legacy["checks_missing_one"]},
-		{notice.MergeRefused, refused, legacy["merge_refused"]},
+		{notice.Ready, h, texts["ready"]},
+		{notice.RoundLimit, limited, texts["round_limit_one"]},
+		{notice.ChecksMissing, missing, texts["checks_missing_one"]},
+		{notice.MergeRefused, refused, texts["merge_refused"]},
 	}
 	for _, c := range cases {
 		f := newFake(t)
@@ -215,7 +215,7 @@ func TestReadinessNoticesRenderAndDeduplicate(t *testing.T) {
 		if cs := f.comments[5]; len(cs) != 1 || cs[0].Comment != c.want+notice.ActionMarker(a.Key) {
 			t.Fatalf("%s comments %+v, want one %q", c.kind, cs, c.want)
 		}
-		// The legacy script's notice of the head counts; one by anyone
+		// A notice of the head by Gordon's user counts; one by anyone
 		// else does not.
 		for _, author := range []string{gordon, "eric"} {
 			other := newFake(t)

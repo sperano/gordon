@@ -12,7 +12,6 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/logging"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
@@ -54,7 +53,7 @@ func (p *fakeProvider) Recover(_ context.Context, a action.Action) (bool, error)
 // outboxEnv queues the submit action of an executed implementation run.
 func outboxEnv(t *testing.T, p *fakeProvider) (*env, *Outbox) {
 	t.Helper()
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.tasks[implementTaskID] = eligible()
 	e.tick(t)

@@ -46,12 +46,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "pr-followup-vigie-42-c700003"
-    ],
-    "divergence": "legacy started whichever of the two variant spawners won the Task-name race"
-  },
   "expect": {
     "outcome": "conflict",
     "delivery_key": "github/delivery/44444444-2222-3333-4444-555555555555",
@@ -60,8 +54,6 @@
       {
         "family": "pr-followup",
         "project": "vigie",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "conflict",
         "reason": "multiple-variant-labels"
       }

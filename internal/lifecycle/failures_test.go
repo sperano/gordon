@@ -8,7 +8,6 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 )
@@ -30,11 +29,6 @@ func (q *queued) QueueRunActions(_ context.Context, inboxID int64, family run.Fa
 
 func (q *queued) NewerRun(context.Context, string, []run.Family) (bool, error) { return q.newer, nil }
 
-func owns(f run.Family) rollout.Table {
-	return rollout.Table{Rules: []rollout.Rule{{Project: "gordon", Family: f, Owner: rollout.Gordon,
-		Evidence: []rollout.Gate{rollout.ReplayParity, rollout.ShadowParity, rollout.RollbackTested, rollout.LegacyDisabled}}}}
-}
-
 func TestFailures(t *testing.T) {
 	failed := store.ObservedRun{Name: "vikunja-gordon-claude-opus-5", InboxID: 3, Family: run.VikunjaImplement,
 		Project: "gordon", TaskID: 5}
@@ -49,25 +43,23 @@ func TestFailures(t *testing.T) {
 		name  string
 		r     store.ObservedRun
 		phase string
-		owner rollout.Table
 		newer bool
 		want  []string
 	}{
-		{"failed", failed, kelos.PhaseFailed, owns(run.VikunjaFailure), false, []string{
+		{"failed", failed, kelos.PhaseFailed, false, []string{
 			"post-notice:vikunja/task/5:failed:vikunja-gordon-claude-opus-5|vikunja-gordon-claude-opus-5",
 			"add-label:vikunja/task/5:agent-error|", "add-label:vikunja/task/5:action-needed|unless-done"}},
-		{"succeeded implementation", failed, kelos.PhaseSucceeded, owns(run.VikunjaFailure), false, nil},
-		{"answered discussion", discuss, kelos.PhaseSucceeded, owns(run.VikunjaFailure), false,
+		{"succeeded implementation", failed, kelos.PhaseSucceeded, false, nil},
+		{"answered discussion", discuss, kelos.PhaseSucceeded, false,
 			[]string{"add-label:vikunja/task/5:action-needed|unless-done"}},
-		{"discussion asked again since", discuss, kelos.PhaseSucceeded, owns(run.VikunjaFailure), true, nil},
-		{"legacy owns failures", failed, kelos.PhaseFailed, rollout.Table{}, false, nil},
-		{"review run", review, kelos.PhaseFailed, owns(run.VikunjaFailure), false, nil},
-		{"run without a task", untasked, kelos.PhaseFailed, owns(run.VikunjaFailure), false, nil},
+		{"discussion asked again since", discuss, kelos.PhaseSucceeded, true, nil},
+		{"review run", review, kelos.PhaseFailed, false, nil},
+		{"run without a task", untasked, kelos.PhaseFailed, false, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			q := &queued{newer: c.newer}
-			f := &Failures{Store: q, Policy: profile.Defaults().Policy, Ownership: c.owner}
+			f := &Failures{Store: q, Policy: profile.Defaults().Policy}
 			if err := f.Finished(context.Background(), c.r, kelos.Task{Status: &kelos.Status{Phase: c.phase}}); err != nil {
 				t.Fatal(err)
 			}
@@ -92,10 +84,10 @@ func (q *familyQueue) QueueRunActions(ctx context.Context, inboxID int64, family
 }
 
 // TestFailuresSkipLimitStops: a Task the subscription limit stopped is
-// the limit restarts', whoever owns them; legacy's reporter skips it too.
+// the limit restarts'.
 func TestFailuresSkipLimitStops(t *testing.T) {
 	q := &queued{}
-	f := &Failures{Store: q, Policy: profile.Defaults().Policy, Ownership: owns(run.VikunjaFailure)}
+	f := &Failures{Store: q, Policy: profile.Defaults().Policy}
 	r := store.ObservedRun{Name: "vikunja-gordon-claude-opus-5", InboxID: 3, Family: run.VikunjaImplement, Project: "gordon", TaskID: 5}
 	stop := kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseFailed, Results: map[string]string{kelos.ResultLimitType: "weekly"}}}
 	if err := f.Finished(context.Background(), r, stop); err != nil {
@@ -117,29 +109,26 @@ func TestPRRunFailures(t *testing.T) {
 	failed := kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseFailed}}
 	limitStop := kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseFailed, Results: map[string]string{kelos.ResultLimitType: "weekly"}}}
 	cases := []struct {
-		name  string
-		r     store.ObservedRun
-		task  kelos.Task
-		owner rollout.Table
-		want  []string
+		name string
+		r    store.ObservedRun
+		task kelos.Task
+		want []string
 	}{
-		{"failed follow-up", followUp, failed, owns(run.PRFollowUp),
+		{"failed follow-up", followUp, failed,
 			[]string{"post-notice:github/sperano/gordon/pull/7:failed:pr-followup-gordon-7-c5|pr-followup-gordon-7-c5"}},
-		{"failed conflict", conflict, failed, owns(run.PRConflict),
+		{"failed conflict", conflict, failed,
 			[]string{"post-notice:github/sperano/gordon/pull/7:failed:" + conflict.Name + "|" + conflict.Name}},
 		// The limit restarts report a PR run's limit stop, not this.
-		{"limit-stopped follow-up", followUp, limitStop, owns(run.PRFollowUp), nil},
-		{"limit-stopped conflict", conflict, limitStop, owns(run.PRConflict), nil},
-		{"succeeded follow-up", followUp, kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseSucceeded}}, owns(run.PRFollowUp), nil},
-		{"legacy owns the follow-ups", followUp, failed, owns(run.VikunjaFailure), nil},
-		{"conflict family not owned", conflict, failed, owns(run.PRFollowUp), nil},
-		{"no pull request", noPR, failed, owns(run.PRFollowUp), nil},
-		{"project not configured", unknown, failed, owns(run.PRFollowUp), nil},
+		{"limit-stopped follow-up", followUp, limitStop, nil},
+		{"limit-stopped conflict", conflict, limitStop, nil},
+		{"succeeded follow-up", followUp, kelos.Task{Status: &kelos.Status{Phase: kelos.PhaseSucceeded}}, nil},
+		{"no pull request", noPR, failed, nil},
+		{"project not configured", unknown, failed, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			q := &familyQueue{}
-			f := &Failures{Store: q, Policy: profile.Defaults().Policy, Ownership: c.owner, Projects: profile.Defaults().Projects}
+			f := &Failures{Store: q, Policy: profile.Defaults().Policy, Projects: profile.Defaults().Projects}
 			if err := f.Finished(context.Background(), c.r, c.task); err != nil {
 				t.Fatal(err)
 			}

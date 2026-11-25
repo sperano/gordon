@@ -72,13 +72,6 @@
     ]
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [],
-    "writes": [
-      "post-notice:vikunja/task/4330:chain-done",
-      "move-bucket:vikunja/task/4330:Review"
-    ]
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "vikunja/task.updated/4330/1f3c1d24fc881fe4fcfcd754496f5e9c",
@@ -87,16 +80,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "in-progress"
       },
       {
         "family": "vikunja-chain",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "reason": "chain-complete",
         "actions": [

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -267,10 +266,9 @@ func checkRequestIDs(t *testing.T, rn route.Run) {
 	}
 }
 
-// TestReplayFixturesBuild prepares every legacy replay fixture's decision:
-// each dispatched run gets a Task named as the legacy spawner's Task, and
-// the recorded decision is exactly the fixture's (the Task is not part
-// of it).
+// TestReplayFixturesBuild prepares every replay fixture's decision: each
+// dispatched run gets a Task named as the run, and the recorded decision
+// is exactly the fixture's (the Task is not part of it).
 func TestReplayFixturesBuild(t *testing.T) {
 	fixtures, err := replay.Load("../replay/testdata")
 	if err != nil {
@@ -301,8 +299,8 @@ func TestReplayFixturesBuild(t *testing.T) {
 			}
 			for _, fd := range dec.Families {
 				for _, rn := range fd.Runs {
-					if rn.Task == nil || rn.Task.Metadata.Name != rn.Name || !slices.Contains(f.Legacy.Tasks, rn.Name) {
-						t.Fatalf("run %s: Task %v, legacy Tasks %v", rn.Name, rn.Task, f.Legacy.Tasks)
+					if rn.Task == nil || rn.Task.Metadata.Name != rn.Name {
+						t.Fatalf("run %s: Task %v", rn.Name, rn.Task)
 					}
 					checkRequestIDs(t, rn)
 					built++

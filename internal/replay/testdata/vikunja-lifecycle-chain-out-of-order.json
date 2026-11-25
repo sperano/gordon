@@ -74,10 +74,6 @@
     ]
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [],
-    "writes": []
-  },
   "expect": {
     "outcome": "stale",
     "delivery_key": "vikunja/task.updated/4395/ea000a0e844472e460a619b1b374075f",
@@ -86,16 +82,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "stale",
         "reason": "in-progress"
       },
       {
         "family": "vikunja-chain",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "subtask-in-flight"
       }

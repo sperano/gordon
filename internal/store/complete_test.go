@@ -6,7 +6,6 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -15,13 +14,13 @@ import (
 
 const runName = "vikunja-fu-gordon-5-c1"
 
-func dispatch(execute bool) route.Decision {
+func dispatch() route.Decision {
 	id := run.Identity{Family: run.VikunjaFollowUp, Project: "gordon", TaskID: 5, CommentID: 1}
 	submit := action.New(action.SubmitTask, action.KelosTask(route.KelosNamespace, runName), "")
 	react := action.New(action.React, action.VikunjaComment(1), "eyes")
 	return route.Decision{Outcome: route.Dispatch, DeliveryKey: "k", RequestKey: "vikunja/comment/1",
 		Families: []route.FamilyDecision{{
-			Family: run.VikunjaFollowUp, Project: "gordon", Owner: rollout.Gordon, Execute: execute,
+			Family: run.VikunjaFollowUp, Project: "gordon",
 			Outcome: route.Dispatch,
 			Runs:    []route.Run{{Name: runName, Identity: id, Profile: profile.Resolved{ConfigVersion: "v1"}}},
 			Actions: []action.Action{submit, react},
@@ -30,7 +29,7 @@ func dispatch(execute bool) route.Decision {
 
 // submitOnly is a dispatch whose only action is the run's submission.
 func submitOnly() route.Decision {
-	dec := dispatch(true)
+	dec := dispatch()
 	dec.Families[0].Actions = dec.Families[0].Actions[:1]
 	return dec
 }
@@ -46,7 +45,7 @@ func TestCompleteExecutedRecordsRunsActionsAndRequest(t *testing.T) {
 	s, dbURL := storetest.Open(t)
 	id := accept(t, s, "k")
 	it := claimOne(t, s, "w")
-	got, err := s.Complete(ctx, it.Lease, dispatch(true), false)
+	got, err := s.Complete(ctx, it.Lease, dispatch())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,38 +78,6 @@ func TestCompleteExecutedRecordsRunsActionsAndRequest(t *testing.T) {
 	}
 }
 
-func TestCompleteShadowQueuesNothing(t *testing.T) {
-	for _, tc := range []struct {
-		name            string
-		execute, shadow bool
-	}{{"global shadow", true, true}, {"family not executed", false, false}} {
-		t.Run(tc.name, func(t *testing.T) {
-			s, dbURL := storetest.Open(t)
-			id := accept(t, s, "k")
-			it := claimOne(t, s, "w")
-			if _, err := s.Complete(ctx, it.Lease, dispatch(tc.execute), tc.shadow); err != nil {
-				t.Fatal(err)
-			}
-			if n := count(t, dbURL, `SELECT count(*) FROM actions`); n != 0 {
-				t.Fatalf("%d actions queued, want none", n)
-			}
-			if n := count(t, dbURL, `SELECT count(*) FROM runs`); n != 0 {
-				t.Fatalf("%d runs recorded, want none", n)
-			}
-			var executed bool
-			storetest.QueryRow(t, dbURL, `SELECT executed FROM requests WHERE request_key = 'vikunja/comment/1'`, nil, &executed)
-			if executed {
-				t.Fatal("shadow request recorded as executed")
-			}
-			var outcome string
-			storetest.QueryRow(t, dbURL, `SELECT outcome FROM decisions WHERE inbox_id = $1 AND NOT executed`, []any{id}, &outcome)
-			if outcome != string(route.Dispatch) {
-				t.Fatalf("recorded outcome %q, want dispatch", outcome)
-			}
-		})
-	}
-}
-
 func TestCompleteDropsRunTakenConcurrently(t *testing.T) {
 	s, dbURL := storetest.Open(t)
 	acceptRequest(t, s, "k1", "vikunja/comment/1")
@@ -120,10 +87,10 @@ func TestCompleteDropsRunTakenConcurrently(t *testing.T) {
 		t.Fatalf("Claim = %d, %v", len(items), err)
 	}
 	// Both were decided on a ledger without the run.
-	if _, err := s.Complete(ctx, items[0].Lease, dispatch(true), false); err != nil {
+	if _, err := s.Complete(ctx, items[0].Lease, dispatch()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Complete(ctx, items[1].Lease, dispatch(true), false)
+	got, err := s.Complete(ctx, items[1].Lease, dispatch())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,10 +109,10 @@ func TestCompleteDropsWholeFamilyAsDuplicate(t *testing.T) {
 	acceptRequest(t, s, "k1", "vikunja/comment/1")
 	second := acceptRequest(t, s, "k2", "vikunja/comment/2")
 	items, _ := s.Claim(ctx, "w", 2, testTTL)
-	if _, err := s.Complete(ctx, items[0].Lease, dispatch(true), false); err != nil {
+	if _, err := s.Complete(ctx, items[0].Lease, dispatch()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Complete(ctx, items[1].Lease, submitOnly(), false)
+	got, err := s.Complete(ctx, items[1].Lease, submitOnly())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,10 +138,10 @@ func TestCompleteSecondDeliveryOfARequestQueuesNothing(t *testing.T) {
 		t.Fatalf("Claim = %d, %v", len(items), err)
 	}
 	// Both were decided on a ledger without the request.
-	if _, err := s.Complete(ctx, items[0].Lease, dispatch(true), false); err != nil {
+	if _, err := s.Complete(ctx, items[0].Lease, dispatch()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Complete(ctx, items[1].Lease, dispatch(true), false)
+	got, err := s.Complete(ctx, items[1].Lease, dispatch())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +164,7 @@ func TestCompleteSecondDeliveryOfARequestQueuesNothing(t *testing.T) {
 // reaction and notice.
 func unanswered(actions ...action.Action) route.Decision {
 	return route.Decision{Outcome: route.Ignore, RequestKey: "vikunja/comment/1", Families: []route.FamilyDecision{{
-		Family: run.VikunjaFollowUpAnswer, Project: "gordon", Owner: rollout.Gordon, Execute: true,
+		Family: run.VikunjaFollowUpAnswer, Project: "gordon",
 		Outcome: route.Ignore, Reason: "task-done", Actions: actions}}}
 }
 
@@ -207,7 +174,7 @@ func TestCompleteQueuesAnUnansweredRequestsActions(t *testing.T) {
 	it := claimOne(t, s, "w")
 	react := action.New(action.React, action.VikunjaComment(1), "eyes")
 	notice := action.Notice(action.VikunjaComment(1), route.NoticeUnanswered, "task-done")
-	got, err := s.Complete(ctx, it.Lease, unanswered(react, notice), false)
+	got, err := s.Complete(ctx, it.Lease, unanswered(react, notice))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +197,7 @@ func TestCompleteIgnoredFamilyWithoutActionsQueuesNothing(t *testing.T) {
 	s, dbURL := storetest.Open(t)
 	accept(t, s, "k")
 	it := claimOne(t, s, "w")
-	got, err := s.Complete(ctx, it.Lease, unanswered(), false)
+	got, err := s.Complete(ctx, it.Lease, unanswered())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,20 +213,20 @@ func TestCompleteRerunsFinishedRunWhoseTaskIsGone(t *testing.T) {
 	s, dbURL := storetest.Open(t)
 	accept(t, s, "k1")
 	it := claimOne(t, s, "w")
-	if _, err := s.Complete(ctx, it.Lease, submitOnly(), false); err != nil {
+	if _, err := s.Complete(ctx, it.Lease, submitOnly()); err != nil {
 		t.Fatal(err)
 	}
 	storetest.Exec(t, dbURL, `UPDATE runs SET state = 'finished', task_exists = true`)
 	acceptRequest(t, s, "k2", "vikunja/comment/2") // the owner asks again
 	it = claimOne(t, s, "w")
-	got, err := s.Complete(ctx, it.Lease, submitOnly(), false)
+	got, err := s.Complete(ctx, it.Lease, submitOnly())
 	if err != nil || got.Families[0].Reason != route.ReasonRunExists {
 		t.Fatalf("Complete while the Task exists = %+v, %v; want duplicate/run-exists", got.Families[0], err)
 	}
 	storetest.Exec(t, dbURL, `UPDATE runs SET task_exists = false`)
 	acceptRequest(t, s, "k3", "vikunja/comment/3")
 	it = claimOne(t, s, "w")
-	got, err = s.Complete(ctx, it.Lease, submitOnly(), false)
+	got, err = s.Complete(ctx, it.Lease, submitOnly())
 	if err != nil || got.Outcome != route.Dispatch {
 		t.Fatalf("Complete after cleanup = %s, %v; want dispatch", got.Outcome, err)
 	}
@@ -277,7 +244,7 @@ func TestCompleteWithLostLeaseWritesNothing(t *testing.T) {
 	stale := claimOne(t, s, "a")
 	storetest.Exec(t, dbURL, `UPDATE inbox SET lease_until = now() - interval '1 second'`)
 	claimOne(t, s, "b")
-	if _, err := s.Complete(ctx, stale.Lease, dispatch(true), false); !errors.Is(err, store.ErrLeaseLost) {
+	if _, err := s.Complete(ctx, stale.Lease, dispatch()); !errors.Is(err, store.ErrLeaseLost) {
 		t.Fatalf("Complete with a lost lease = %v, want ErrLeaseLost", err)
 	}
 	for _, table := range []string{"decisions", "requests", "runs", "actions"} {
@@ -295,7 +262,7 @@ func TestCompleteRecordsOnlyOwnerRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	it := claimOne(t, s, "w")
-	if _, err := s.Complete(ctx, it.Lease, dispatch(true), false); err != nil {
+	if _, err := s.Complete(ctx, it.Lease, dispatch()); err != nil {
 		t.Fatal(err)
 	}
 	if n := count(t, dbURL, `SELECT count(*) FROM requests`); n != 0 {
@@ -323,7 +290,7 @@ func TestSeenDeliveryIgnoresTheRowBeingDecided(t *testing.T) {
 	if led := s.Ledger(ctx); led.SeenDelivery("k") || led.Err != nil {
 		t.Fatalf("pending claimed delivery seen (err %v), want unseen until decided", led.Err)
 	}
-	if _, err := s.Complete(ctx, it.Lease, dispatch(true), false); err != nil {
+	if _, err := s.Complete(ctx, it.Lease, dispatch()); err != nil {
 		t.Fatal(err)
 	}
 	if led := s.Ledger(ctx); !led.SeenDelivery("k") || led.Err != nil {

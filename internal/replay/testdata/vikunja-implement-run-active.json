@@ -1,5 +1,5 @@
 {
-  "description": "A later edit of a task whose run is still active starts nothing: same Task name (legacy got AlreadyExists).",
+  "description": "A later edit of a task whose run is still active starts nothing: same Task name.",
   "delivery": {
     "source": "vikunja",
     "body": {
@@ -56,9 +56,6 @@
       }
     ]
   },
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "duplicate",
     "delivery_key": "vikunja/task.updated/4101/c116986638d7f948c8f4d074fd0ff967",
@@ -67,8 +64,6 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "duplicate",
         "reason": "run-active"
       }

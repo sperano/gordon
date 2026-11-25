@@ -34,7 +34,7 @@ func withTask(prompt string) route.Decision {
 func recorded(t *testing.T, s *store.Store, key, requestKey string, dec route.Decision) int64 {
 	t.Helper()
 	id := acceptRequest(t, s, key, requestKey)
-	if _, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec, false); err != nil {
+	if _, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec); err != nil {
 		t.Fatal(err)
 	}
 	return id

@@ -99,28 +99,6 @@
     "readiness_read": true
   },
   "ledger": {},
-  "ownership": {
-    "rules": [
-      {
-        "project": "lucarne",
-        "family": "pr-readiness",
-        "owner": "gordon",
-        "evidence": [
-          "replay-parity",
-          "shadow-parity",
-          "rollback-tested",
-          "legacy-disabled"
-        ]
-      }
-    ]
-  },
-  "legacy": {
-    "tasks": [
-      "pr-ready-47d85cbe-0123456789ab"
-    ],
-    "divergence": "Gordon decides each completed check run itself: no model-free pr-ready waiter Task polling the head",
-    "writes": []
-  },
   "expect": {
     "outcome": "ignore",
     "delivery_key": "github/delivery/44444444-2222-3333-4444-000000000072",
@@ -128,8 +106,6 @@
       {
         "family": "pr-readiness",
         "project": "lucarne",
-        "owner": "gordon",
-        "execute": true,
         "outcome": "ignore",
         "reason": "checks-unfinished"
       }

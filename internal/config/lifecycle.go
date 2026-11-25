@@ -1,12 +1,9 @@
 package config
 
 import (
-	"slices"
 	"time"
 
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
-	"github.com/sperano/gordon/internal/run"
 )
 
 // Lifecycle is the worker's Vikunja lifecycle configuration (Gordon 06).
@@ -30,12 +27,6 @@ const (
 	DefaultFollowUpLookback = 12 * time.Hour
 	DefaultRedispatchAfter  = 2 * time.Minute
 )
-
-// vikunjaWriting are the families whose actions write to Vikunja.
-var vikunjaWriting = []run.Family{run.VikunjaImplement, run.VikunjaDiscuss, run.VikunjaFollowUp,
-	run.VikunjaFollowUpAnswer, run.VikunjaFollowUpDiscuss, run.VikunjaDragCancel, run.VikunjaDoneCleanup,
-	run.VikunjaChain, run.VikunjaFailure, run.VikunjaAutoAssign, run.PROpen, run.MergeClose, run.LimitRestart, run.PRReadiness,
-	run.VikunjaCost}
 
 func (r *reader) lifecycle() Lifecycle {
 	l := Lifecycle{WriteTokenFile: r.optionalSecretFile("GORDON_VIKUNJA_WRITE_TOKEN_FILE"),
@@ -67,41 +58,28 @@ func (r *reader) optionalURL(name string) string {
 	return r.baseURL(name, "")
 }
 
-// checkWriter refuses a worker that would execute a Gordon-owned family
-// writing to Vikunja without a token to write with (its writes would
-// queue for ever while legacy, switched off for that family, writes none)
-// or without the policy its notices key on.
+// checkWriter refuses a worker without a token to write to Vikunja with
+// (its claims, labels and notices would queue for ever) or without the
+// policy its notices key on.
 func (r *reader) checkWriter(c Worker) {
-	if c.Shadow {
-		return
+	if c.Lifecycle.WriteTokenFile == "" {
+		r.fail("GORDON_VIKUNJA_WRITE_TOKEN_FILE is required: Gordon's Vikunja writes need it")
 	}
-	policyChecked := false
-	for _, rule := range c.Ownership.Rules {
-		if rule.Owner != rollout.Gordon || !slices.Contains(vikunjaWriting, rule.Family) {
-			continue
-		}
-		if c.Lifecycle.WriteTokenFile == "" {
-			r.fail("ownership rule %s/%s writes to Vikunja: GORDON_VIKUNJA_WRITE_TOKEN_FILE is required", rule.Project, rule.Family)
-		}
-		if rule.Family != run.VikunjaAutoAssign && !policyChecked {
-			r.checkLifecyclePolicy(c.Routing.Policy, rule)
-			policyChecked = true
-		}
-	}
+	r.checkLifecyclePolicy(c.Routing.Policy)
 }
 
-// checkLifecyclePolicy refuses an empty policy field a Gordon-owned
-// Vikunja family needs: Gordon's own user (without it no notice is
-// trusted, so each is posted again), the web base its links and chain
-// notices match on, and the reaction that withdraws a request.
-func (r *reader) checkLifecyclePolicy(p profile.Policy, rule rollout.Rule) {
+// checkLifecyclePolicy refuses an empty policy field the Vikunja families
+// need: Gordon's own user (without it no notice is trusted, so each is
+// posted again), the web base its links and chain notices match on, and
+// the reaction that withdraws a request.
+func (r *reader) checkLifecyclePolicy(p profile.Policy) {
 	for _, f := range []struct{ name, value string }{
 		{"vikunja_service_user", p.VikunjaServiceUser},
 		{"vikunja_web_url", p.VikunjaWebURL},
 		{"cancel_reaction", p.CancelReaction},
 	} {
 		if f.value == "" {
-			r.fail("ownership rule %s/%s writes to Vikunja: GORDON_ROUTING_CONFIG_FILE policy %s is empty", rule.Project, rule.Family, f.name)
+			r.fail("GORDON_ROUTING_CONFIG_FILE policy %s is empty: Gordon's Vikunja notices need it", f.name)
 		}
 	}
 }

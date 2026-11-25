@@ -64,27 +64,6 @@ func TestStripRetry(t *testing.T) {
 	}
 }
 
-func TestPreviousName(t *testing.T) {
-	cases := []struct {
-		id   Identity
-		want string
-	}{
-		{Identity{Family: VikunjaImplement, Project: "vigie", Variant: "gpt-sol", TaskID: 12}, "vikunja-vigie-gpt-sol-12"},
-		{Identity{Family: VikunjaImplement, Project: "vigie", Variant: "gpt-sol", TaskID: 12, Retry: 2}, "vikunja-vigie-gpt-sol-12-retry2"},
-		{Identity{Family: VikunjaImplement, Project: "hollingsworth", Variant: "claude-opus", TaskID: 12, Ops: true},
-			"vikunja-ops-hollingsworth-claude-opus-12"},
-		{Identity{Family: VikunjaDiscuss, Project: "vigie", Variant: "gpt-sol", TaskID: 12}, "vikunja-discuss-vigie-gpt-sol-12"},
-		{Identity{Family: VikunjaFollowUp, Project: "vigie", TaskID: 12, CommentID: 3}, ""},
-		{Identity{Family: PRFollowUp, Workspace: "vigie", PR: 4, CommentKind: "c", CommentID: 9, Retry: 1}, ""},
-		{Identity{Family: PROpen, TaskID: 12}, ""},
-	}
-	for _, c := range cases {
-		if got := c.id.PreviousName(); got != c.want {
-			t.Errorf("%s PreviousName = %q, want %q", c.id.Family, got, c.want)
-		}
-	}
-}
-
 // TestShortVariant: a run name drops the variant's vendor prefix and keeps
 // a variant without one whole.
 func TestShortVariant(t *testing.T) {

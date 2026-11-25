@@ -6,18 +6,15 @@ import (
 	"time"
 )
 
-const gordonOwnsPRFollowUp = `{"rules":[{"project":"gordon","family":"pr-followup","owner":"gordon",
-	"evidence":["replay-parity","shadow-parity","rollback-tested","legacy-disabled"]}]}`
-
 func TestGitHubDefaults(t *testing.T) {
 	c, err := LoadWorker(envOf(workerEnv(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := c.GitHub
-	if g.AppDir != "" || g.ReconcileInterval != 0 || g.Lookback != DefaultGitHubLookback || g.Grace != DefaultGitHubGrace ||
-		g.ConflictInterval != 0 {
-		t.Fatalf("github defaults %+v: no App, no reconciliation, a day's window", g)
+	if g.AppDir != "/var/run/github-app" || g.ReconcileInterval != 0 || g.Lookback != DefaultGitHubLookback ||
+		g.Grace != DefaultGitHubGrace || g.ConflictInterval != 0 {
+		t.Fatalf("github defaults %+v: the App, no reconciliation, a day's window", g)
 	}
 	if p := c.Routing.Policy; p.MaxRoundsPerPR != 50 || p.SuggestionsMaxRounds != 4 {
 		t.Fatalf("round caps %d/%d, want values-hollingsworth's 50/4", p.MaxRoundsPerPR, p.SuggestionsMaxRounds)
@@ -26,7 +23,7 @@ func TestGitHubDefaults(t *testing.T) {
 
 func TestGitHubOverrides(t *testing.T) {
 	env := workerEnv(t)
-	env["GORDON_GITHUB_APP_DIR"] = "/var/run/github-app"
+	env["GORDON_GITHUB_APP_DIR"] = "/etc/gordon/github-app"
 	env["GORDON_GITHUB_RECONCILE_INTERVAL"] = "5m"
 	env["GORDON_GITHUB_RECONCILE_LOOKBACK"] = "6h"
 	env["GORDON_GITHUB_RECONCILE_GRACE"] = "1m"
@@ -36,7 +33,7 @@ func TestGitHubOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := c.GitHub
-	if g.AppDir != "/var/run/github-app" || g.ReconcileInterval != 5*time.Minute || g.Lookback != 6*time.Hour || g.Grace != time.Minute ||
+	if g.AppDir != "/etc/gordon/github-app" || g.ReconcileInterval != 5*time.Minute || g.Lookback != 6*time.Hour || g.Grace != time.Minute ||
 		g.ConflictInterval != 10*time.Minute {
 		t.Fatalf("github overrides %+v", g)
 	}
@@ -69,26 +66,5 @@ func TestGitHubRefusals(t *testing.T) {
 				t.Fatalf("LoadWorker = %v, want %q", err, tc.want)
 			}
 		})
-	}
-}
-
-func TestGitHubOwnedFamilyNeedsTheApp(t *testing.T) {
-	env := workerEnv(t)
-	env["GORDON_SHADOW"] = "false"
-	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
-	env["GORDON_OWNERSHIP_FILE"] = file(t, "o.json", gordonOwnsPRFollowUp)
-	want := "ownership rule gordon/pr-followup writes to GitHub: GORDON_GITHUB_APP_DIR is required"
-	if _, err := LoadWorker(envOf(env)); err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("LoadWorker = %v, want %q", err, want)
-	}
-	env["GORDON_GITHUB_APP_DIR"] = "/var/run/github-app"
-	if _, err := LoadWorker(envOf(env)); err != nil {
-		t.Fatalf("executing worker with the App: %v", err)
-	}
-	// In shadow the same rule executes nothing, so needs no App.
-	env = workerEnv(t)
-	env["GORDON_OWNERSHIP_FILE"] = file(t, "o.json", gordonOwnsPRFollowUp)
-	if _, err := LoadWorker(envOf(env)); err != nil {
-		t.Fatalf("shadow worker with a Gordon rule: %v", err)
 	}
 }

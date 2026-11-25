@@ -1,8 +1,8 @@
 // Package route turns an authenticated delivery, the fresh upstream state
 // it concerns and the ledger of handled work into a Decision: which runs
 // to submit and which writes to make, per dispatch family. Deciding has
-// no side effects; the rollout table says whether Gordon executes a
-// family's decision or only records it (shadow).
+// no side effects; the worker records the decision and executes its
+// runs and writes.
 package route
 
 import (
@@ -10,7 +10,6 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
 )
 
@@ -50,8 +49,7 @@ type Decision struct {
 	Families    []FamilyDecision `json:"families,omitempty"`
 	// Requeue lists the related tasks whose own decision this one asks
 	// for (a chain parent, a task a done blocker held): the store queues
-	// a synthetic delivery for each, in shadow too, since it writes
-	// nothing outside Gordon.
+	// a synthetic delivery for each.
 	Requeue []Requeue `json:"requeue,omitempty"`
 }
 
@@ -68,8 +66,6 @@ type Requeue struct {
 type FamilyDecision struct {
 	Family  run.Family      `json:"family"`
 	Project string          `json:"project,omitempty"`
-	Owner   rollout.Owner   `json:"owner"`
-	Execute bool            `json:"execute"`
 	Outcome Outcome         `json:"outcome"`
 	Reason  string          `json:"reason,omitempty"`
 	Runs    []Run           `json:"runs,omitempty"`

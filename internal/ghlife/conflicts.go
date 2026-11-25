@@ -13,7 +13,6 @@ import (
 	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -53,13 +52,12 @@ type ConflictStore interface {
 // Push and pull_request events start no scan: the pass's interval is the
 // detection delay, where legacy also scanned on events.
 type ConflictReconciler struct {
-	GitHub    ConflictLister
-	Store     ConflictStore
-	Config    profile.Config
-	Ownership rollout.Table
-	Now       func() time.Time
-	Metrics   *metrics.Metrics
-	Log       *slog.Logger
+	GitHub  ConflictLister
+	Store   ConflictStore
+	Config  profile.Config
+	Now     func() time.Time
+	Metrics *metrics.Metrics
+	Log     *slog.Logger
 }
 
 // workspaceScope is one Workspace's conflict scan.
@@ -97,11 +95,6 @@ func (c *ConflictReconciler) scopes() []workspaceScope {
 			continue
 		}
 		seen[key] = true
-		// The family's owner is the Workspace's first project's, as the
-		// router routes its conflicts.
-		if c.Ownership.Owner(p.Name, run.PRConflict) == rollout.Legacy {
-			continue
-		}
 		out = append(out, workspaceScope{repo: p.Repository, workspace: p.Workspace, base: p.Base()})
 	}
 	for i := range out {

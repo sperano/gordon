@@ -159,8 +159,8 @@ func taskMessages(k *kelos.Client) lifecycle.TaskMessages {
 // lifecycle's failure notices, then the cost notices.
 func finishHooks(cfg config.Worker, s *store.Store) []submit.FinishHook {
 	return []submit.FinishHook{&submit.Completions{Store: s},
-		&lifecycle.Failures{Store: s, Policy: cfg.Routing.Policy, Ownership: cfg.Ownership, Projects: cfg.Routing.Projects},
-		&costs.Hook{Store: s, Ownership: cfg.Ownership}}
+		&lifecycle.Failures{Store: s, Policy: cfg.Routing.Policy, Projects: cfg.Routing.Projects},
+		&costs.Hook{Store: s}}
 }
 
 // costPublisher is the cost notice pass, nil without Sillage's API.
@@ -169,7 +169,7 @@ func costPublisher(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *s
 	if c.APIURL == "" {
 		return nil
 	}
-	return &costs.Publisher{Store: s, Ownership: cfg.Ownership, Sillage: &sillage.Client{BaseURL: c.APIURL, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
+	return &costs.Publisher{Store: s, Sillage: &sillage.Client{BaseURL: c.APIURL, HTTP: &http.Client{Timeout: cfg.UpstreamTimeout}},
 		Links: links(cfg), VikunjaWeb: cfg.Routing.Policy.VikunjaWebURL,
 		Wait: c.Wait, Deadline: c.Deadline, Refresh: c.Refresh, LiveFor: c.LiveFor,
 		Backoff: cfg.Backoff, Metrics: m, Log: log.With("pass", "cost-notices")}

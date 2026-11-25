@@ -104,7 +104,7 @@ func TestGrantWorkerCannotChangeSchemaOrDelete(t *testing.T) {
 	}
 	defer ws.Close()
 	it := claimOne(t, ws, "w")
-	if _, err := ws.Complete(ctx, it.Lease, dispatch(true), false); err != nil {
+	if _, err := ws.Complete(ctx, it.Lease, dispatch()); err != nil {
 		t.Fatalf("worker Complete: %v", err)
 	}
 	if _, err := ws.ClaimActions(ctx, "w", 1, testTTL); err != nil {
@@ -235,12 +235,12 @@ func TestGrantWorkerUpdatesOnlyMutableColumns(t *testing.T) {
 	}
 	defer ws.Close()
 	accept(t, owner, "k1")
-	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, submitOnly(), false); err != nil {
+	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, submitOnly()); err != nil {
 		t.Fatalf("worker Complete: %v", err)
 	}
 	storetest.Exec(t, dbURL, `UPDATE runs SET state = 'finished'`)
 	acceptRequest(t, owner, "k2", "vikunja/comment/2")
-	if got, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, submitOnly(), false); err != nil || got.Outcome != route.Dispatch {
+	if got, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, submitOnly()); err != nil || got.Outcome != route.Dispatch {
 		t.Fatalf("worker rerun of a finished run = %s, %v; want dispatch", got.Outcome, err)
 	}
 	claimed, err := ws.ClaimActions(ctx, "w", 1, testTTL)
@@ -260,8 +260,6 @@ func TestGrantWorkerUpdatesOnlyMutableColumns(t *testing.T) {
 		`UPDATE actions SET target = 'github/x'`,
 		`UPDATE runs SET name = 'other'`,
 		`UPDATE requests SET inbox_id = inbox_id`,
-		`UPDATE shadow_tasks SET name = 'other'`,
-		`DELETE FROM shadow_tasks`,
 		`DELETE FROM runs`,
 	} {
 		if _, err := conn.Exec(ctx, q); !denied(err) {
@@ -282,7 +280,7 @@ func TestGrantWorkerDispatchRights(t *testing.T) {
 	}
 	defer ws.Close()
 	id := acceptRequest(t, owner, "k1", "vikunja/comment/1")
-	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, withTask("p"), false); err != nil {
+	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, withTask("p")); err != nil {
 		t.Fatalf("worker Complete with a Task: %v", err)
 	}
 	if _, err := ws.RunToSubmit(ctx, runName); err != nil {
@@ -296,22 +294,6 @@ func TestGrantWorkerDispatchRights(t *testing.T) {
 	}
 	if err := ws.ObserveRun(ctx, runName, id, false, ""); err != nil {
 		t.Fatalf("worker ObserveRun: %v", err)
-	}
-	id2 := acceptRequest(t, owner, "k2", "vikunja/comment/2")
-	if _, err := ws.Complete(ctx, claimOne(t, ws, "w").Lease, withTask("p"), true); err != nil {
-		t.Fatalf("worker shadow Complete: %v", err)
-	}
-	pending, err := ws.PendingShadow(ctx, 1)
-	if err != nil || len(pending) != 1 || pending[0].InboxID != id2 {
-		t.Fatalf("worker PendingShadow = %+v, %v; want the shadow Task of k2", pending, err)
-	}
-	if err := ws.ShadowCompared(ctx, pending[0].Name, pending[0].InboxID, store.ShadowMatch, nil); err != nil {
-		t.Fatalf("worker ShadowCompared: %v", err)
-	}
-	var result string
-	storetest.QueryRow(t, dbURL, `SELECT result FROM shadow_tasks WHERE inbox_id = $1`, []any{id2}, &result)
-	if result != store.ShadowMatch {
-		t.Fatalf("shadow result %q after the worker's compare, want %q", result, store.ShadowMatch)
 	}
 	if _, err := ws.PruneTasks(ctx, 0); err != nil {
 		t.Fatalf("worker PruneTasks: %v", err)

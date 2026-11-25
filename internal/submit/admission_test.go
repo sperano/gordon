@@ -27,7 +27,7 @@ func (c *countingRuns) WithAdmission(ctx context.Context, fn func(context.Contex
 }
 
 func TestUncheckedSubmissionTakesNoAdmission(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	runs := &countingRuns{Runs: e.store}
 	e.exec.Runs = runs
 	name := e.implement(t, implementID, "claude-opus")
@@ -43,7 +43,7 @@ func TestUncheckedSubmissionTakesNoAdmission(t *testing.T) {
 // TestUncheckedAgentRunTakesTheAdmission: an implementation run with no
 // limit and no branch is still created under the lock a drag-cancel holds.
 func TestUncheckedAgentRunTakesTheAdmission(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	runs := &countingRuns{Runs: e.store}
 	e.exec.Runs = runs
 	name := e.implement(t, implementID, "claude-opus")
@@ -56,7 +56,7 @@ func TestUncheckedAgentRunTakesTheAdmission(t *testing.T) {
 }
 
 func TestCheckedSubmissionTakesTheAdmission(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	runs := &countingRuns{Runs: e.store}
 	e.exec.Runs = runs
 	name := e.implement(t, implementID, "claude-opus") // on its task's branch
@@ -74,7 +74,7 @@ func (refusingGets) Get(context.Context, string) (kelos.Task, json.RawMessage, e
 }
 
 func TestRefusedReadDeadLettersTheSubmission(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	e.exec.Kelos = refusingGets{e.api}
 	name := e.implement(t, implementID, "claude-opus")
 	e.perform(t)
@@ -93,7 +93,7 @@ func (refusingLists) List(context.Context, string) ([]kelos.Task, error) {
 }
 
 func TestRefusedAdmissionListDeadLettersTheSubmission(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	e.exec.Kelos = refusingLists{e.api}
 	name := e.implement(t, implementID, "claude-opus") // on its task's branch: admission lists
 	e.perform(t)
@@ -113,7 +113,7 @@ func (busyAdmission) WithAdmission(context.Context, func(context.Context) error)
 }
 
 func TestAdmissionWaitTimeoutDefersUncounted(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	e.exec.Runs = busyAdmission{e.store}
 	name := e.implement(t, implementID, "claude-opus") // on its task's branch
 	e.perform(t)
@@ -137,7 +137,7 @@ func (timingOutLists) List(context.Context, string) ([]kelos.Task, error) {
 // TestDeadlineInsideTheLockIsNotDeferred: a deadline after the lock was
 // taken is a counted attempt, not a deferral; only a lock wait defers.
 func TestDeadlineInsideTheLockIsNotDeferred(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	e.exec.Kelos = timingOutLists{e.api}
 	name := e.implement(t, implementID, "claude-opus") // on its task's branch: admission lists
 	e.perform(t)

@@ -22,7 +22,6 @@ import (
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -96,16 +95,7 @@ func fixture(t *testing.T) dispatch.Config {
 	return c
 }
 
-func gordonOwnsAll() rollout.Table {
-	var tbl rollout.Table
-	for _, f := range run.Families {
-		tbl.Rules = append(tbl.Rules, rollout.Rule{Project: rollout.AllProjects, Family: f, Owner: rollout.Gordon,
-			Evidence: []rollout.Gate{rollout.ReplayParity, rollout.ShadowParity, rollout.RollbackTested, rollout.LegacyDisabled}})
-	}
-	return tbl
-}
-
-func newEnv(t *testing.T, shadow bool, limits dispatch.Limits) *env {
+func newEnv(t *testing.T, limits dispatch.Limits) *env {
 	t.Helper()
 	s, dbURL := storetest.Open(t)
 	srv := kelostest.New(route.KelosNamespace)
@@ -117,10 +107,10 @@ func newEnv(t *testing.T, shadow bool, limits dispatch.Limits) *env {
 	routing, cfg := profile.Defaults(), fixture(t)
 	cfg.Limits = limits
 	backoff := worker.Backoff{Base: time.Second, Max: time.Minute}
-	e.proc = &worker.Processor{Store: s, Router: route.Router{Config: routing, Ownership: gordonOwnsAll()},
-		State:  worker.StateReader{Config: routing, Tasks: e.tasks, PRs: noPRs{}},
-		Tasks:  dispatch.Preparer{Builder: dispatch.Builder{Routing: routing, Config: cfg}, Comments: e.tasks},
-		Shadow: shadow, Owner: "w", Concurrency: 4, LeaseTTL: testTTL, MaxAttempts: 3, Backoff: backoff,
+	e.proc = &worker.Processor{Store: s, Router: route.Router{Config: routing},
+		State: worker.StateReader{Config: routing, Tasks: e.tasks, PRs: noPRs{}},
+		Tasks: dispatch.Preparer{Builder: dispatch.Builder{Routing: routing, Config: cfg}, Comments: e.tasks},
+		Owner: "w", Concurrency: 4, LeaseTTL: testTTL, MaxAttempts: 3, Backoff: backoff,
 		Projects: &worker.Limiter{}, DeferDelay: time.Second, Metrics: e.metrics, Log: log}
 	e.exec = &Executor{Runs: s, Kelos: e.api, Limits: limits, BusyDelay: busyDelay, Metrics: e.metrics, Log: log}
 	e.out = &worker.Outbox{Store: s, Executors: map[action.Kind]worker.Executor{action.SubmitTask: e.exec},
@@ -197,7 +187,7 @@ func running(name, variant, workspace, branch, phase string) kelos.Task {
 }
 
 func TestSubmitsTheBuiltTaskExactly(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.perform(t)
 	if st, _, msg := e.action(t, name); st != store.ActionDone {
@@ -211,7 +201,7 @@ func TestSubmitsTheBuiltTaskExactly(t *testing.T) {
 	storetest.QueryRow(t, e.dbURL, `SELECT task FROM runs WHERE name = $1`, []any{name}, &built)
 	built.APIVersion, built.Kind = kelos.APIVersion, kelos.KindTask
 	sent, _ := json.Marshal(creates[0])
-	if diff, err := kelos.Diff(built, sent); err != nil || len(diff) > 0 || creates[0].Metadata.Name != name {
+	if diff, err := kelostest.Diff(built, sent); err != nil || len(diff) > 0 || creates[0].Metadata.Name != name {
 		t.Fatalf("submitted %s differs from the recorded Task at %v (%v)", creates[0].Metadata.Name, diff, err)
 	}
 	var inbox int64
@@ -226,7 +216,7 @@ func TestSubmitsTheBuiltTaskExactly(t *testing.T) {
 }
 
 func TestLostCreateResponseIsRecoveredNotRepeated(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.kelos.FailCreates(kelostest.DropResponse)
 	e.perform(t)
@@ -244,7 +234,7 @@ func TestLostCreateResponseIsRecoveredNotRepeated(t *testing.T) {
 }
 
 func TestWorkerDiedAfterCreatingIsNotRepeated(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	claimed, err := e.store.ClaimActions(ctx, "dead", 1, testTTL)
 	if err != nil || len(claimed) != 1 {
@@ -265,7 +255,7 @@ func TestWorkerDiedAfterCreatingIsNotRepeated(t *testing.T) {
 }
 
 func TestLegacyTaskOfTheSameNameIsNotDuplicated(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := run.Identity{Family: run.VikunjaImplement, Project: "gordon", Variant: "claude-opus", TaskID: implementID}.Name()
 	e.kelos.Put(running(name, "claude-opus", "gordon", "kelos/vikunja-1624", kelos.PhaseRunning))
 	e.implement(t, implementID, "claude-opus")
@@ -279,7 +269,7 @@ func TestLegacyTaskOfTheSameNameIsNotDuplicated(t *testing.T) {
 }
 
 func TestCreateConflictWithAnotherSubmitter(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	// Another submitter creates the Task between our check and our create.
 	api := &raceAPI{TaskAPI: e.api, before: func() {
@@ -305,7 +295,7 @@ func (r *raceAPI) Create(ctx context.Context, t kelos.Task) (kelos.Task, error) 
 }
 
 func TestAdmissionRefusalDeadLettersAndFreesTheName(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	e.kelos.Admit = func(kelos.Task) error { return errors.New("profile default does not grant Secrets x") }
 	name := e.implement(t, implementID, "claude-opus")
 	e.perform(t)
@@ -322,7 +312,7 @@ func TestAdmissionRefusalDeadLettersAndFreesTheName(t *testing.T) {
 }
 
 func TestTransientCreateFailureRetries(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.kelos.FailCreates(http.StatusTooManyRequests)
 	e.perform(t)
@@ -337,7 +327,7 @@ func TestTransientCreateFailureRetries(t *testing.T) {
 }
 
 func TestVariantLimitKeepsSubmissionsQueued(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{Default: 1})
+	e := newEnv(t, dispatch.Limits{Default: 1})
 	e.kelos.Put(running("other-1", "claude-opus", "vigie", "", kelos.PhaseRunning))
 	e.kelos.Put(running("waiting-1", "claude-opus", "vigie", "b", kelos.PhaseWaiting))
 	e.kelos.Put(running("done-1", "claude-opus", "vigie", "", kelos.PhaseSucceeded))
@@ -361,7 +351,7 @@ func TestVariantLimitKeepsSubmissionsQueued(t *testing.T) {
 }
 
 func TestConcurrentSubmissionsRespectTheLimit(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{Default: 2})
+	e := newEnv(t, dispatch.Limits{Default: 2})
 	for id := int64(1); id <= 4; id++ {
 		e.implement(t, id, "claude-opus")
 	}
@@ -375,7 +365,7 @@ func TestConcurrentSubmissionsRespectTheLimit(t *testing.T) {
 }
 
 func TestHeldBranchKeepsSubmissionQueued(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	// A follow-up on the task's branch in its Workspace holds Kelos's lock;
 	// the read-only copy and other branches do not. They are listed first,
 	// so a check that ignored the Workspace or the branch would name them.
@@ -404,7 +394,7 @@ func TestHeldBranchKeepsSubmissionQueued(t *testing.T) {
 }
 
 func TestRecoveringARunWithoutABuiltTaskFailsAtOnce(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.kelos.FailCreates(kelostest.DropResponse)
 	e.perform(t)
@@ -421,7 +411,7 @@ func TestRecoveringARunWithoutABuiltTaskFailsAtOnce(t *testing.T) {
 }
 
 func TestSubmitWithoutABuiltTaskIsPermanent(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = NULL`)
 	e.perform(t)

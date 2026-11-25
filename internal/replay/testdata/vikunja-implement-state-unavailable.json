@@ -29,12 +29,6 @@
   },
   "state": {},
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-4101-hollingsworth-opus"
-    ],
-    "divergence": "Legacy dispatched from the webhook payload; Gordon decides from fresh state, so it retries until the task can be read."
-  },
   "expect": {
     "outcome": "retry",
     "reason": "state-unavailable",

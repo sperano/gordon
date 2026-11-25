@@ -11,12 +11,6 @@
   },
   "state": {},
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "image-build-lucarne-req-1"
-    ],
-    "divergence": "retained with Kelos: its spawner keeps creating the build Task"
-  },
   "expect": {
     "outcome": "ignore",
     "reason": "kelos-owned"

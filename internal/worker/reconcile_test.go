@@ -11,13 +11,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/logging"
-	"github.com/sperano/gordon/internal/rollout"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store/storetest"
 )
 
 func TestReconcileReleasesLeasesAndReportsQueues(t *testing.T) {
-	e := newEnv(t, rollout.Table{})
+	e := newEnv(t)
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	if _, err := e.store.Claim(ctx, "dead", 1, testTTL); err != nil {
 		t.Fatal(err)
@@ -65,7 +63,7 @@ func (p *countingPass) Once(context.Context) error {
 }
 
 func TestReconcileRunsEveryPassAndReportsAFailure(t *testing.T) {
-	e := newEnv(t, rollout.Table{})
+	e := newEnv(t)
 	failing, next := &countingPass{err: errors.New("kelos unavailable")}, &countingPass{}
 	r := &Reconciler{Store: e.store, Passes: []Pass{failing, next}, Metrics: e.metric, Log: logging.New(e.logs, slog.LevelInfo)}
 	err := r.Once(ctx)
@@ -78,7 +76,7 @@ func TestReconcileRunsEveryPassAndReportsAFailure(t *testing.T) {
 }
 
 func TestReconcilePrunesBuiltTasks(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.tasks[implementTaskID] = eligible()
 	e.proc.Tasks = fixedTask{}
@@ -98,7 +96,7 @@ func TestReconcilePrunesBuiltTasks(t *testing.T) {
 }
 
 func TestReconcilePrunesTasksWhenBodyPruneFails(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.tasks[implementTaskID] = eligible()
 	e.proc.Tasks = fixedTask{}
@@ -121,7 +119,7 @@ func TestReconcilePrunesTasksWhenBodyPruneFails(t *testing.T) {
 // dead-lettered: its claim actions wait for it for ever.
 func orphanedClaims(t *testing.T) *env {
 	t.Helper()
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.tasks[implementTaskID] = eligible()
 	e.proc.Tasks = fixedTask{}

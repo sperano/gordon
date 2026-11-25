@@ -16,9 +16,7 @@ import (
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -73,27 +71,18 @@ const (
 	headA  = "bbbbbbbb22222222"
 )
 
-// conflictConfig has vigie, and cocovm with its feature Workspace on the
-// same repository.
-func conflictConfig() profile.Config {
+// conflictConfig has the default projects named: vigie, or cocovm and
+// cocovm-3d, its feature Workspace on the same repository.
+func conflictConfig(projects ...string) profile.Config {
 	c := profile.Defaults()
 	var keep []profile.Project
 	for _, p := range c.Projects {
-		if p.Name == "vigie" || p.Name == "cocovm" || p.Name == "cocovm-3d" {
+		if slices.Contains(projects, p.Name) {
 			keep = append(keep, p)
 		}
 	}
 	c.Projects = keep
 	return c
-}
-
-func shadowing(projects ...string) rollout.Table {
-	var t rollout.Table
-	for _, p := range projects {
-		t.Rules = append(t.Rules, rollout.Rule{Project: p, Family: run.PRConflict, Owner: rollout.Shadow,
-			Evidence: []rollout.Gate{rollout.ReplayParity}})
-	}
-	return t
 }
 
 // conflictPR is an open agent PR of repo from head onto base.
@@ -118,8 +107,9 @@ func openListing(prs ...event.PullRequest) []upstream.ListedPR {
 	return out
 }
 
-func conflictReconciler(g *conflictGitHub, s *conflictInbox, owner rollout.Table) *ConflictReconciler {
-	return &ConflictReconciler{GitHub: g, Store: s, Config: conflictConfig(), Ownership: owner,
+// conflictReconciler scans the Workspaces of the default projects named.
+func conflictReconciler(g *conflictGitHub, s *conflictInbox, projects ...string) *ConflictReconciler {
+	return &ConflictReconciler{GitHub: g, Store: s, Config: conflictConfig(projects...),
 		Now: func() time.Time { return time.Unix(7200*5+30, 0) }, Metrics: metrics.New(),
 		Log: logging.New(&bytes.Buffer{}, slog.LevelDebug)}
 }
@@ -129,7 +119,7 @@ func TestConflictQueuedOnce(t *testing.T) {
 	g := &conflictGitHub{open: map[string][]upstream.ListedPR{vigie: openListing(pr)},
 		fresh: map[string]event.PullRequest{prKey(vigie, 4): dirty(pr)}}
 	s := &conflictInbox{}
-	c := conflictReconciler(g, s, shadowing("vigie"))
+	c := conflictReconciler(g, s, "vigie")
 	if err := c.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +148,7 @@ func TestConflictQueuedOnce(t *testing.T) {
 	}
 	// The episode's run is taken: nothing is queued.
 	s = &conflictInbox{taken: map[string]bool{"pr-conflict-" + episode: true}}
-	c = conflictReconciler(g, s, shadowing("vigie"))
+	c = conflictReconciler(g, s, "vigie")
 	if err := c.Once(context.Background()); err != nil || len(s.queued) != 0 {
 		t.Errorf("taken run: %v, queued %+v", err, s.queued)
 	}
@@ -186,7 +176,7 @@ func TestConflictCandidates(t *testing.T) {
 	}
 	g := &conflictGitHub{open: map[string][]upstream.ListedPR{vigie: openListing(all...)}, fresh: fresh}
 	s := &conflictInbox{}
-	if err := conflictReconciler(g, s, shadowing("vigie")).Once(context.Background()); err != nil {
+	if err := conflictReconciler(g, s, "vigie").Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{prKey(vigie, 1), prKey(vigie, 2), prKey(vigie, 3)}; !slices.Equal(g.reads, want) {
@@ -213,7 +203,7 @@ func TestConflictFreshState(t *testing.T) {
 			prKey(vigie, 3): draftFresh, prKey(vigie, 4): dirty(conflicted)},
 		readErr: map[string]error{prKey(vigie, 5): errors.New("github down")}}
 	s := &conflictInbox{}
-	c := conflictReconciler(g, s, shadowing("vigie"))
+	c := conflictReconciler(g, s, "vigie")
 	err := c.Once(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "sperano/vigie/vigie: pull request 5: github down") {
 		t.Errorf("Once = %v, want the failed read", err)
@@ -226,8 +216,8 @@ func TestConflictFreshState(t *testing.T) {
 	}
 }
 
-// TestConflictScopes: only Workspaces whose conflicts are not legacy's are
-// scanned, one listing per repository, and a Workspace sharing its
+// TestConflictScopes: only the configured Workspaces are scanned, one
+// listing per repository, and a Workspace sharing its
 // repository never scans the other's ref as a stack head.
 func TestConflictScopes(t *testing.T) {
 	mainPR := conflictPR(cocovm, 1, "kelos/vikunja-1", "main", "kelos:follow-up")
@@ -241,13 +231,13 @@ func TestConflictScopes(t *testing.T) {
 	g := &conflictGitHub{open: map[string][]upstream.ListedPR{cocovm: openListing(mainPR, feature, onFeature), vigie: openListing(vigiePR)},
 		fresh: fresh}
 	s := &conflictInbox{}
-	if err := conflictReconciler(g, s, shadowing("cocovm", "cocovm-3d")).Once(context.Background()); err != nil {
+	if err := conflictReconciler(g, s, "cocovm", "cocovm-3d").Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	// cocovm scans main's PRs (the feature branch's own PR included, never
 	// as a stack head); cocovm-3d scans the PR on feature/3d.
 	if want := []string{prKey(cocovm, 1), prKey(cocovm, 2), prKey(cocovm, 3)}; !slices.Equal(g.reads, want) {
-		t.Errorf("read %v, want %v (vigie is legacy's)", g.reads, want)
+		t.Errorf("read %v, want %v (vigie is not configured)", g.reads, want)
 	}
 	var workspaces []string
 	for _, d := range s.queued {
@@ -269,19 +259,19 @@ func TestConflictPassErrors(t *testing.T) {
 		fresh:   map[string]event.PullRequest{prKey(vigie, 4): dirty(vigiePR)},
 		listErr: map[string]error{cocovm: errors.New("list down")}}
 	s := &conflictInbox{}
-	err := conflictReconciler(g, s, shadowing("cocovm", "vigie")).Once(context.Background())
+	err := conflictReconciler(g, s, "cocovm", "vigie").Once(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "sperano/cocovm: open pull requests: list down") || len(s.queued) != 1 {
 		t.Errorf("list failure: %v, queued %d (vigie's still queued)", err, len(s.queued))
 	}
 	s = &conflictInbox{takenErr: errors.New("store down")}
-	err = conflictReconciler(g, s, shadowing("vigie")).Once(context.Background())
+	err = conflictReconciler(g, s, "vigie").Once(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "conflict runs: store down") || len(s.queued) != 0 {
 		t.Errorf("runs failure: %v, queued %d", err, len(s.queued))
 	}
 	// Nothing in conflict reads no runs and queues nothing.
 	s = &conflictInbox{takenErr: errors.New("must not be asked")}
 	g = &conflictGitHub{}
-	if err := conflictReconciler(g, s, shadowing("vigie")).Once(context.Background()); err != nil {
+	if err := conflictReconciler(g, s, "vigie").Once(context.Background()); err != nil {
 		t.Errorf("empty pass: %v", err)
 	}
 }

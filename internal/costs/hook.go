@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/sperano/gordon/internal/kelos"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 )
@@ -40,18 +39,17 @@ type HookStore interface {
 }
 
 // Hook is the observer's run-finished hook: it records the cost notice
-// of each finished run of Families on a Vikunja task, where Gordon owns
-// the vikunja-cost family: failed runs and runs a limit stopped included
+// of each finished run of Families on a Vikunja task: failed runs and
+// runs a limit stopped included
 // (they used tokens too), each generation once.
 type Hook struct {
-	Store     HookStore
-	Ownership rollout.Table
-	Now       func() time.Time
+	Store HookStore
+	Now   func() time.Time
 }
 
 // Finished records the run's cost notice as waiting.
 func (h *Hook) Finished(ctx context.Context, r store.ObservedRun, t kelos.Task) error {
-	if r.TaskID <= 0 || !slices.Contains(Families, r.Family) || !h.Ownership.Executes(r.Project, run.VikunjaCost) {
+	if r.TaskID <= 0 || !slices.Contains(Families, r.Family) {
 		return nil
 	}
 	finished := h.now()

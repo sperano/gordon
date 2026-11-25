@@ -70,7 +70,7 @@ func readinessReconciler(cfg config.Worker, s *store.Store, github upstream.GitH
 	if cfg.Readiness.ReconcileInterval <= 0 {
 		return nil
 	}
-	return &ghlife.ReadinessReconciler{GitHub: github, Inbox: s, Config: cfg.Routing, Ownership: cfg.Ownership,
+	return &ghlife.ReadinessReconciler{GitHub: github, Inbox: s, Config: cfg.Routing,
 		Interval: cfg.Readiness.ReconcileInterval, Metrics: m, Log: log.With("pass", "readiness-reconcile")}
 }
 

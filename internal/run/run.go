@@ -9,8 +9,7 @@
 // taskspawners.yaml template: it leads with the Vikunja task id and
 // carries the variant without its vendor prefix
 // (vikunja-<task>-<project>-<short variant>, ShortVariant; a discuss run
-// adds -discuss), so runs of one task sort together; PreviousName gives the legacy shape, for
-// deduplication against runs started before the rename.
+// adds -discuss), so runs of one task sort together.
 package run
 
 import (
@@ -38,7 +37,7 @@ const (
 	// request, one run per base and head pair (conflictspawners.yaml).
 	PRConflict Family = "pr-conflict"
 	// The Vikunja lifecycle families (Gordon 06): model-free writes, each
-	// the successor of one legacy hook or reconciler with its own switch.
+	// the successor of one legacy hook or reconciler.
 	VikunjaDragCancel  Family = "vikunja-drag-cancel"
 	VikunjaDoneCleanup Family = "vikunja-done-cleanup"
 	VikunjaChain       Family = "vikunja-chain"
@@ -135,30 +134,6 @@ func ShortVariant(variant string) string {
 func (i Identity) Name() string {
 	name := i.baseName()
 	if name != "" && i.Retry > 0 {
-		name += fmt.Sprintf("-retry%d", i.Retry)
-	}
-	return name
-}
-
-// PreviousName is the name an implementation, ops or discuss run had
-// before its name led with the task id and shortened the variant
-// (vikunja-<project>-<variant>-<task>, vikunja-ops-<project>-<variant>-<task>
-// or vikunja-discuss-<project>-<variant>-<task>, each with any -retry<n>),
-// so a run started under it still deduplicates; "" for every other family,
-// whose name did not change.
-func (i Identity) PreviousName() string {
-	var name string
-	switch {
-	case i.Family == VikunjaImplement && i.Ops:
-		name = fmt.Sprintf("%s-%s-%s-%d", OpsNamePrefix, i.Project, i.Variant, i.TaskID)
-	case i.Family == VikunjaImplement:
-		name = fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
-	case i.Family == VikunjaDiscuss:
-		name = fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
-	default:
-		return ""
-	}
-	if i.Retry > 0 {
 		name += fmt.Sprintf("-retry%d", i.Retry)
 	}
 	return name

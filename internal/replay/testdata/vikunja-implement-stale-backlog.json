@@ -51,12 +51,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-4101-hollingsworth-opus"
-    ],
-    "divergence": "legacy matched the enriched Doing bucket; wait-for-blockers later exited 143 on the To-Do card"
-  },
   "expect": {
     "outcome": "stale",
     "delivery_key": "vikunja/task.updated/4101/642c26a06e509e21fd5f227fdf586f1e",
@@ -65,16 +59,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "stale",
         "reason": "not-in-doing"
       },
       {
         "family": "vikunja-drag-cancel",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "no-live-agent"
       }

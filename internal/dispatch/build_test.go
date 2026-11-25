@@ -12,6 +12,7 @@ import (
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/kelos"
+	"github.com/sperano/gordon/internal/kelos/kelostest"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
@@ -21,10 +22,11 @@ import (
 // the TaskSpawners Hollingsworth bf18aa5 renders for the gordon project
 // (claude-opus, the pr-challenger reviewer) and the puckdb profile, with
 // the project, variant, model, effort and repository turned into template
-// variables; testdata/legacy/ holds the Task each legacy spawner makes for
-// the sample requests below, rendered from the same chart. The pr-conflict
-// family and its legacy Task come from the conflict spawner Hollingsworth
-// e60c284 renders for the gordon Workspace and claude-opus.
+// variables; testdata/tasks/ holds the Task Gordon must build for each
+// sample request below (first rendered by those spawners from the same
+// chart: pod hooks still depend on its shape). The pr-conflict family and
+// its Task come from the conflict spawner Hollingsworth e60c284 renders
+// for the gordon Workspace and claude-opus.
 const (
 	inboxID   = 42
 	taskID    = 1624
@@ -40,7 +42,7 @@ const (
 	desc      = "<p>Make it so.</p>"
 )
 
-// gordonKeys are the metadata keys only Gordon sets.
+// gordonKeys are the metadata keys the goldens leave out.
 var gordonKeys = []string{dispatch.ManagedLabel, dispatch.InboxAnnotation, dispatch.VersionAnnotation}
 
 func fixture(t *testing.T) dispatch.Config {
@@ -61,9 +63,10 @@ func fixture(t *testing.T) dispatch.Config {
 	return c
 }
 
-func legacy(t *testing.T, name string) json.RawMessage {
+// golden reads the Task the sample name must build.
+func golden(t *testing.T, name string) json.RawMessage {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", "legacy", name+".json"))
+	b, err := os.ReadFile(filepath.Join("testdata", "tasks", name+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +86,8 @@ func (f fakeComments) Comments(context.Context, int64, int) (json.RawMessage, er
 
 type fakeComments string
 
-// sample is one request, routed by the real router with the legacy
-// routing defaults.
+// sample is one request, routed by the real router with the routing
+// defaults.
 type sample struct {
 	delivery event.Delivery
 	state    route.State
@@ -206,13 +209,13 @@ func preparedWith(t *testing.T, routing profile.Config, cfg dispatch.Config, s s
 	return route.Run{}, route.FamilyDecision{}
 }
 
-// TestTasksMatchLegacySpawners builds each permission mode's Task and
-// compares it with the Task the legacy spawner makes for that request:
-// same name, labels, annotations and spec, Gordon's own keys aside.
-func TestTasksMatchLegacySpawners(t *testing.T) {
+// TestTasksMatchGoldens builds each permission mode's Task and compares it
+// with its golden Task: same name, labels, annotations and spec, the keys
+// that vary per delivery (checked below) aside.
+func TestTasksMatchGoldens(t *testing.T) {
 	cfg := fixture(t)
 	cases := []struct {
-		legacy string
+		golden string
 		sample sample
 		family run.Family
 		mode   profile.Mode
@@ -229,12 +232,12 @@ func TestTasksMatchLegacySpawners(t *testing.T) {
 		{"pr-conflict", conflicted(), run.PRConflict, profile.ModeFollowUp},
 	}
 	for _, tc := range cases {
-		t.Run(tc.legacy, func(t *testing.T) {
+		t.Run(tc.golden, func(t *testing.T) {
 			rn, _ := prepared(t, cfg, tc.sample, tc.family)
 			if rn.Task == nil {
 				t.Fatal("run has no Task")
 			}
-			want := legacy(t, tc.legacy)
+			want := golden(t, tc.golden)
 			var meta struct {
 				Metadata kelos.Metadata `json:"metadata"`
 			}
@@ -242,14 +245,14 @@ func TestTasksMatchLegacySpawners(t *testing.T) {
 				t.Fatal(err)
 			}
 			if rn.Task.Metadata.Name != meta.Metadata.Name || rn.Name != meta.Metadata.Name {
-				t.Fatalf("name %q (run %q), legacy %q", rn.Task.Metadata.Name, rn.Name, meta.Metadata.Name)
+				t.Fatalf("name %q (run %q), golden %q", rn.Task.Metadata.Name, rn.Name, meta.Metadata.Name)
 			}
-			diff, err := kelos.Diff(*rn.Task, want, gordonKeys...)
+			diff, err := kelostest.Diff(*rn.Task, want, gordonKeys...)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(diff) > 0 {
-				t.Fatalf("differs from the legacy Task at %v", diff)
+				t.Fatalf("differs from the golden Task at %v", diff)
 			}
 			labels := rn.Task.Metadata.Labels
 			if labels[dispatch.ModeLabel] != string(tc.mode) || labels[dispatch.ManagedLabel] != "true" ||

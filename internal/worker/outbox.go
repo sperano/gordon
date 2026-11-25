@@ -124,7 +124,7 @@ const attemptShareOfLease = 2
 // LimitProvider is the deferred_total limit label of a full provider.
 const LimitProvider = "provider"
 
-// Outbox performs queued actions. It is not started in shadow mode.
+// Outbox performs queued actions.
 type Outbox struct {
 	Store     *store.Store
 	Executors map[action.Kind]Executor

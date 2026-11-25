@@ -29,13 +29,29 @@ func file(t *testing.T, name, content string) string {
 
 func envOf(m map[string]string) Getenv { return func(k string) string { return m[k] } }
 
+// readinessRouting is the routing file of workerEnv: the defaults with
+// pr_readiness on, which the worker requires.
+const readinessRouting = `{"policy":{"pr_readiness":true}}`
+
+// workerEnv is the smallest environment a worker loads with: its reads,
+// the dispatch configuration and every writer and reader its families
+// need.
 func workerEnv(t *testing.T) map[string]string {
 	return map[string]string{
-		"GORDON_DATABASE_URL_FILE":  file(t, "db", "postgres://worker:pw@db/gordon\n"),
-		"GORDON_VIKUNJA_URL":        "https://vikunja.example/api/v1/",
-		"GORDON_VIKUNJA_TOKEN_FILE": file(t, "vt", "vtoken\n"),
-		"GORDON_GITHUB_TOKEN_FILE":  file(t, "gt", "gtoken"),
-		"GORDON_WORKER_ID":          "worker-0",
+		"GORDON_DATABASE_URL_FILE":            file(t, "db", "postgres://worker:pw@db/gordon\n"),
+		"GORDON_VIKUNJA_URL":                  "https://vikunja.example/api/v1/",
+		"GORDON_VIKUNJA_TOKEN_FILE":           file(t, "vt", "vtoken\n"),
+		"GORDON_GITHUB_TOKEN_FILE":            file(t, "gt", "gtoken"),
+		"GORDON_WORKER_ID":                    "worker-0",
+		"GORDON_DISPATCH_CONFIG_FILE":         file(t, "dispatch.json", `{"version":"d-1","namespace":"kelos-agents"}`),
+		"GORDON_ROUTING_CONFIG_FILE":          file(t, "routing.json", readinessRouting),
+		"GORDON_VIKUNJA_WRITE_TOKEN_FILE":     file(t, "wt", "wtoken\n"),
+		"GORDON_GITHUB_APP_DIR":               "/var/run/github-app",
+		"GORDON_SILLAGE_API_URL":              "http://sillage.sillage.svc",
+		"GORDON_READINESS_RECONCILE_INTERVAL": "1m",
+		"GORDON_NTFY_URL":                     "https://ntfy.example/",
+		"GORDON_NTFY_TOPIC":                   "pr-ready",
+		"GORDON_NTFY_TOKEN_FILE":              file(t, "nt", "ntoken\n"),
 	}
 }
 
@@ -45,8 +61,8 @@ func TestWorkerDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Shadow {
-		t.Fatal("worker executes by default; shadow must be the default")
+	if c.Deprecated != nil {
+		t.Fatalf("deprecated settings %v, want none", c.Deprecated)
 	}
 	if c.DatabaseURL != "postgres://worker:pw@db/gordon" || c.VikunjaTokenFile != env["GORDON_VIKUNJA_TOKEN_FILE"] ||
 		c.GitHubTokenFile != env["GORDON_GITHUB_TOKEN_FILE"] {
@@ -66,11 +82,11 @@ func TestWorkerDefaults(t *testing.T) {
 		upstream.ProviderGitHub: DefaultUpstreamLimit}) {
 		t.Fatalf("upstream limits %v", c.UpstreamLimit)
 	}
-	if c.Routing.Version != profile.Defaults().Version || len(c.Ownership.Rules) != 0 {
-		t.Fatal("routing defaults or empty ownership not applied")
+	if c.Routing.Version != profile.Defaults().Version {
+		t.Fatal("routing defaults not applied")
 	}
-	if c.Kelos != nil {
-		t.Fatalf("Kelos configured without a dispatch configuration: %+v", c.Kelos)
+	if c.Kelos == nil {
+		t.Fatal("Kelos not configured from the dispatch configuration")
 	}
 	if strings.Contains(c.String(), "pw") || strings.Contains(c.String(), "token") {
 		t.Fatalf("String() leaks a secret: %s", c)
@@ -79,35 +95,31 @@ func TestWorkerDefaults(t *testing.T) {
 
 func TestWorkerOverrides(t *testing.T) {
 	env := workerEnv(t)
-	env["GORDON_SHADOW"] = "false"
 	env["GORDON_UPSTREAM_LIMITS"] = "github=9, vikunja=1"
 	env["GORDON_RETRY_BASE"] = "1s"
 	env["GORDON_RETRY_MAX"] = "3s"
 	env["GORDON_LOG_LEVEL"] = "debug"
-	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"version":"custom-1"}`)
-	env["GORDON_OWNERSHIP_FILE"] = file(t, "own.json",
-		`{"rules":[{"project":"*","family":"pr-review","owner":"shadow","evidence":["replay-parity"]}]}`)
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"version":"custom-1","policy":{"pr_readiness":true}}`)
 	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "dispatch.json", `{"version":"d-1","namespace":"kelos-agents"}`)
 	env["GORDON_KELOS_API_URL"] = "https://k8s.example:6443/"
 	env["GORDON_KELOS_TOKEN_FILE"] = "/run/token"
 	env["GORDON_KELOS_CA_FILE"] = "/run/ca.crt"
 	env["GORDON_KELOS_BUSY_DELAY"] = "7s"
-	env["GORDON_SHADOW_WINDOW"] = "1h"
 	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := Kelos{Dispatch: dispatch.Config{Version: "d-1", Namespace: "kelos-agents"}, APIURL: "https://k8s.example:6443",
-		TokenFile: "/run/token", CAFile: "/run/ca.crt", BusyDelay: 7 * time.Second, ShadowWindow: time.Hour}
+		TokenFile: "/run/token", CAFile: "/run/ca.crt", BusyDelay: 7 * time.Second}
 	if c.Kelos == nil || !reflect.DeepEqual(*c.Kelos, want) {
 		t.Fatalf("kelos %+v, want %+v", c.Kelos, want)
 	}
 	if !strings.Contains(c.String(), "dispatch=d-1 kelos=https://k8s.example:6443") {
 		t.Fatalf("String() %s lacks the dispatch version and Kelos URL", c)
 	}
-	if c.Shadow || c.UpstreamLimit["github"] != 9 || c.UpstreamLimit["vikunja"] != 1 ||
+	if c.UpstreamLimit["github"] != 9 || c.UpstreamLimit["vikunja"] != 1 ||
 		c.Backoff.Base != time.Second || c.Backoff.Max != 3*time.Second || c.LogLevel != slog.LevelDebug ||
-		c.Routing.Version != "custom-1" || len(c.Ownership.Rules) != 1 {
+		c.Routing.Version != "custom-1" {
 		t.Fatalf("overrides not applied: %+v", c)
 	}
 }
@@ -127,7 +139,7 @@ func TestWorkerOpsMode(t *testing.T) {
 	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"ops_profile":"cluster-operator",`+
 		`"profiles":{"cluster-operator":{"service_account":"kelos-cluster-operator",`+
 		`"capabilities":["github-write","github-readonly","cluster-read","cluster-write"]}},`+
-		`"policy":{"ops_label":"ops","ops_owner":"eric","ops_projects":["hollingsworth"]}}`)
+		`"policy":{"pr_readiness":true,"ops_label":"ops","ops_owner":"eric","ops_projects":["hollingsworth"]}}`)
 	c, err := LoadWorker(envOf(env))
 	if err != nil {
 		t.Fatal(err)
@@ -153,13 +165,12 @@ func TestWorkerRefusals(t *testing.T) {
 		"whitespace-only token": {map[string]string{"GORDON_VIKUNJA_TOKEN_FILE": "BLANK"}, "GORDON_VIKUNJA_TOKEN_FILE: "},
 		"bad duration":          {map[string]string{"GORDON_LEASE_TTL": "soon"}, `GORDON_LEASE_TTL="soon"`},
 		"zero concurrency":      {map[string]string{"GORDON_WORKER_CONCURRENCY": "0"}, `GORDON_WORKER_CONCURRENCY="0"`},
-		"bad bool":              {map[string]string{"GORDON_SHADOW": "maybe"}, `GORDON_SHADOW="maybe"`},
 		"unknown provider":      {map[string]string{"GORDON_UPSTREAM_LIMITS": "gitlab=2"}, `"gitlab=2"`},
 		"zero limit":            {map[string]string{"GORDON_UPSTREAM_LIMITS": "vikunja=0"}, `"vikunja=0": want vikunja=<n>`},
 		"limit without n":       {map[string]string{"GORDON_UPSTREAM_LIMITS": "github"}, `"github": want vikunja=<n>`},
 		"provider twice":        {map[string]string{"GORDON_UPSTREAM_LIMITS": "github=2,github=9"}, "GORDON_UPSTREAM_LIMITS: github given twice"},
 		"zero lease":            {map[string]string{"GORDON_LEASE_TTL": "0s"}, `GORDON_LEASE_TTL="0s"`},
-		"trailing json":         {map[string]string{"GORDON_OWNERSHIP_FILE": "TRAILING"}, "content after the JSON value"},
+		"trailing json":         {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "TRAILING"}, "content after the JSON value"},
 		"null json":             {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "NULL"}, "null is not a configuration"},
 		"root vikunja url":      {map[string]string{"GORDON_VIKUNJA_URL": "/"}, `GORDON_VIKUNJA_URL="": want an http or https URL`},
 		"no scheme":             {map[string]string{"GORDON_GITHUB_API_URL": "api.github.com"}, `GORDON_GITHUB_API_URL="api.github.com"`},
@@ -173,9 +184,7 @@ func TestWorkerRefusals(t *testing.T) {
 		"bad log level":         {map[string]string{"GORDON_LOG_LEVEL": "loud"}, "GORDON_LOG_LEVEL"},
 		"no vikunja url":        {map[string]string{"GORDON_VIKUNJA_URL": ""}, "GORDON_VIKUNJA_URL is required"},
 		"unknown field":         {map[string]string{"GORDON_ROUTING_CONFIG_FILE": "ROUTING"}, "unknown field"},
-		"ungated owner":         {map[string]string{"GORDON_OWNERSHIP_FILE": "OWNERSHIP"}, "lacks gate"},
-		"execute, no dispatch": {map[string]string{"GORDON_SHADOW": "false"},
-			"GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE"},
+		"no dispatch":           {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": ""}, "GORDON_DISPATCH_CONFIG_FILE is required"},
 		"dispatch namespace": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_NS"},
 			`namespace "default", want "kelos-agents"`},
 		"dispatch unknown field": {map[string]string{"GORDON_DISPATCH_CONFIG_FILE": "DISPATCH_FIELD"}, `unknown field "namespaec"`},
@@ -213,8 +222,6 @@ func TestWorkerRefusals(t *testing.T) {
 					v = file(t, "blank", "   \t  \n")
 				case "ROUTING":
 					v = file(t, "r.json", `{"versoin":"x"}`)
-				case "OWNERSHIP":
-					v = file(t, "o.json", `{"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
 				case "NULL":
 					v = file(t, "n.json", " null\n")
 				case "DISPATCH":
@@ -224,7 +231,7 @@ func TestWorkerRefusals(t *testing.T) {
 				case "DISPATCH_FIELD":
 					v = file(t, "d.json", `{"namespaec":"kelos-agents"}`)
 				case "TRAILING":
-					v = file(t, "t.json", `{"rules":[]} {"rules":[{"project":"*","family":"pr-review","owner":"gordon"}]}`)
+					v = file(t, "t.json", `{"version":"a"} {"version":"b"}`)
 				}
 				env[k] = v
 			}
@@ -302,26 +309,22 @@ func TestMigrate(t *testing.T) {
 }
 
 func TestWorkerKelosDefaults(t *testing.T) {
-	env := workerEnv(t)
-	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"kelos-agents"}`)
-	c, err := LoadWorker(envOf(env))
+	c, err := LoadWorker(envOf(workerEnv(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Kelos == nil || c.Kelos.APIURL != kelos.InClusterURL || c.Kelos.TokenFile != kelos.InClusterTokenFile ||
-		c.Kelos.CAFile != kelos.InClusterCAFile || c.Kelos.BusyDelay != DefaultBusyDelay ||
-		c.Kelos.ShadowWindow != DefaultShadowWindow || !c.Shadow {
-		t.Fatalf("kelos defaults %+v, shadow %v", c.Kelos, c.Shadow)
+		c.Kelos.CAFile != kelos.InClusterCAFile || c.Kelos.BusyDelay != DefaultBusyDelay {
+		t.Fatalf("kelos defaults %+v", c.Kelos)
 	}
 }
 
 func TestLoadWorkerWithInvalidDispatchConfigNamesOnlyTheFile(t *testing.T) {
 	env := workerEnv(t)
-	env["GORDON_SHADOW"] = "false"
 	env["GORDON_DISPATCH_CONFIG_FILE"] = file(t, "d.json", `{"version":"d-1","namespace":"default"}`)
 	_, err := LoadWorker(envOf(env))
 	if err == nil || !strings.Contains(err.Error(), `namespace "default"`) ||
-		strings.Contains(err.Error(), "GORDON_SHADOW=false needs") {
+		strings.Contains(err.Error(), "GORDON_DISPATCH_CONFIG_FILE is required") {
 		t.Fatalf("LoadWorker = %v, want the dispatch file's error alone", err)
 	}
 }

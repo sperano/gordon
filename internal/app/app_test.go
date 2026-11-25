@@ -129,8 +129,9 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// service is a receiver and a shadow worker on their own database
-// roles, with fake GitHub and Vikunja behind the worker.
+// service is a receiver and a worker on their own database roles, with
+// fake GitHub and Vikunja behind the worker; without an edit the worker
+// has no Kelos API and no writer, so its actions stay queued.
 type service struct {
 	ownerURL string
 	key      []byte
@@ -172,7 +173,7 @@ func startService(t *testing.T, edits ...func(*config.Worker)) *service {
 	rcfg := config.Receiver{Common: config.Common{DatabaseURL: receiverURL, AdminAddr: "127.0.0.1:0"},
 		ListenAddr: "127.0.0.1:0", KeyFiles: map[event.Source]string{event.SourceVikunja: writeFile(t, dir, "vk", string(svc.key))},
 		MaxInFlight: config.DefaultMaxInFlight, RequestDeadline: config.DefaultRequestDeadline, ShutdownGrace: testGrace}
-	wcfg := config.Worker{Common: config.Common{DatabaseURL: workerURL, AdminAddr: "127.0.0.1:0"}, Shadow: true, ID: "e2e",
+	wcfg := config.Worker{Common: config.Common{DatabaseURL: workerURL, AdminAddr: "127.0.0.1:0"}, ID: "e2e",
 		VikunjaURL: vikunja.URL, VikunjaTokenFile: writeFile(t, dir, "vikunja-token", "vt"),
 		GitHubAPIURL: github.URL, GitHubTokenFile: writeFile(t, dir, "github-token", "gt"),
 		UpstreamLimit: map[string]int{"vikunja": 1, "github": 1}, Concurrency: 2, LeaseTTL: time.Minute,
@@ -213,17 +214,20 @@ func (svc *service) count(t *testing.T, sql string) int {
 	return n
 }
 
-func TestServiceEndToEndInShadow(t *testing.T) {
+func TestServiceEndToEnd(t *testing.T) {
 	svc := startService(t)
 	if code := svc.post(t, taskBody); code != http.StatusAccepted {
 		t.Fatalf("receiver answered %d, want 202", code)
 	}
 	eventually(t, "the decision", func() bool { return svc.count(t, `SELECT count(*) FROM decisions`) == 1 })
-	if n := svc.count(t, `SELECT count(*) FROM decisions WHERE outcome = 'dispatch' AND NOT executed`); n != 1 {
-		t.Fatal("decision is not a recorded-only dispatch")
+	if n := svc.count(t, `SELECT count(*) FROM decisions WHERE outcome = 'dispatch' AND executed`); n != 1 {
+		t.Fatal("decision is not an executed dispatch")
 	}
-	if n := svc.count(t, `SELECT (SELECT count(*) FROM actions) + (SELECT count(*) FROM runs)`); n != 0 {
-		t.Fatalf("shadow queued %d actions or runs", n)
+	if n := svc.count(t, `SELECT count(*) FROM runs`); n != 1 {
+		t.Fatalf("%d runs recorded, want the implementation run", n)
+	}
+	if n := svc.count(t, `SELECT count(*) FROM actions WHERE kind = 'submit-task' AND state = 'pending'`); n != 1 {
+		t.Fatalf("%d pending submissions, want 1 (no Kelos API to submit to)", n)
 	}
 	if calls := svc.upstream.list(); len(calls) != 1 || calls[0] != "GET /tasks/4101" {
 		t.Fatalf("upstream calls %v, want only the one task read", calls)
@@ -239,7 +243,7 @@ func TestServiceEndToEndInShadow(t *testing.T) {
 	}
 	eventually(t, "worker metrics", func() bool {
 		_, wm := httpGet(t, "http://"+svc.worker[ServerAdmin]+"/metrics")
-		return strings.Contains(wm, `gordon_decisions_total{executed="false",family="vikunja-implement",outcome="dispatch",source="vikunja"} 1`) &&
+		return strings.Contains(wm, `gordon_decisions_total{executed="true",family="vikunja-implement",outcome="dispatch",source="vikunja"} 1`) &&
 			strings.Contains(wm, `gordon_upstream_requests_total{provider="vikunja",result="ok"} 1`) &&
 			strings.Contains(wm, `gordon_reconcile_runs_total{result="ok"}`)
 	})

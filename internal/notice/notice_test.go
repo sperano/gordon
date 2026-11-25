@@ -9,15 +9,14 @@ import (
 	"github.com/sperano/gordon/internal/event"
 )
 
-// legacy holds the texts the legacy scripts render for the same inputs
-// (Hollingsworth helm/kelos/scripts at 034b9a4: wait_for_blockers,
-// drag_cancel, unanswered_notice, subtask_chain, discuss_fallback,
-// pr_open, merge_close),
-// printed by running their functions. Gordon's notices must equal them
-// byte for byte: vigie and sillage read them.
-func legacy(t *testing.T) map[string]json.RawMessage {
+// golden holds the exact notice texts for the same inputs, first printed
+// by the scripts Gordon replaced (Hollingsworth helm/kelos/scripts at
+// 034b9a4: wait_for_blockers, drag_cancel, unanswered_notice,
+// subtask_chain, discuss_fallback, pr_open, merge_close). Gordon's notices
+// must equal them byte for byte: vigie and sillage read them.
+func golden(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
-	b, err := os.ReadFile("testdata/legacy_texts.json")
+	b, err := os.ReadFile("testdata/texts.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,8 +36,8 @@ func want(t *testing.T, texts map[string]json.RawMessage, key string) string {
 	return s
 }
 
-func TestTextsEqualLegacy(t *testing.T) {
-	l := legacy(t)
+func TestTextsGolden(t *testing.T) {
+	l := golden(t)
 	c := Chain{Web: "https://vikunja.example", StartBucket: "Doing", ReviewBucket: "Review", NoAgentLabel: "no-agent",
 		AgentUsers: []string{"claude-opus", "gpt-sol"}}
 	sub := event.Task{ID: 12, Index: 3, Title: `Ship <it> & "more"`}
@@ -71,9 +70,9 @@ func TestTextsEqualLegacy(t *testing.T) {
 	}
 }
 
-func TestPickLineEqualsLegacy(t *testing.T) {
+func TestPickLineGolden(t *testing.T) {
 	var lines []string
-	if err := json.Unmarshal(legacy(t)["pick"], &lines); err != nil {
+	if err := json.Unmarshal(golden(t)["pick"], &lines); err != nil {
 		t.Fatal(err)
 	}
 	for i, name := range []string{"a", "vikunja-x-1", "vikunja-x-1-retry2", "zz"} {
