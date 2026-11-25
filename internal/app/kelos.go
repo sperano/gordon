@@ -8,6 +8,7 @@ import (
 	"github.com/sperano/gordon/internal/config"
 	"github.com/sperano/gordon/internal/githubapp"
 	"github.com/sperano/gordon/internal/kelos"
+	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/restart"
 	"github.com/sperano/gordon/internal/store"
@@ -44,7 +45,8 @@ func executors(cfg config.Worker, s *store.Store, k *kelos.Client, app *githubap
 	out := map[action.Kind]worker.Executor{}
 	if k != nil {
 		out[action.SubmitTask] = &submit.Executor{Runs: s, Kelos: k, Limits: cfg.Kelos.Dispatch.Limits,
-			BusyDelay: cfg.Kelos.BusyDelay, Metrics: m, Log: log.With("executor", string(action.SubmitTask))}
+			BusyDelay: cfg.Kelos.BusyDelay, Holds: &lifecycle.Holds{Store: s, Policy: cfg.Routing.Policy},
+			Metrics: m, Log: log.With("executor", string(action.SubmitTask))}
 	}
 	lifecycleExecutors(out, cfg, s, k, app, autoAssignUsers)
 	return out
@@ -56,7 +58,8 @@ func passes(cfg config.Worker, s *store.Store, k *kelos.Client, m *metrics.Metri
 	if k == nil {
 		return nil
 	}
-	out := []worker.Pass{&submit.Observer{Store: s, Kelos: k, Finished: finishHooks(cfg, s), Metrics: m,
+	out := []worker.Pass{&submit.Observer{Store: s, Kelos: k, Finished: finishHooks(cfg, s),
+		Unsubmitted: &lifecycle.Holds{Store: s, Policy: cfg.Routing.Policy}, Metrics: m,
 		Log: log.With("pass", "observe")}, limitRestarts(cfg, s, k, m, log)}
 	if cp := costPublisher(cfg, s, m, log); cp != nil {
 		out = append(out, cp)

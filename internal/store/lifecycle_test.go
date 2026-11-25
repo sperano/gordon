@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -259,5 +261,44 @@ func TestKnownDeliveriesAndHandledRequests(t *testing.T) {
 	handled, err := s.HandledRequests(ctx, []string{"vikunja/comment/1", "vikunja/comment/9"})
 	if err != nil || !handled["vikunja/comment/1"] || handled["vikunja/comment/9"] {
 		t.Fatalf("HandledRequests = %v, %v", handled, err)
+	}
+}
+
+// TestHeldTasks: a task is held while a run of the families is still
+// submitting; not once its Task exists, not for another family.
+func TestHeldTasks(t *testing.T) {
+	s, _ := storetest.Open(t)
+	id := recorded(t, s, "k1", "vikunja/comment/1", submitOnly())
+	families := []run.Family{run.VikunjaFollowUp}
+	got, err := s.HeldTasks(ctx, []int64{5, 55}, families)
+	if err != nil || !maps.Equal(got, map[int64]bool{5: true}) {
+		t.Fatalf("HeldTasks = %v (%v), want task 5", got, err)
+	}
+	if got, err := s.HeldTasks(ctx, []int64{5}, run.AgentFamilies); err != nil || len(got) != 0 {
+		t.Fatalf("HeldTasks of other families = %v (%v), want none", got, err)
+	}
+	if err := s.RunSubmitted(ctx, runName, id, "uid", kelos.PhaseRunning); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HeldTasks(ctx, []int64{5}, families); err != nil || len(got) != 0 {
+		t.Fatalf("HeldTasks once created = %v (%v), want none", got, err)
+	}
+}
+
+// TestClaimedActionCarriesItsLastError: a deferred action is claimed
+// again with the reason of its deferral.
+func TestClaimedActionCarriesItsLastError(t *testing.T) {
+	s, _ := storetest.Open(t)
+	recorded(t, s, "k1", "vikunja/comment/1", submitOnly())
+	first, err := s.ClaimActions(ctx, "w", 1, time.Minute)
+	if err != nil || len(first) != 1 || first[0].LastError != "" {
+		t.Fatalf("first claim %+v (%v), want no last error", first, err)
+	}
+	if err := s.ActionDefer(ctx, first[0].Lease, false, 0, "variant x runs 1 of 1"); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.ClaimActions(ctx, "w", 1, time.Minute)
+	if err != nil || len(again) != 1 || again[0].LastError != "variant x runs 1 of 1" {
+		t.Fatalf("second claim %+v (%v), want the deferral's reason", again, err)
 	}
 }

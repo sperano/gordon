@@ -170,3 +170,45 @@ func TestCompletionsRecordTheTaskWithoutItsAnswer(t *testing.T) {
 		t.Errorf("completion of a bare Task %+v", c.got[0])
 	}
 }
+
+type unsubmitted struct {
+	calls []string
+	err   error
+}
+
+func (u *unsubmitted) Unsubmitted(_ context.Context, r store.ObservedRun) error {
+	u.calls = append(u.calls, r.Name)
+	return u.err
+}
+
+// TestObserverTellsOfRunsFinishedUnsubmitted: only a submitting run whose
+// submission ended without a Task is told, before it is recorded; a
+// failed hook leaves it unrecorded, to be told again.
+func TestObserverTellsOfRunsFinishedUnsubmitted(t *testing.T) {
+	srv := kelostest.New(route.KelosNamespace)
+	t.Cleanup(srv.Close)
+	api := &kelos.Client{BaseURL: srv.URL, Namespace: route.KelosNamespace, HTTP: srv.Client()}
+	runs := []store.ObservedRun{
+		{Name: "dead-lettered", State: store.RunSubmitting, SubmitState: store.ActionFailed},
+		{Name: "still-queued", State: store.RunSubmitting, SubmitState: store.ActionPending},
+		{Name: "gone", State: "active", Exists: true, Phase: kelos.PhaseRunning},
+	}
+	st := &observed{runs: runs}
+	u := &unsubmitted{}
+	obs := &Observer{Store: st, Kelos: api, Unsubmitted: u, Metrics: metrics.New(),
+		Log: logging.New(&bytes.Buffer{}, slog.LevelDebug)}
+	if err := obs.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(u.calls, []string{"dead-lettered"}) || !slices.Equal(st.recorded, []string{"dead-lettered=", "gone="}) {
+		t.Fatalf("told %v, recorded %v; want the dead-lettered run told and both finished recorded", u.calls, st.recorded)
+	}
+	st, u = &observed{runs: runs[:1]}, &unsubmitted{err: errors.New("store down")}
+	obs.Store, obs.Unsubmitted = st, u
+	if err := obs.Once(ctx); err == nil || err.Error() != "lifecycle of unsubmitted run dead-lettered: store down" {
+		t.Fatalf("a failed hook: %v", err)
+	}
+	if len(st.recorded) != 0 {
+		t.Fatalf("recorded %v after a failed hook, want nothing", st.recorded)
+	}
+}

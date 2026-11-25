@@ -109,6 +109,7 @@ func (r Router) taskUpdated(ev event.Event, st State, led Ledger) Decision {
 	for _, f := range []func() (FamilyDecision, bool){
 		func() (FamilyDecision, bool) { return r.dragCancel(proj, fresh, led) },
 		func() (FamilyDecision, bool) { return r.doneCleanup(proj, fresh) },
+		func() (FamilyDecision, bool) { return r.queuedCleanup(proj, fresh, led) },
 		func() (FamilyDecision, bool) { return r.chain(proj, st) },
 	} {
 		if fd, ok := f(); ok {

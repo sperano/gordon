@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -452,5 +453,40 @@ func TestDeferredAfterAnAmbiguousWriteStillRecovers(t *testing.T) {
 	perform(t, o)
 	if st, attempts, _ := e.actionRow(t); st != store.ActionAmbiguous || attempts != 1 || p.recovers != 1 {
 		t.Fatalf("state %s attempts %d recovers %d; want still ambiguous, the deferral uncounted", st, attempts, p.recovers)
+	}
+}
+
+// heldLines counts the info lines of a first deferral.
+func heldLines(e *env) int {
+	n := 0
+	for line := range strings.SplitSeq(e.logs.String(), "\n") {
+		if strings.Contains(line, `"level":"INFO"`) && strings.Contains(line, `"msg":"action held back"`) {
+			n++
+		}
+	}
+	return n
+}
+
+// TestFirstDeferralIsLoggedAtInfo: a hold is logged at info with its
+// reason once; its retries for the same reason are not, a new reason is.
+func TestFirstDeferralIsLoggedAtInfo(t *testing.T) {
+	p := newProvider()
+	reason := "variant claude-opus runs 4 of 4"
+	p.execute = func(action.Action) error { return Deferred(errors.New(reason), "variant", time.Second) }
+	e, o := outboxEnv(t, p)
+	perform(t, o)
+	if n := heldLines(e); n != 1 || !strings.Contains(e.logs.String(), `"reason":"variant claude-opus runs 4 of 4"`) {
+		t.Fatalf("%d held lines in %s, want one with the reason", n, e.logs.String())
+	}
+	e.due(t)
+	perform(t, o)
+	if n := heldLines(e); n != 1 {
+		t.Fatalf("%d held lines after a retry for the same reason, want still one", n)
+	}
+	reason = "branch b held by x"
+	e.due(t)
+	perform(t, o)
+	if n := heldLines(e); n != 2 {
+		t.Fatalf("%d held lines after a new reason, want two", n)
 	}
 }

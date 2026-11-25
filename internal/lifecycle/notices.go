@@ -110,6 +110,16 @@ func (e *Executor) noticeApplied(ctx context.Context, a action.Action) (bool, er
 	}), nil
 }
 
+// heldNotice reports a hold notice whose run is still held: one that
+// started or stopped before its notice was posted gets none.
+func (e *Executor) heldNotice(ctx context.Context, a action.Action) (bool, error) {
+	h, err := notice.ParseHold(a.Detail)
+	if err != nil {
+		return false, worker.Permanent(err)
+	}
+	return e.held(ctx, h.Run)
+}
+
 // noticeLockTimeout bounds the check and the post held under a notice's
 // target lock, so a slow Vikunja cannot keep the lock's pool connection
 // idle in its transaction for longer. A post cut short is ambiguous and
@@ -123,6 +133,11 @@ const noticeLockTimeout = time.Minute
 // a second one while every connection is so held would wait for ever.
 func (e *Executor) postNotice(ctx context.Context, a action.Action) error {
 	id, _ := taskTarget(a)
+	if a.Value == notice.Queued {
+		if held, err := e.heldNotice(ctx, a); err != nil || !held {
+			return err
+		}
+	}
 	text, replace, err := e.render(ctx, a, id)
 	if err != nil {
 		return err
@@ -197,6 +212,12 @@ func (e *Executor) render(ctx context.Context, a action.Action, task int64) (str
 	case notice.RestartGaveUp:
 		lt, err := e.limitType(ctx, a.Detail)
 		return notice.GaveUpText(a.Detail, lt, e.maxRestarts()), 0, err
+	case notice.Queued:
+		h, err := notice.ParseHold(a.Detail)
+		if err != nil {
+			return "", 0, worker.Permanent(err)
+		}
+		return notice.QueuedText(h, p.QueuedLabel), 0, nil
 	}
 	text, err := e.chainText(ctx, a, task)
 	return text, 0, err

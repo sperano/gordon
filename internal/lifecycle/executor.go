@@ -183,7 +183,24 @@ func (e *Executor) labelApplied(ctx context.Context, a action.Action) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return hasLabel(t, a.Value) || e.skip(t, a), nil
+	if hasLabel(t, a.Value) || e.skip(t, a) {
+		return true, nil
+	}
+	if name := route.HeldRun(a.Detail); name != "" {
+		held, err := e.held(ctx, name)
+		return !held || t.Done, err
+	}
+	return false, nil
+}
+
+// held reports a run still waiting for its Task: a held run's queued
+// label and notice are not written once it started or stopped.
+func (e *Executor) held(ctx context.Context, name string) (bool, error) {
+	r, err := e.Runs.RunInfo(ctx, name)
+	if errors.Is(err, store.ErrUnknownRun) {
+		return false, nil
+	}
+	return err == nil && r.State == store.RunSubmitting, err
 }
 
 func (e *Executor) addLabel(ctx context.Context, a action.Action) error {

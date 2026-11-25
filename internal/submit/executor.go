@@ -19,6 +19,7 @@ import (
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/metrics"
+	"github.com/sperano/gordon/internal/notice"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -84,9 +85,18 @@ type Executor struct {
 	// BusyDelay is how long a deferred submission waits.
 	BusyDelay time.Duration
 	// Now is the clock the unstarted Tasks are aged by (nil: time.Now).
-	Now     func() time.Time
+	Now func() time.Time
+	// Holds is told of each deferred submission (nil: none): the
+	// lifecycle labels and explains a held run on its Vikunja task.
+	Holds   Holds
 	Metrics *metrics.Metrics
 	Log     *slog.Logger
+}
+
+// Holds is told of a submission held back from Kelos, on every deferral
+// (it writes once per hold). It runs outside the admission lock.
+type Holds interface {
+	Held(ctx context.Context, r store.SubmitRun, h notice.Hold) error
 }
 
 // taskName is the Task name of a submit action's target,
@@ -126,6 +136,7 @@ func (e *Executor) createLocked(ctx context.Context, r store.SubmitRun) error {
 	var created kelos.Task
 	var createErr error
 	var now store.SubmitRun
+	var hold *notice.Hold
 	locked := false
 	if err := e.Runs.WithAdmission(ctx, func(ctx context.Context) error {
 		locked = true
@@ -134,7 +145,7 @@ func (e *Executor) createLocked(ctx context.Context, r store.SubmitRun) error {
 			return err
 		}
 		if e.checked(r) {
-			if err := e.admit(ctx, r); err != nil {
+			if hold, err = e.admit(ctx, r); err != nil || hold != nil {
 				return err
 			}
 		}
@@ -150,6 +161,8 @@ func (e *Executor) createLocked(ctx context.Context, r store.SubmitRun) error {
 		return err
 	}
 	switch {
+	case hold != nil:
+		return e.held(ctx, r, *hold)
 	case now.Stopped():
 		e.Log.Info("run stopped before its Task was created", "task", r.Name)
 		return worker.Cancelled(store.RunStopped)
@@ -262,20 +275,37 @@ func (e *Executor) existing(ctx context.Context, r store.SubmitRun) (bool, error
 	return true, e.Runs.ObserveRun(ctx, r.Name, r.InboxID, true, t.Phase())
 }
 
-// admit defers a submission Kelos cannot run yet: its variant's limit is
-// full, or its branch is held in its Workspace. A Task that never started
-// (unstarted) holds no slot: it is reported, loudly, not counted.
-func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
+// held defers a submission admit held back, once the admission lock is
+// released: the hook's store write needs a pool connection of its own. A
+// hook that failed leaves the deferral standing; the next one tries again.
+func (e *Executor) held(ctx context.Context, r store.SubmitRun, h notice.Hold) error {
+	limit, result := LimitVariant, ResultLimit
+	if h.Reason == notice.HoldBranch {
+		limit, result = LimitBranch, ResultBranch
+	}
+	e.count(result)
+	if e.Holds != nil {
+		if err := e.Holds.Held(ctx, r, h); err != nil {
+			e.Log.Warn("held run not reported on its task", "task", r.Name, "error", err)
+		}
+	}
+	return worker.Deferred(errors.New(h.Message()), limit, e.BusyDelay)
+}
+
+// admit holds back a submission Kelos cannot run yet: its variant's limit
+// is full, or its branch is held in its Workspace. A Task that never
+// started (unstarted) holds no slot: it is reported, loudly, not counted.
+func (e *Executor) admit(ctx context.Context, r store.SubmitRun) (*notice.Hold, error) {
 	limit := e.Limits.For(r.Variant)
 	branch, ws := r.Task.Spec.Branch, r.Task.WorkspaceName()
 	tasks, err := e.Kelos.List(ctx, "")
 	if kelos.IsRefused(err) {
 		// The list is forbidden, as a refused lookup: dead-letter.
 		e.count(ResultRefused)
-		return worker.Permanent(err)
+		return nil, worker.Permanent(err)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	now := e.now()
 	running, stale, skipped := 0, 0, []string(nil)
@@ -284,8 +314,7 @@ func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 			continue
 		}
 		if branch != "" && t.Spec.Branch == branch && t.WorkspaceName() == ws {
-			e.count(ResultBranch)
-			return worker.Deferred(fmt.Errorf("branch %s held by %s", branch, t.Metadata.Name), LimitBranch, e.BusyDelay)
+			return &notice.Hold{Run: r.Name, Reason: notice.HoldBranch, Branch: branch, Holder: t.Metadata.Name}, nil
 		}
 		never := unstarted(t, now)
 		if never {
@@ -306,10 +335,9 @@ func (e *Executor) admit(ctx context.Context, r store.SubmitRun) error {
 			"grace", UnstartedGrace.String())
 	}
 	if limit > 0 && running >= limit {
-		e.count(ResultLimit)
-		return worker.Deferred(fmt.Errorf("variant %s runs %d of %d", r.Variant, running, limit), LimitVariant, e.BusyDelay)
+		return &notice.Hold{Run: r.Name, Reason: notice.HoldLimit, Variant: r.Variant, Running: running, Limit: limit}, nil
 	}
-	return nil
+	return nil, nil
 }
 
 func (e *Executor) count(result string) {

@@ -115,6 +115,7 @@ func (r Router) dragCancel(proj profile.Project, t event.Task, led Ledger) (Fami
 	cancel := action.New(action.CancelRun, target, "")
 	cancel.Detail = strings.Join(live, ",")
 	fd.Actions = append(fd.Actions, cancel)
+	r.stopQueued(&fd, t, cancel)
 	// The notice comes last: it says whether the label could be removed.
 	last := cancel
 	if t.HasLabel(p.InProgressLabel) {
