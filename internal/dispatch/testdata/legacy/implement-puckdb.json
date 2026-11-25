@@ -564,7 +564,7 @@
               },
               {
                 "name": "PR_OPENER_TASK_PATTERN",
-                "value": "vikunja-puckdb-claude-opus-([0-9]+)(?:-retry[0-9]+)?"
+                "value": "vikunja-([0-9]+)-puckdb-opus(?:-retry[0-9]+)?"
               },
               {
                 "name": "PR_OPENER_HEAD_PREFIX",

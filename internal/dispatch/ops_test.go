@@ -3,11 +3,14 @@ package dispatch_test
 import (
 	"context"
 	"encoding/json"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/sperano/gordon/internal/dispatch"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
@@ -19,8 +22,8 @@ const (
 	opsProfile        = "cluster-operator"
 	opsServiceAccount = "kelos-cluster-operator"
 	opsParagraph      = "The task carries the `ops` label: this Task may change the live cluster."
-	opsTaskPattern    = "vikunja-ops-{{.project}}-{{.variant}}-([0-9]+)(?:-retry[0-9]+)?"
-	implTaskPattern   = "vikunja-{{.project}}-{{.variant}}-([0-9]+)(?:-retry[0-9]+)?"
+	opsTaskPattern    = "vikunja-ops-([0-9]+)-{{.project}}-{{.short_variant}}(?:-retry[0-9]+)?"
+	implTaskPattern   = "vikunja-([0-9]+)-{{.project}}-{{.short_variant}}(?:-retry[0-9]+)?"
 )
 
 func opsRouting() profile.Config {
@@ -80,18 +83,16 @@ func TestOpsTask(t *testing.T) {
 	if !strings.HasSuffix(task.Spec.Prompt, opsParagraph+"\n") {
 		t.Fatalf("ops prompt lacks the ops paragraph:\n%s", task.Spec.Prompt)
 	}
-	pattern := "vikunja-ops-gordon-claude-opus-([0-9]+)(?:-retry[0-9]+)?"
-	inits, err := json.Marshal(task.Spec.Worker.PodOverrides.ExtraInitContainers)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(inits), pattern) {
-		t.Fatalf("the PR opener does not match the ops Task name %q", pattern)
+	if got := prOpenerTaskID(t, task); got != strconv.Itoa(taskID) {
+		t.Fatalf("the PR opener reads task %q from the ops Task name %s", got, task.Metadata.Name)
 	}
 	// The implementation Task of the same configuration is unchanged.
 	impl, _ := preparedWith(t, opsRouting(), cfg, taskUpdated(vikunjaTask(gordonID), "claude-opus"), run.VikunjaImplement)
 	if strings.Contains(impl.Task.Spec.Prompt, opsParagraph) || impl.Task.Metadata.Labels[dispatch.ProfileLabel] != "default" {
 		t.Fatalf("implementation Task took the ops template: %v", impl.Task.Metadata.Labels)
+	}
+	if got := prOpenerTaskID(t, impl.Task); got != strconv.Itoa(taskID) {
+		t.Fatalf("the PR opener reads task %q from the implementation Task name %s", got, impl.Task.Metadata.Name)
 	}
 }
 
@@ -112,4 +113,35 @@ func TestOpsTaskNeedsItsTemplate(t *testing.T) {
 	if fd := dec.Families[0]; fd.Family != run.VikunjaImplement || fd.Outcome != route.Reject || fd.Reason != dispatch.ReasonPrefix+dispatch.CodeNoTemplate {
 		t.Fatalf("ops run without its template: %s %s", fd.Outcome, fd.Reason)
 	}
+}
+
+// prOpenerTaskID is the task id the pr-opener init container's
+// PR_OPENER_TASK_PATTERN reads from the Task's own name, "" when the
+// pattern does not match the whole name.
+func prOpenerTaskID(t *testing.T, task *kelos.Task) string {
+	t.Helper()
+	b, err := json.Marshal(task.Spec.Worker.PodOverrides.ExtraInitContainers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inits []struct {
+		Name string `json:"name"`
+		Env  []struct{ Name, Value string }
+	}
+	if err := json.Unmarshal(b, &inits); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range inits {
+		for _, e := range c.Env {
+			if c.Name == "pr-opener" && e.Name == "PR_OPENER_TASK_PATTERN" {
+				m := regexp.MustCompile("^(?:" + e.Value + ")$").FindStringSubmatch(task.Metadata.Name)
+				if m == nil {
+					return ""
+				}
+				return m[1]
+			}
+		}
+	}
+	t.Fatalf("Task %s has no pr-opener PR_OPENER_TASK_PATTERN", task.Metadata.Name)
+	return ""
 }

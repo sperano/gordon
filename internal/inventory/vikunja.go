@@ -13,7 +13,7 @@ func vikunjaDispatch() []Entry {
 		{ID: "vikunja-implement", Kind: Spawner, Legacy: spawners, Owner: Gordon, Decision: Migrate,
 			Trigger:   "task.updated in Doing, one agent assignee, no in progress/no-agent/discuss/chain",
 			Implement: StageVikunja, Cutover: StageVikunjaCut, Families: []run.Family{run.VikunjaImplement},
-			Note: "vikunja-<project>-<variant>: 20 projects × 8 variants; ops tasks (owner-created, owner-started, ops label) get vikunja-ops-<project>-<variant> with the ops profile"},
+			Note: "vikunja-<task>-<project>-<short variant> (legacy vikunja-<project>-<variant>-<task>): 20 projects × 8 variants; ops tasks (owner-created, owner-started, ops label) get vikunja-ops-<task>-<project>-<short variant> with the ops profile"},
 		{ID: "vikunja-discuss", Kind: Spawner, Legacy: spawners, Owner: Gordon, Decision: Migrate,
 			Trigger:   "same as vikunja-implement with the discuss label",
 			Implement: StageVikunja, Cutover: StageVikunjaCut, Families: []run.Family{run.VikunjaDiscuss},

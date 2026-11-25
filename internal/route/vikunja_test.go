@@ -226,3 +226,23 @@ func TestTaskCommentUnanswered(t *testing.T) {
 		})
 	}
 }
+
+// TestDiscussRunDeduplicatesAgainstItsPreviousName: a discuss run that
+// exists under the name it had before the task id led it is not
+// submitted again, and the same name without the discuss prefix (the
+// implementation run's previous name) does not hold it back.
+func TestDiscussRunDeduplicatesAgainstItsPreviousName(t *testing.T) {
+	r := router()
+	discuss := []string{"discuss"}
+	decide := func(name string) route.FamilyDecision {
+		led := replay.Ledger{Runs: []route.RunRecord{{Name: name, Exists: true, Family: run.VikunjaDiscuss, TaskID: 5}}}
+		return family(t, r.Decide(updated(t, task(5, 136, discuss, "claude-opus")),
+			route.State{Task: fresh(5, 136, discuss, "claude-opus")}, led))
+	}
+	expectFamily(t, decide("vikunja-discuss-sillage-claude-opus-5"), run.VikunjaDiscuss, route.Duplicate, route.ReasonRunExists)
+	fd := decide("vikunja-sillage-claude-opus-5")
+	expectFamily(t, fd, run.VikunjaDiscuss, route.Dispatch, "")
+	if len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-discuss-5-sillage-opus" {
+		t.Fatalf("discuss runs %+v", fd.Runs)
+	}
+}

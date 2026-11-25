@@ -1,16 +1,16 @@
 // Package run defines run identities: which dispatch family a Kelos Task
 // belongs to and the deterministic Task name and branch it gets.
 //
-// Names are exactly the legacy TaskSpawner nameTemplates (hollingsworth
-// helm/kelos/templates/taskspawners.yaml, commentspawners.yaml,
-// followupspawners.yaml, reviewspawners.yaml), because legacy pod hooks
-// (drag_cancel.py, followup_queued_notice.py, limit_reaper.py) match them
-// and shadow mode pairs a Gordon Task with the legacy Task of its name; a
-// Task Gordon submits during the migration must look like the one the
-// spawner would have made. An implementation or discuss run's name leads
-// with the Vikunja task id and carries the variant without its vendor
-// prefix (vikunja-<task>-<project>-<short variant>, ShortVariant), so runs
-// of one task sort together.
+// Follow-up, PR follow-up, review and conflict names are the legacy
+// TaskSpawner nameTemplates (hollingsworth helm/kelos/templates/
+// commentspawners.yaml, followupspawners.yaml, reviewspawners.yaml),
+// because pod hooks (followup_queued_notice.py, limit_reaper.py) match
+// them. An implementation or discuss run's name departs from the legacy
+// taskspawners.yaml template: it leads with the Vikunja task id and
+// carries the variant without its vendor prefix
+// (vikunja-<task>-<project>-<short variant>, ShortVariant), so runs of one
+// task sort together; PreviousName gives the legacy shape, for
+// deduplication against runs started before the rename.
 package run
 
 import (

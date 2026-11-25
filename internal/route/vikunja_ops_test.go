@@ -170,6 +170,16 @@ func TestOpsRunDeduplicates(t *testing.T) {
 	expectFamily(t, d.Families[0], run.VikunjaImplement, route.Duplicate, route.ReasonRunActive)
 }
 
+// TestOpsRunDeduplicatesAgainstItsPreviousName: an ops run started
+// under the name it had before the task id led it is not submitted again.
+func TestOpsRunDeduplicatesAgainstItsPreviousName(t *testing.T) {
+	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-hollingsworth-claude-opus-5", Active: true,
+		Exists: true, Family: run.VikunjaImplement, TaskID: opsTask}}}
+	d := opsRouter().Decide(startedBy(t, task(opsTask, hollingsworthID, []string{opsLabel}, "claude-opus"), opsOwner),
+		route.State{Task: createdBy(opsOwner, hollingsworthID, opsLabel)}, led)
+	expectFamily(t, d.Families[0], run.VikunjaImplement, route.Duplicate, route.ReasonRunActive)
+}
+
 func TestDragCancelStopsTheOpsRun(t *testing.T) {
 	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-ops-5-hollingsworth-opus", Active: true,
 		Exists: true, Family: run.VikunjaImplement, TaskID: opsTask}}}

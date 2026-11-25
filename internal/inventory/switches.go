@@ -37,7 +37,7 @@ const (
 func Switches() []Switch {
 	return []Switch{
 		{run.VikunjaImplement, chartPath("templates/taskspawners.yaml", "scripts/wait_for_blockers.py", "scripts/sillage_marker.py"),
-			"the project's `vikunja-<project>-<variant>` implementation TaskSpawners and, for an ops project, its `vikunja-ops-<project>-<variant>` ones",
+			"the project's implementation TaskSpawners (legacy names `vikunja-<project>-<variant>-<task>`; Gordon's are `vikunja-<task>-<project>-<short variant>`) and, for an ops project, its ops ones (`vikunja-ops-<project>-<variant>-<task>`; Gordon's `vikunja-ops-<task>-<project>-<short variant>`)",
 			[]string{needKelos, needWriter, needNoWait, needReconcile, needOps}},
 		{run.VikunjaDiscuss, chartPath("templates/taskspawners.yaml", "scripts/wait_for_blockers.py", "scripts/sillage_marker.py"),
 			"the project's discuss TaskSpawners",
