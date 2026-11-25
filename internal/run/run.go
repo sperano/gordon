@@ -140,10 +140,12 @@ func (i Identity) Name() string {
 	return name
 }
 
-// PreviousName is the name an implementation or discuss run had before
-// its name led with the task id and shortened the variant
-// (vikunja-<project>-<variant>-<task>), so a run started under it still
-// deduplicates; "" for every other family, whose name did not change.
+// PreviousName is the name an implementation, ops or discuss run had
+// before its name led with the task id and shortened the variant
+// (vikunja-<project>-<variant>-<task>, vikunja-ops-<project>-<variant>-<task>
+// or vikunja-discuss-<project>-<variant>-<task>, each with any -retry<n>),
+// so a run started under it still deduplicates; "" for every other family,
+// whose name did not change.
 func (i Identity) PreviousName() string {
 	var name string
 	switch {
