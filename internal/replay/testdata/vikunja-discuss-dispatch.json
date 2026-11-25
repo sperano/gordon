@@ -46,7 +46,7 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-discuss-4201-puckdb-gpt-astra"
+      "vikunja-discuss-4201-puckdb-astra"
     ],
     "divergence": "same Task; legacy ran it as the writing image-build-submitter ServiceAccount, Gordon as kelos-discuss"
   },
@@ -63,7 +63,7 @@
         "outcome": "dispatch",
         "runs": [
           {
-            "name": "vikunja-discuss-4201-puckdb-gpt-astra",
+            "name": "vikunja-discuss-4201-puckdb-astra",
             "branch": "kelos/vikunja-4201",
             "identity": {
               "family": "vikunja-discuss",
@@ -96,9 +96,9 @@
         ],
         "actions": [
           {
-            "key": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-gpt-astra",
+            "key": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-astra",
             "kind": "submit-task",
-            "target": "kelos/kelos-agents/vikunja-discuss-4201-puckdb-gpt-astra"
+            "target": "kelos/kelos-agents/vikunja-discuss-4201-puckdb-astra"
           },
           {
             "key": "add-label:vikunja/task/4201:in progress",
@@ -106,7 +106,7 @@
             "target": "vikunja/task/4201",
             "value": "in progress",
             "detail": "claim",
-            "after": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-gpt-astra"
+            "after": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-astra"
           },
           {
             "key": "move-bucket:vikunja/task/4201:Doing",
@@ -114,15 +114,15 @@
             "target": "vikunja/task/4201",
             "value": "Doing",
             "detail": "claim",
-            "after": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-gpt-astra"
+            "after": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-astra"
           },
           {
-            "key": "post-notice:vikunja/task/4201:start:vikunja-discuss-4201-puckdb-gpt-astra",
+            "key": "post-notice:vikunja/task/4201:start:vikunja-discuss-4201-puckdb-astra",
             "kind": "post-notice",
             "target": "vikunja/task/4201",
             "value": "start",
-            "detail": "vikunja-discuss-4201-puckdb-gpt-astra",
-            "after": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-gpt-astra"
+            "detail": "vikunja-discuss-4201-puckdb-astra",
+            "after": "submit-task:kelos/kelos-agents/vikunja-discuss-4201-puckdb-astra"
           }
         ]
       }

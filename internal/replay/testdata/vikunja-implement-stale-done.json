@@ -46,7 +46,7 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-4101-hollingsworth-claude-opus"
+      "vikunja-4101-hollingsworth-opus"
     ],
     "divergence": "legacy filtered on the payload's done=false and started a run on a done task"
   },

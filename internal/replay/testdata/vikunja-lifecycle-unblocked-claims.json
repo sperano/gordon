@@ -45,14 +45,14 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-4111-hollingsworth-claude-opus"
+      "vikunja-4111-hollingsworth-opus"
     ],
     "divergence": "legacy's Task already existed (its pod was waiting); Gordon submits it now, under the same name",
     "writes": [
       "add-label:vikunja/task/4111:in progress",
       "remove-label:vikunja/task/4111:agent-error",
       "move-bucket:vikunja/task/4111:Doing",
-      "post-notice:vikunja/task/4111:start:vikunja-4111-hollingsworth-claude-opus"
+      "post-notice:vikunja/task/4111:start:vikunja-4111-hollingsworth-opus"
     ]
   },
   "expect": {
@@ -68,7 +68,7 @@
         "outcome": "dispatch",
         "runs": [
           {
-            "name": "vikunja-4111-hollingsworth-claude-opus",
+            "name": "vikunja-4111-hollingsworth-opus",
             "branch": "kelos/vikunja-4111",
             "identity": {
               "family": "vikunja-implement",
@@ -101,9 +101,9 @@
         ],
         "actions": [
           {
-            "key": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-claude-opus",
+            "key": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-opus",
             "kind": "submit-task",
-            "target": "kelos/kelos-agents/vikunja-4111-hollingsworth-claude-opus"
+            "target": "kelos/kelos-agents/vikunja-4111-hollingsworth-opus"
           },
           {
             "key": "add-label:vikunja/task/4111:in progress",
@@ -111,14 +111,14 @@
             "target": "vikunja/task/4111",
             "value": "in progress",
             "detail": "claim",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-claude-opus"
+            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-opus"
           },
           {
             "key": "remove-label:vikunja/task/4111:agent-error",
             "kind": "remove-label",
             "target": "vikunja/task/4111",
             "value": "agent-error",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-claude-opus"
+            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-opus"
           },
           {
             "key": "move-bucket:vikunja/task/4111:Doing",
@@ -126,15 +126,15 @@
             "target": "vikunja/task/4111",
             "value": "Doing",
             "detail": "claim",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-claude-opus"
+            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-opus"
           },
           {
-            "key": "post-notice:vikunja/task/4111:start:vikunja-4111-hollingsworth-claude-opus",
+            "key": "post-notice:vikunja/task/4111:start:vikunja-4111-hollingsworth-opus",
             "kind": "post-notice",
             "target": "vikunja/task/4111",
             "value": "start",
-            "detail": "vikunja-4111-hollingsworth-claude-opus",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-claude-opus"
+            "detail": "vikunja-4111-hollingsworth-opus",
+            "after": "submit-task:kelos/kelos-agents/vikunja-4111-hollingsworth-opus"
           }
         ]
       }

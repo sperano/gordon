@@ -126,6 +126,12 @@ func TestValidateRefusesUnreadableEntries(t *testing.T) {
 		"affinity null": {func(c *dispatch.Config) {
 			c.Variants["claude-opus"] = dispatch.VariantSpec{Pod: dispatch.Pod{Affinity: raw(`null`)}}
 		}, "dispatch config: variant claude-opus: pod affinity: want an object"},
+		"variants sharing a short name": {func(c *dispatch.Config) {
+			c.Variants["gpt-opus"] = dispatch.VariantSpec{}
+		}, `dispatch config: variants claude-opus and gpt-opus share the run name part "opus"`},
+		"short name taken by a whole variant": {func(c *dispatch.Config) {
+			c.Variants["opus"] = dispatch.VariantSpec{}
+		}, `dispatch config: variants claude-opus and opus share the run name part "opus"`},
 		"unnamed volume": {func(c *dispatch.Config) {
 			c.Profiles["default"] = dispatch.ProfileSpec{Pod: dispatch.Pod{Volumes: []json.RawMessage{raw(`{"emptyDir":{}}`)}}}
 		}, "dispatch config: profile default: pod volumes[0]: want a name"},

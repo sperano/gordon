@@ -68,7 +68,7 @@ func TestOpsTask(t *testing.T) {
 	}
 	task := rn.Task
 	labels := task.Metadata.Labels
-	if task.Metadata.Name != "vikunja-ops-1624-gordon-claude-opus" || task.Spec.Branch != "kelos/vikunja-1624" ||
+	if task.Metadata.Name != "vikunja-ops-1624-gordon-opus" || task.Spec.Branch != "kelos/vikunja-1624" ||
 		task.WorkspaceName() != "gordon" || task.Spec.Worker.PodOverrides.ServiceAccountName != opsServiceAccount ||
 		labels[dispatch.ProfileLabel] != opsProfile || labels[dispatch.ModeLabel] != string(profile.ModeOps) {
 		t.Fatalf("ops Task %s branch %q workspace %q sa %q labels %v", task.Metadata.Name, task.Spec.Branch,

@@ -108,7 +108,12 @@ func (c Config) validateWorkspaces() error {
 }
 
 func (c Config) validateVariants() error {
+	short := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(c.Variants)) {
+		if other, taken := short[run.ShortVariant(name)]; taken {
+			return fmt.Errorf("variants %s and %s share the run name part %q", other, name, run.ShortVariant(name))
+		}
+		short[run.ShortVariant(name)] = name
 		p := c.Variants[name].Pod
 		if err := p.checkNoLabels(); err != nil {
 			return fmt.Errorf("variant %s: %w", name, err)

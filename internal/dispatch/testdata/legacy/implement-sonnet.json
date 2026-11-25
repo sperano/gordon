@@ -15,7 +15,7 @@
       "vikunja.spe.quebec/task": "1624",
       "vikunja.spe.quebec/variant": "claude-sonnet"
     },
-    "name": "vikunja-1624-gordon-claude-sonnet",
+    "name": "vikunja-1624-gordon-sonnet",
     "namespace": "kelos-agents"
   },
   "spec": {

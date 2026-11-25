@@ -46,7 +46,7 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-4101-hollingsworth-claude-opus"
+      "vikunja-4101-hollingsworth-opus"
     ]
   },
   "expect": {
@@ -62,7 +62,7 @@
         "outcome": "dispatch",
         "runs": [
           {
-            "name": "vikunja-4101-hollingsworth-claude-opus",
+            "name": "vikunja-4101-hollingsworth-opus",
             "branch": "kelos/vikunja-4101",
             "identity": {
               "family": "vikunja-implement",
@@ -95,9 +95,9 @@
         ],
         "actions": [
           {
-            "key": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-claude-opus",
+            "key": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-opus",
             "kind": "submit-task",
-            "target": "kelos/kelos-agents/vikunja-4101-hollingsworth-claude-opus"
+            "target": "kelos/kelos-agents/vikunja-4101-hollingsworth-opus"
           },
           {
             "key": "add-label:vikunja/task/4101:in progress",
@@ -105,7 +105,7 @@
             "target": "vikunja/task/4101",
             "value": "in progress",
             "detail": "claim",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-claude-opus"
+            "after": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-opus"
           },
           {
             "key": "move-bucket:vikunja/task/4101:Doing",
@@ -113,15 +113,15 @@
             "target": "vikunja/task/4101",
             "value": "Doing",
             "detail": "claim",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-claude-opus"
+            "after": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-opus"
           },
           {
-            "key": "post-notice:vikunja/task/4101:start:vikunja-4101-hollingsworth-claude-opus",
+            "key": "post-notice:vikunja/task/4101:start:vikunja-4101-hollingsworth-opus",
             "kind": "post-notice",
             "target": "vikunja/task/4101",
             "value": "start",
-            "detail": "vikunja-4101-hollingsworth-claude-opus",
-            "after": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-claude-opus"
+            "detail": "vikunja-4101-hollingsworth-opus",
+            "after": "submit-task:kelos/kelos-agents/vikunja-4101-hollingsworth-opus"
           }
         ]
       }

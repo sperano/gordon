@@ -50,7 +50,7 @@
   "ledger": {
     "runs": [
       {
-        "name": "vikunja-4101-hollingsworth-claude-opus",
+        "name": "vikunja-4101-hollingsworth-opus",
         "active": true,
         "exists": true
       }
