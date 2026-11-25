@@ -45,7 +45,7 @@ func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 	for _, tk := range []kelos.Task{
 		agentTask("vikunja-7-gordon-opus", "7", "", kelos.PhaseRunning),
 		agentTask("vikunja-7-gordon-opus-retry1", "7", "", kelos.PhasePending),
-		agentTask("vikunja-discuss-7-gordon-sol", "7", "", kelos.PhaseRunning),
+		agentTask("vikunja-7-gordon-sol-discuss", "7", "", kelos.PhaseRunning),
 		// Started before the task id led the name.
 		agentTask("vikunja-gordon-claude-sonnet-7", "7", "", kelos.PhaseRunning),
 		agentTask("vikunja-discuss-gordon-claude-opus-7", "7", "", kelos.PhaseSucceeded),
@@ -64,7 +64,7 @@ func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 	if err := c.Execute(ctx, a); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"vikunja-7-gordon-opus", "vikunja-7-gordon-opus-retry1", "vikunja-discuss-7-gordon-sol", "vikunja-gordon-claude-sonnet-7"}
+	want := []string{"vikunja-7-gordon-opus", "vikunja-7-gordon-opus-retry1", "vikunja-7-gordon-sol-discuss", "vikunja-gordon-claude-sonnet-7"}
 	if got := e.kelos.Deletes(); !slices.Equal(got, want) {
 		t.Fatalf("deleted %v, want %v", got, want)
 	}
@@ -83,7 +83,7 @@ func TestAgentTaskNameMatchesBothShapes(t *testing.T) {
 	cases := map[string]bool{
 		"vikunja-7-gordon-opus":                   true,
 		"vikunja-7-gordon-opus-retry2":            true,
-		"vikunja-discuss-7-gordon-sol":            true,
+		"vikunja-7-gordon-sol-discuss":            true,
 		"vikunja-ops-7-hollingsworth-opus":        true,
 		"vikunja-gordon-claude-opus-7":            true,
 		"vikunja-gordon-claude-opus-7-retry1":     true,

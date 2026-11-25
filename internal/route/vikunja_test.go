@@ -242,7 +242,7 @@ func TestDiscussRunDeduplicatesAgainstItsPreviousName(t *testing.T) {
 	expectFamily(t, decide("vikunja-discuss-sillage-claude-opus-5"), run.VikunjaDiscuss, route.Duplicate, route.ReasonRunExists)
 	fd := decide("vikunja-sillage-claude-opus-5")
 	expectFamily(t, fd, run.VikunjaDiscuss, route.Dispatch, "")
-	if len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-discuss-5-sillage-opus" {
+	if len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-5-sillage-opus-discuss" {
 		t.Fatalf("discuss runs %+v", fd.Runs)
 	}
 }

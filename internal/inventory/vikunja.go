@@ -17,7 +17,7 @@ func vikunjaDispatch() []Entry {
 		{ID: "vikunja-discuss", Kind: Spawner, Legacy: spawners, Owner: Gordon, Decision: Migrate,
 			Trigger:   "same as vikunja-implement with the discuss label",
 			Implement: StageVikunja, Cutover: StageVikunjaCut, Families: []run.Family{run.VikunjaDiscuss},
-			Note: "read-only Workspace and profile; puckdb's discuss profile becomes read-only"},
+			Note: "vikunja-<task>-<project>-<short variant>-discuss (legacy vikunja-discuss-<project>-<variant>-<task>); read-only Workspace and profile; puckdb's discuss profile becomes read-only"},
 		{ID: "vikunja-followup", Kind: Spawner, Legacy: comments, Owner: Gordon, Decision: Migrate,
 			Trigger:   "owner /gordon comment on a task with in progress or pr open",
 			Implement: StageVikunja, Cutover: StageVikunjaCut, Families: []run.Family{run.VikunjaFollowUp},

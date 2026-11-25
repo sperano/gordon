@@ -8,8 +8,8 @@
 // them. An implementation or discuss run's name departs from the legacy
 // taskspawners.yaml template: it leads with the Vikunja task id and
 // carries the variant without its vendor prefix
-// (vikunja-<task>-<project>-<short variant>, ShortVariant), so runs of one
-// task sort together; PreviousName gives the legacy shape, for
+// (vikunja-<task>-<project>-<short variant>, ShortVariant; a discuss run
+// adds -discuss), so runs of one task sort together; PreviousName gives the legacy shape, for
 // deduplication against runs started before the rename.
 package run
 
@@ -111,6 +111,10 @@ type Identity struct {
 // spawners' nameTemplate).
 const OpsNamePrefix = "vikunja-ops"
 
+// discussNameSuffix ends a discuss run's Task name (before any -retry<n>),
+// so it sorts with the task's implementation runs.
+const discussNameSuffix = "discuss"
+
 // vendorSeparator ends a variant's vendor prefix (claude-opus, gpt-sol).
 const vendorSeparator = "-"
 
@@ -166,7 +170,7 @@ func (i Identity) baseName() string {
 		}
 		return fmt.Sprintf("vikunja-%d-%s-%s", i.TaskID, i.Project, ShortVariant(i.Variant))
 	case VikunjaDiscuss:
-		return fmt.Sprintf("vikunja-discuss-%d-%s-%s", i.TaskID, i.Project, ShortVariant(i.Variant))
+		return fmt.Sprintf("vikunja-%d-%s-%s-%s", i.TaskID, i.Project, ShortVariant(i.Variant), discussNameSuffix)
 	case VikunjaFollowUp, VikunjaFollowUpAnswer, VikunjaFollowUpDiscuss:
 		// One name across the three modes, so a task whose labels change
 		// between deliveries still deduplicates (commentspawners.yaml).

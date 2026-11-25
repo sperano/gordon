@@ -9,7 +9,8 @@ func TestNames(t *testing.T) {
 		branch string
 	}{
 		{Identity{Family: VikunjaImplement, Project: "vigie", Variant: "gpt-sol", TaskID: 12}, "vikunja-12-vigie-sol", "kelos/vikunja-12"},
-		{Identity{Family: VikunjaDiscuss, Project: "vigie", Variant: "gpt-sol", TaskID: 12}, "vikunja-discuss-12-vigie-sol", "kelos/vikunja-12"},
+		{Identity{Family: VikunjaDiscuss, Project: "vigie", Variant: "gpt-sol", TaskID: 12}, "vikunja-12-vigie-sol-discuss", "kelos/vikunja-12"},
+		{Identity{Family: VikunjaDiscuss, Project: "vigie", Variant: "gpt-sol", TaskID: 12, Retry: 1}, "vikunja-12-vigie-sol-discuss-retry1", "kelos/vikunja-12"},
 		{Identity{Family: VikunjaFollowUp, Project: "vigie", Variant: "gpt-sol", TaskID: 12, CommentID: 3}, "vikunja-fu-vigie-12-c3", "kelos/vikunja-12"},
 		{Identity{Family: VikunjaFollowUpAnswer, Project: "vigie", TaskID: 12, CommentID: 3}, "vikunja-fu-vigie-12-c3", ""},
 		{Identity{Family: VikunjaFollowUpDiscuss, Project: "vigie", TaskID: 12, CommentID: 3}, "vikunja-fu-vigie-12-c3", ""},

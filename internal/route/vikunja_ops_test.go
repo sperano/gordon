@@ -110,7 +110,7 @@ func TestOpsStartPrecedence(t *testing.T) {
 		run     string
 	}{
 		{"discuss wins", opsRouter(), hollingsworthID, []string{opsLabel, "discuss"}, route.Dispatch, "",
-			"vikunja-discuss-5-hollingsworth-opus"},
+			"vikunja-5-hollingsworth-opus-discuss"},
 		{"chain wins", opsRouter(), hollingsworthID, []string{opsLabel, "chain"}, route.Ignore, route.ReasonChain, ""},
 		{"ops off", router(), hollingsworthID, []string{opsLabel}, route.Dispatch, "", "vikunja-5-hollingsworth-opus"},
 		{"project uncovered", opsRouter(), vigieID, []string{opsLabel}, route.Dispatch, "", "vikunja-5-vigie-opus"},
