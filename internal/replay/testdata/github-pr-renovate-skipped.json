@@ -53,9 +53,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "github/delivery/88888888-2222-3333-4444-555555555555",
@@ -64,8 +61,6 @@
       {
         "family": "pr-review",
         "project": "lucarne",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "reason": "skip-author",
         "actions": [

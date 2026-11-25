@@ -17,7 +17,7 @@ const (
 )
 
 // Pass is one more step of each reconciliation (the Kelos run observer,
-// the shadow comparison).
+// the limit restarts, the cost notices).
 type Pass interface {
 	Once(ctx context.Context) error
 }

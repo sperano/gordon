@@ -27,14 +27,12 @@ import (
 
 const replaySlots = 8
 
-// TestReplayThroughTheService replays every legacy fixture through the
+// TestReplayThroughTheService replays every fixture through the
 // receiver, the store and the worker, with the fixture's fresh state
 // behind fake readers and its ledger seeded in the database: the recorded
 // decision must be the fixture's, exactly, as the in-memory router test
 // requires. Refusals the receiver answers itself (signatures, a stored
-// redelivery) are checked at the receiver, with nothing stored. Each
-// fixture runs executing and in shadow (the deployed default), where the
-// decision is the same and nothing is queued.
+// redelivery) are checked at the receiver, with nothing stored.
 func TestReplayThroughTheService(t *testing.T) {
 	fixtures, err := replay.Load("../replay/testdata")
 	if err != nil {
@@ -42,15 +40,13 @@ func TestReplayThroughTheService(t *testing.T) {
 	}
 	storetest.AdminURL(t)
 	for _, f := range fixtures {
-		t.Run(f.Name, func(t *testing.T) { replayFixture(t, f, false) })
-		t.Run(f.Name+"/shadow", func(t *testing.T) { replayFixture(t, f, true) })
+		t.Run(f.Name, func(t *testing.T) { replayFixture(t, f) })
 	}
 }
 
-func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
+func replayFixture(t *testing.T, f replay.Fixture) {
 	r := f.Router()
-	e := newEnv(t, r.Ownership)
-	e.proc.Shadow = shadow
+	e := newEnv(t)
 	e.proc.Router = r
 	e.proc.State.Config = r.Config
 	if f.State.Task != nil {
@@ -90,12 +86,6 @@ func replayFixture(t *testing.T, f replay.Fixture, shadow bool) {
 	have, _ := json.Marshal(got)
 	if !bytes.Equal(want, have) {
 		t.Fatalf("recorded decision\n%s\nwant\n%s", have, want)
-	}
-	if shadow {
-		fresh := `JOIN inbox i ON i.id = x.inbox_id WHERE i.delivery_key NOT LIKE 'seed/%'`
-		if n := e.count(t, `SELECT count(*) FROM actions x `+fresh) + e.count(t, `SELECT count(*) FROM runs x `+fresh); n != 0 {
-			t.Fatalf("shadow queued %d actions and runs, want none", n)
-		}
 	}
 }
 

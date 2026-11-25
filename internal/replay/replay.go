@@ -1,7 +1,7 @@
-// Package replay runs sanitized legacy deliveries through the router.
-// A fixture holds one delivery as a legacy receiver got it, the fresh
-// upstream state Gordon would read, the ledger of handled work, what the
-// legacy spawners did with it, and the exact decision Gordon must reach.
+// Package replay runs sanitized deliveries through the router. A fixture
+// holds one delivery as the receiver gets it, the fresh upstream state
+// Gordon would read, the ledger of handled work, and the exact decision
+// Gordon must reach.
 // Fixtures carry no real secret: the harness signs each body with
 // FixtureKey unless the fixture asks for a missing or wrong signature.
 package replay
@@ -22,7 +22,6 @@ import (
 	"github.com/sperano/gordon/internal/auth"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 )
@@ -47,8 +46,6 @@ type Fixture struct {
 	Delivery    Delivery       `json:"delivery"`
 	State       route.State    `json:"state"`
 	Ledger      Ledger         `json:"ledger"`
-	Ownership   *rollout.Table `json:"ownership,omitempty"`
-	Legacy      Legacy         `json:"legacy"`
 	Expect      route.Decision `json:"expect"`
 }
 
@@ -58,18 +55,6 @@ type Delivery struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 	Signature string            `json:"signature,omitempty"`
 	Body      json.RawMessage   `json:"body"`
-}
-
-// Legacy is what the legacy spawners did with the delivery: the Kelos
-// Task names they created. Divergence, when set, explains why Gordon's
-// runs deliberately differ. Writes, when set, are the writes the legacy
-// hooks, init containers and reconcilers made for it, named as Gordon's
-// action keys; WritesDivergence explains a deliberate difference.
-type Legacy struct {
-	Tasks            []string `json:"tasks"`
-	Divergence       string   `json:"divergence,omitempty"`
-	Writes           []string `json:"writes,omitempty"`
-	WritesDivergence string   `json:"writes_divergence,omitempty"`
 }
 
 // Ledger is an in-memory route.Ledger.
@@ -148,18 +133,14 @@ func Load(dir string) ([]Fixture, error) {
 	return out, nil
 }
 
-// Router is the router fixtures run against: the legacy defaults, the
-// fixture key for every source, and the fixture's ownership table.
+// Router is the router fixtures run against: the routing defaults and the
+// fixture key for every source.
 func (f Fixture) Router() route.Router {
 	keys := auth.Keys{}
 	for _, s := range []event.Source{event.SourceVikunja, event.SourceGitHub, event.SourceWikiComment, event.SourceImageBuild} {
 		keys[s] = FixtureKey
 	}
-	r := route.Router{Config: profile.Defaults(), Keys: keys}
-	if f.Ownership != nil {
-		r.Ownership = *f.Ownership
-	}
-	return r
+	return route.Router{Config: profile.Defaults(), Keys: keys}
 }
 
 // Build turns the fixture's delivery into the signed bytes a receiver gets.
@@ -225,15 +206,4 @@ func WriteKeys(d route.Decision) []string {
 	}
 	slices.Sort(keys)
 	return keys
-}
-
-// RunNames lists the Task names a decision submits, in order.
-func RunNames(d route.Decision) []string {
-	names := []string{}
-	for _, fd := range d.Families {
-		for _, r := range fd.Runs {
-			names = append(names, r.Name)
-		}
-	}
-	return names
 }

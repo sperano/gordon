@@ -1,5 +1,5 @@
 {
-  "description": "Vikunja retries the same task.updated body: its data digest is already in the ledger (legacy dropped it through the generic server's 24 h $.data cache).",
+  "description": "Vikunja retries the same task.updated body: its data digest is already in the ledger.",
   "delivery": {
     "source": "vikunja",
     "body": {
@@ -47,9 +47,6 @@
     "deliveries": [
       "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594"
     ]
-  },
-  "legacy": {
-    "tasks": []
   },
   "expect": {
     "outcome": "duplicate",

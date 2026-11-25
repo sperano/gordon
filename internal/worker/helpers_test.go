@@ -13,9 +13,7 @@ import (
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 	"github.com/sperano/gordon/internal/upstream"
@@ -102,13 +100,7 @@ type env struct {
 	metric *metrics.Metrics
 }
 
-// gordonOwns is an ownership table under which Gordon executes family.
-func gordonOwns(f run.Family) rollout.Table {
-	return rollout.Table{Rules: []rollout.Rule{{Project: rollout.AllProjects, Family: f, Owner: rollout.Gordon,
-		Evidence: []rollout.Gate{rollout.ReplayParity, rollout.ShadowParity, rollout.RollbackTested, rollout.LegacyDisabled}}}}
-}
-
-func newEnv(t *testing.T, ownership rollout.Table) *env {
+func newEnv(t *testing.T) *env {
 	t.Helper()
 	s, dbURL := storetest.Open(t)
 	logs := &bytes.Buffer{}
@@ -117,7 +109,7 @@ func newEnv(t *testing.T, ownership rollout.Table) *env {
 		history: map[string]route.PRHistory{}}
 	cfg := profile.Defaults()
 	proc := &Processor{
-		Store: s, Router: route.Router{Config: cfg, Ownership: ownership},
+		Store: s, Router: route.Router{Config: cfg},
 		State: StateReader{Config: cfg, Tasks: tasks, PRs: prs, History: prs},
 		Owner: "test-worker", Concurrency: testConcurrency, LeaseTTL: testTTL, MaxAttempts: testMaxAttempts,
 		Backoff: testBackoff, Projects: &Limiter{}, DeferDelay: time.Second,

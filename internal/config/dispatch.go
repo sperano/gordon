@@ -7,31 +7,31 @@ import (
 	"github.com/sperano/gordon/internal/kelos"
 )
 
-// Kelos is the worker's Task submission configuration, set when
-// GORDON_DISPATCH_CONFIG_FILE is: the trusted Task templates and the
-// Kelos API the worker creates, reads and lists Tasks through.
+// Kelos is the worker's Task submission configuration, from
+// GORDON_DISPATCH_CONFIG_FILE: the trusted Task templates and the Kelos
+// API the worker creates, reads and lists Tasks through.
 type Kelos struct {
 	Dispatch  dispatch.Config
 	APIURL    string
 	TokenFile string
 	CAFile    string
 	// BusyDelay is how long a submission deferred by a full variant
-	// limit or a held branch waits; ShadowWindow how long a shadow Task
-	// waits for the legacy Task of its name.
-	BusyDelay    time.Duration
-	ShadowWindow time.Duration
+	// limit or a held branch waits.
+	BusyDelay time.Duration
 }
 
 // Kelos defaults.
-const (
-	DefaultBusyDelay    = 30 * time.Second
-	DefaultShadowWindow = 15 * time.Minute
-)
+const DefaultBusyDelay = 30 * time.Second
 
 // kelos reads the dispatch configuration and the Kelos API settings; nil
-// without GORDON_DISPATCH_CONFIG_FILE.
+// (refused) without GORDON_DISPATCH_CONFIG_FILE: Gordon is the only
+// dispatcher, and without it nothing could be submitted.
 func (r *reader) kelos() *Kelos {
 	var k Kelos
+	if r.str("GORDON_DISPATCH_CONFIG_FILE", "") == "" {
+		r.fail("GORDON_DISPATCH_CONFIG_FILE is required: nothing could be submitted")
+		return nil
+	}
 	if !r.jsonFile("GORDON_DISPATCH_CONFIG_FILE", &k.Dispatch) {
 		return nil
 	}
@@ -42,6 +42,5 @@ func (r *reader) kelos() *Kelos {
 	k.TokenFile = r.str("GORDON_KELOS_TOKEN_FILE", kelos.InClusterTokenFile)
 	k.CAFile = r.str("GORDON_KELOS_CA_FILE", kelos.InClusterCAFile)
 	k.BusyDelay = r.duration("GORDON_KELOS_BUSY_DELAY", DefaultBusyDelay)
-	k.ShadowWindow = r.duration("GORDON_SHADOW_WINDOW", DefaultShadowWindow)
 	return &k
 }

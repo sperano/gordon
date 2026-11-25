@@ -12,9 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/kelos"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store/storetest"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -25,7 +23,7 @@ const (
 	implementTaskID = 4101
 	implementBody   = `{"event_name":"task.updated","data":{"task":{"id":4101,"project_id":3,"done":false,` +
 		`"labels":[{"title":"feature"}],"assignees":[{"username":"claude-opus"}]},"doer":{"username":"eric"}}}`
-	implementRun = "vikunja-hollingsworth-claude-opus-4101"
+	implementRun = "vikunja-4101-hollingsworth-opus"
 	// unconfiguredProject is a Vikunja project no profile configures.
 	unconfiguredProject = 999999
 )
@@ -37,7 +35,7 @@ func eligible() event.Task {
 
 func implementDelivery(t *testing.T) (*env, int64) {
 	t.Helper()
-	e := newEnv(t, rollout.Table{})
+	e := newEnv(t)
 	return e, e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 }
 
@@ -52,30 +50,8 @@ func recorded(t *testing.T, e *env, id int64) route.Decision {
 	return d
 }
 
-func TestLegacyOwnedDecisionIsRecordedNotExecuted(t *testing.T) {
-	e, id := implementDelivery(t)
-	e.tasks.tasks[implementTaskID] = eligible()
-	if n := e.tick(t); n != 1 {
-		t.Fatalf("claimed %d, want 1", n)
-	}
-	d := recorded(t, e, id)
-	if d.Outcome != route.Dispatch || len(d.Families) != 1 || d.Families[0].Owner != rollout.Legacy ||
-		d.Families[0].Execute || d.Families[0].Runs[0].Name != implementRun {
-		t.Fatalf("decision %+v, want a legacy-owned dispatch of %s", d, implementRun)
-	}
-	if n := e.count(t, `SELECT count(*) FROM actions`); n != 0 {
-		t.Fatalf("%d actions queued for a legacy-owned family", n)
-	}
-	if st, _, _ := e.inboxRow(t, id); st != "done" {
-		t.Fatalf("inbox row %s, want done", st)
-	}
-	if v := testutil.ToFloat64(e.metric.Decisions.WithLabelValues("vikunja", "vikunja-implement", "dispatch", "false")); v != 1 {
-		t.Fatalf("decisions metric = %v, want 1", v)
-	}
-}
-
-func TestGordonOwnedDecisionQueuesItsActions(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+func TestDecisionQueuesItsActions(t *testing.T) {
+	e := newEnv(t)
 	id := e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.tasks[implementTaskID] = eligible()
 	e.tick(t)
@@ -90,23 +66,6 @@ func TestGordonOwnedDecisionQueuesItsActions(t *testing.T) {
 	}
 	if !strings.Contains(e.logs.String(), `"executed":true`) {
 		t.Fatalf("decision log does not say executed: %s", e.logs.String())
-	}
-}
-
-func TestShadowModeExecutesNothingEvenWhenGordonOwns(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
-	e.proc.Shadow = true
-	id := e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
-	e.tasks.tasks[implementTaskID] = eligible()
-	e.tick(t)
-	if n := e.count(t, `SELECT count(*) FROM actions`) + e.count(t, `SELECT count(*) FROM runs`); n != 0 {
-		t.Fatalf("shadow queued %d actions or runs, want none", n)
-	}
-	if d := recorded(t, e, id); d.Outcome != route.Dispatch || !d.Families[0].Execute {
-		t.Fatalf("decision %+v, want the dispatch Gordon would execute, recorded only", d)
-	}
-	if !strings.Contains(e.logs.String(), `"shadow":true`) {
-		t.Fatal("decision log does not say shadow")
 	}
 }
 
@@ -156,7 +115,7 @@ func TestOutageDeadLettersAfterMaxAttempts(t *testing.T) {
 }
 
 func TestStateIsNotReadForDeliveriesTheRouterRefusesFirst(t *testing.T) {
-	e := newEnv(t, rollout.Table{})
+	e := newEnv(t)
 	unconfigured := strings.Replace(implementBody, `"project_id":3`, `"project_id":999999`, 1)
 	notOwner := `{"event_name":"task.comment.created","data":{"task":{"id":5,"project_id":3},` +
 		`"comment":{"id":77,"comment":"/gordon go"},"doer":{"username":"mallory"}}}`
@@ -239,7 +198,7 @@ func TestCrashAfterPersistIsDecidedOnce(t *testing.T) {
 }
 
 func TestResendOfHandledRequestIsDuplicate(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaFollowUp))
+	e := newEnv(t)
 	comment := func(redispatch string) string {
 		return `{"event_name":"task.comment.created","data":{"task":{"id":4101,"project_id":3},` +
 			`"comment":{"id":88,"comment":"<p>/gordon fix it</p>"},"doer":{"username":"eric"}` + redispatch + `}}`
@@ -272,7 +231,7 @@ func TestTransientReadRetriesEvenWhenTheRouterWouldDecide(t *testing.T) {
 	// An unconfigured project's request is answered without the task, but
 	// the read looks for a move into a configured project: an outage must
 	// not turn it into an unanswered decision.
-	e := newEnv(t, rollout.Table{})
+	e := newEnv(t)
 	id := e.accept(t, storedDelivery(t, event.SourceVikunja, nil, ownerCommentOn(unconfiguredProject)))
 	e.tasks.down = true
 	e.tick(t)
@@ -391,7 +350,7 @@ func TestRetryNotRecordedIsNotCounted(t *testing.T) {
 }
 
 func TestGordonFamilyWithNothingQueuedIsNotExecuted(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	idle := eligible()
 	idle.Buckets = []string{"To-Do"}
@@ -433,7 +392,7 @@ func (r *rejecting) Prepare(_ context.Context, _ int64, _ event.Event, _ route.S
 }
 
 func TestPreparedTaskIsRecordedWithTheRun(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	e.proc.Tasks = fixedTask{}
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
 	e.tasks.tasks[implementTaskID] = eligible()
@@ -444,7 +403,7 @@ func TestPreparedTaskIsRecordedWithTheRun(t *testing.T) {
 }
 
 func TestPreparerRejectIsRecorded(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	p := &rejecting{}
 	e.proc.Tasks = p
 	id := e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))
@@ -458,7 +417,7 @@ func TestPreparerRejectIsRecorded(t *testing.T) {
 }
 
 func TestPreparerNotCalledOnRetry(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	p := &rejecting{}
 	e.proc.Tasks = p
 	e.accept(t, storedDelivery(t, event.SourceVikunja, nil, implementBody))

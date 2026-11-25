@@ -82,8 +82,8 @@ func Receiver(ctx context.Context, cfg config.Receiver, log *slog.Logger, onList
 	return g.Wait()
 }
 
-// Worker runs the inbox processor, the outbox (unless shadow) and the
-// periodic reconciler until ctx ends.
+// Worker runs the inbox processor, the outbox and the periodic
+// reconciler until ctx ends.
 func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen OnListen) error {
 	s, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -127,13 +127,11 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 		worker.Loop(ctx, store.QueueInbox, cfg.ShutdownGrace, cfg.PollInterval, log, proc.Tick)
 		return nil
 	})
-	if !cfg.Shadow {
-		out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, app, m, log, autoAssignUsers))
-		g.Go(func(ctx context.Context) error {
-			worker.Loop(ctx, store.QueueActions, cfg.ShutdownGrace, cfg.PollInterval, log, out.Tick)
-			return nil
-		})
-	}
+	out := outbox(cfg, s, m, log, projects, executors(cfg, s, k, app, m, log, autoAssignUsers))
+	g.Go(func(ctx context.Context) error {
+		worker.Loop(ctx, store.QueueActions, cfg.ShutdownGrace, cfg.PollInterval, log, out.Tick)
+		return nil
+	})
 	rec := &worker.Reconciler{Store: s, BodyRetention: cfg.BodyRetention, Passes: passes(cfg, s, k, m, log),
 		Metrics: m, Log: log}
 	g.Go(func(ctx context.Context) error {
@@ -144,6 +142,9 @@ func Worker(ctx context.Context, cfg config.Worker, log *slog.Logger, onListen O
 	startGitHubReconcile(g, cfg, s, github, m, log)
 	startConflictReconcile(g, cfg, s, github, m, log)
 	startReadinessReconcile(g, cfg, s, github, m, log)
+	if len(cfg.Deprecated) > 0 {
+		log.Warn("ignoring removed settings: Gordon executes every family", "settings", cfg.Deprecated)
+	}
 	log.Info("worker started", "config", cfg.String())
 	return g.Wait()
 }
@@ -176,9 +177,9 @@ func githubReader(cfg config.Worker, m *metrics.Metrics) upstream.GitHub {
 func processor(cfg config.Worker, s *store.Store, m *metrics.Metrics, log *slog.Logger, projects *worker.Limiter,
 	vikunja upstream.Vikunja, github upstream.GitHub) *worker.Processor {
 	p := &worker.Processor{
-		Store: s, Router: route.Router{Config: cfg.Routing, Ownership: cfg.Ownership},
-		State:  worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: github, History: github},
-		Shadow: cfg.Shadow, Owner: cfg.ID, Concurrency: cfg.Concurrency, LeaseTTL: cfg.LeaseTTL,
+		Store: s, Router: route.Router{Config: cfg.Routing},
+		State: worker.StateReader{Config: cfg.Routing, Tasks: vikunja, PRs: github, History: github},
+		Owner: cfg.ID, Concurrency: cfg.Concurrency, LeaseTTL: cfg.LeaseTTL,
 		MaxAttempts: cfg.MaxAttempts, Backoff: cfg.Backoff, Projects: projects,
 		DeferDelay: cfg.DeferDelay, Metrics: m, Log: log,
 	}

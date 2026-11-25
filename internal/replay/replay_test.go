@@ -15,11 +15,7 @@ const fixtureDir = "testdata"
 
 // minFixtures is the committed fixture count: deleting one fails, and
 // the glob cannot silently match nothing.
-const minFixtures = 63
-
-// minWriteFixtures is the committed count of fixtures recording the
-// legacy lifecycle's writes (an empty list included): deleting one fails.
-const minWriteFixtures = 24
+const minFixtures = 62
 
 func load(t *testing.T) []Fixture {
 	t.Helper()
@@ -46,11 +42,6 @@ func canonical(t *testing.T, d route.Decision) string {
 func TestReplayDecisions(t *testing.T) {
 	for _, f := range load(t) {
 		t.Run(f.Name, func(t *testing.T) {
-			if f.Ownership != nil {
-				if err := f.Ownership.Validate(); err != nil {
-					t.Fatalf("fixture ownership: %v", err)
-				}
-			}
 			got, err := f.Run()
 			if err != nil {
 				t.Fatal(err)
@@ -59,52 +50,6 @@ func TestReplayDecisions(t *testing.T) {
 				t.Errorf("decision differs\n got: %s\nwant: %s", g, w)
 			}
 		})
-	}
-}
-
-// TestLegacyParity checks that Gordon submits exactly the Task names the
-// legacy spawners created, unless the fixture explains the divergence.
-func TestLegacyParity(t *testing.T) {
-	for _, f := range load(t) {
-		t.Run(f.Name, func(t *testing.T) {
-			got, err := f.Run()
-			if err != nil {
-				t.Fatal(err)
-			}
-			names, legacy := RunNames(got), f.Legacy.Tasks
-			if legacy == nil {
-				legacy = []string{}
-			}
-			if f.Legacy.Divergence == "" && !slices.Equal(names, legacy) {
-				t.Errorf("runs %v, legacy created %v and no divergence is recorded", names, legacy)
-			}
-		})
-	}
-}
-
-// TestLegacyWritesParity checks that Gordon makes exactly the writes the
-// legacy hooks made, where a fixture records them, unless it explains
-// the divergence.
-func TestLegacyWritesParity(t *testing.T) {
-	recorded := 0
-	for _, f := range load(t) {
-		if f.Legacy.Writes == nil {
-			continue
-		}
-		recorded++
-		t.Run(f.Name, func(t *testing.T) {
-			got, err := f.Run()
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := slices.Sorted(slices.Values(f.Legacy.Writes))
-			if keys := WriteKeys(got); f.Legacy.WritesDivergence == "" && !slices.Equal(keys, want) {
-				t.Errorf("writes %v, legacy made %v and no divergence is recorded", keys, want)
-			}
-		})
-	}
-	if recorded < minWriteFixtures {
-		t.Fatalf("%d fixtures record legacy writes, want at least %d", recorded, minWriteFixtures)
 	}
 }
 

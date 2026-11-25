@@ -104,6 +104,17 @@ func TestMigrateIsIdempotentAndConcurrent(t *testing.T) {
 	}
 }
 
+// TestMigrateDropsShadowTasks: the shadow comparison's table is gone
+// once the schema is current.
+func TestMigrateDropsShadowTasks(t *testing.T) {
+	_, dbURL := storetest.Open(t)
+	var exists bool
+	storetest.QueryRow(t, dbURL, `SELECT to_regclass('shadow_tasks') IS NOT NULL`, nil, &exists)
+	if exists {
+		t.Fatal("shadow_tasks still exists after the migrations")
+	}
+}
+
 func TestSchemaVersionUnmigrated(t *testing.T) {
 	s, err := store.Open(ctx, storetest.Database(t))
 	if err != nil {

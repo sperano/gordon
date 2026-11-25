@@ -6,12 +6,13 @@ import (
 	"testing"
 )
 
-// legacyReadiness are the texts reconcile_pr_ready.py, review_findings.py,
-// missing_checks.py, auto_merge.py and pr_ready_notify.py print
-// (hollingsworth 24a3c11, helm/kelos/scripts, run with python3 -I).
-func legacyReadiness(t *testing.T) map[string]string {
+// readinessTexts are the exact readiness notice texts, first printed by
+// the scripts Gordon replaced (hollingsworth 24a3c11, helm/kelos/scripts:
+// reconcile_pr_ready.py, review_findings.py, missing_checks.py,
+// auto_merge.py and pr_ready_notify.py).
+func readinessTexts(t *testing.T) map[string]string {
 	t.Helper()
-	b, err := os.ReadFile("testdata/legacy_readiness_texts.json")
+	b, err := os.ReadFile("testdata/readiness_texts.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,14 +23,14 @@ func legacyReadiness(t *testing.T) map[string]string {
 	return out
 }
 
-const legacySHA = "0123456789abcdef0123456789abcdef01234567"
+const sampleSHA = "0123456789abcdef0123456789abcdef01234567"
 
 func gordonHead(extra string) Head {
-	return Head{Repo: "sperano/gordon", Number: 12, SHA: legacySHA, Extra: extra}
+	return Head{Repo: "sperano/gordon", Number: 12, SHA: sampleSHA, Extra: extra}
 }
 
-func TestReadinessTextsMatchLegacy(t *testing.T) {
-	want := legacyReadiness(t)
+func TestReadinessTextsGolden(t *testing.T) {
+	want := readinessTexts(t)
 	must := func(s string, err error) string {
 		t.Helper()
 		if err != nil {
@@ -55,7 +56,7 @@ func TestReadinessTextsMatchLegacy(t *testing.T) {
 	for k, g := range got {
 		w, ok := want[k]
 		if !ok {
-			t.Errorf("%s: no legacy text", k)
+			t.Errorf("%s: no golden text", k)
 			continue
 		}
 		if g != w {
@@ -64,8 +65,8 @@ func TestReadinessTextsMatchLegacy(t *testing.T) {
 	}
 }
 
-func TestReadinessSignaturesMatchLegacy(t *testing.T) {
-	want := legacyReadiness(t)
+func TestReadinessSignaturesGolden(t *testing.T) {
+	want := readinessTexts(t)
 	for _, c := range []struct {
 		name, kind string
 		h          Head
@@ -73,7 +74,7 @@ func TestReadinessSignaturesMatchLegacy(t *testing.T) {
 	}{
 		{"ready_signature", Ready, gordonHead(""), ReadyText(gordonHead(""))},
 		{"round_limit_signature", RoundLimit, gordonHead(""), want["round_limit_one"]},
-		{"checks_missing_signature", ChecksMissing, Head{Repo: "sperano/vigie", Number: 12, SHA: legacySHA},
+		{"checks_missing_signature", ChecksMissing, Head{Repo: "sperano/vigie", Number: 12, SHA: sampleSHA},
 			want["checks_missing_one"]},
 		{"merge_refused_signature", MergeRefused, gordonHead(""), want["merge_refused"]},
 	} {
@@ -81,7 +82,7 @@ func TestReadinessSignaturesMatchLegacy(t *testing.T) {
 			t.Errorf("%s = %q, want %q", c.name, got, want[c.name])
 		}
 		if !HeadPosted(c.text, c.kind, c.h) {
-			t.Errorf("%s: HeadPosted(legacy text) = false", c.name)
+			t.Errorf("%s: HeadPosted(golden text) = false", c.name)
 		}
 		other := c.h
 		other.SHA = "fedcba9876543210"

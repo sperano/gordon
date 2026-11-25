@@ -21,8 +21,7 @@ import (
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/notice"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
-	"github.com/sperano/gordon/internal/run"
+	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/upstream"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -324,15 +323,6 @@ func threadsPage(next bool, cursor string, nodes ...any) map[string]any {
 		"reviewThreads": map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": cursor}}}}}}
 }
 
-func readinessOwners(projects ...string) rollout.Table {
-	var t rollout.Table
-	for _, p := range projects {
-		t.Rules = append(t.Rules, rollout.Rule{Project: p, Family: run.PRReadiness, Owner: rollout.Shadow,
-			Evidence: []rollout.Gate{rollout.ReplayParity}})
-	}
-	return t
-}
-
 func TestReadinessReconcilerQueuesCandidates(t *testing.T) {
 	cfg := profile.Defaults()
 	draft := agentPR(5, "sperano", "kelos/vikunja-6")
@@ -342,56 +332,63 @@ func TestReadinessReconcilerQueuesCandidates(t *testing.T) {
 			agentPR(7, "sperano", "feature/x")},
 		"sperano/hollingsworth": {agentPR(8, "sperano", "kelos/vikunja-9")},
 	}}
+	holl := &lister.open["sperano/hollingsworth"][0]
+	holl.Repository, holl.HeadRepo = "sperano/hollingsworth", "sperano/hollingsworth"
 	in := &fakeInbox{}
 	m := metrics.New()
 	at := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
-	rr := &ReadinessReconciler{GitHub: lister, Inbox: in, Config: cfg, Ownership: readinessOwners("vigie", "portal"),
+	rr := &ReadinessReconciler{GitHub: lister, Inbox: in, Config: cfg,
 		Interval: time.Minute, Now: func() time.Time { return at }, Metrics: m, Log: slog.New(slog.DiscardHandler)}
 	if err := rr.Once(ctx); err != nil {
 		t.Fatal(err)
 	}
-	// portal shares hollingsworth's repository but is not its PR project.
+	// portal shares hollingsworth's repository: it is listed once.
 	window := at.Unix() / 60
-	want := []string{fmt.Sprintf("github/delivery/gordon-readiness/sperano/vigie/4/abc12345/%d", window)}
+	want := []string{fmt.Sprintf("github/delivery/gordon-readiness/sperano/hollingsworth/8/abc12345/%d", window),
+		fmt.Sprintf("github/delivery/gordon-readiness/sperano/vigie/4/abc12345/%d", window)}
 	var got []string
+	var vigiePR store.Delivery
 	for _, d := range in.stored {
 		got = append(got, d.DeliveryKey)
+		if strings.Contains(d.DeliveryKey, "/sperano/vigie/") {
+			vigiePR = d
+		}
 	}
+	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Fatalf("queued %v, want %v", got, want)
 	}
-	ev, err := event.Parse(event.Delivery{Source: in.stored[0].Source, Headers: in.stored[0].Headers, Body: in.stored[0].Body})
+	ev, err := event.Parse(event.Delivery{Source: vigiePR.Source, Headers: vigiePR.Headers, Body: vigiePR.Body})
 	if err != nil || ev.Action != event.ActionReadiness || !ev.GitHub.Synthetic || ev.GitHub.PullRequest.Number != 4 ||
 		ev.GitHub.PullRequest.HeadSHA != "abc12345" {
 		t.Errorf("delivery %+v, %v", ev, err)
 	}
-	if n := testutil.ToFloat64(m.ReadinessReconcileQueued); n != 1 {
+	if n := testutil.ToFloat64(m.ReadinessReconcileQueued); n != float64(len(want)) {
 		t.Errorf("queued metric %v", n)
 	}
 	// The same window queues nothing new; the next one does.
-	if err := rr.Once(ctx); err != nil || len(in.stored) != 1 {
+	if err := rr.Once(ctx); err != nil || len(in.stored) != len(want) {
 		t.Errorf("same window: %v, %d stored", err, len(in.stored))
 	}
 	at = at.Add(time.Minute)
-	if err := rr.Once(ctx); err != nil || len(in.stored) != 2 {
+	if err := rr.Once(ctx); err != nil || len(in.stored) != 2*len(want) {
 		t.Errorf("next window: %v, %d stored", err, len(in.stored))
 	}
 }
 
-func TestReadinessReconcilerSkipsLegacyAndKeepsGoing(t *testing.T) {
+func TestReadinessReconcilerKeepsGoing(t *testing.T) {
 	cfg := profile.Defaults()
 	lister := &fakeLister{fail: "sperano/vigie", open: map[string][]upstream.ListedPR{
 		"sperano/lucarne": {agentPR(4, "sperano", "kelos/vikunja-5")},
-		"sperano/sillage": {agentPR(5, "sperano", "kelos/vikunja-6")},
 	}}
 	lister.open["sperano/lucarne"][0].Repository, lister.open["sperano/lucarne"][0].HeadRepo = "sperano/lucarne", "sperano/lucarne"
 	in := &fakeInbox{}
-	rr := &ReadinessReconciler{GitHub: lister, Inbox: in, Config: cfg, Ownership: readinessOwners("vigie", "lucarne"),
+	rr := &ReadinessReconciler{GitHub: lister, Inbox: in, Config: cfg,
 		Interval: time.Minute, Metrics: metrics.New(), Log: slog.New(slog.DiscardHandler)}
 	err := rr.Once(ctx)
 	if err == nil || !strings.Contains(err.Error(), "sperano/vigie") || len(in.stored) != 1 ||
 		!strings.Contains(in.stored[0].DeliveryKey, "sperano/lucarne/4/") {
-		t.Errorf("err %v, stored %+v: want vigie's failure reported, lucarne queued, sillage (legacy) skipped", err, in.stored)
+		t.Errorf("err %v, stored %+v: want vigie's failure reported and lucarne still queued", err, in.stored)
 	}
 	if errors.Is(err, context.Canceled) {
 		t.Error("unexpected cancellation")

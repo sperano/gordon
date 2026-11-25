@@ -32,7 +32,7 @@ func (e *env) observations(state string) float64 {
 // its Task's cleanup, after which the ledger frees its name for the
 // owner's next request.
 func TestRunLifecycleFromKelos(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.observe(t) // queued, no Task yet: left alone
 	if st, exists := e.run(t, name); st != "submitting" || exists {
@@ -69,7 +69,7 @@ func TestRunLifecycleFromKelos(t *testing.T) {
 }
 
 func TestDeletedTaskOfAnActiveRunIsGone(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.perform(t)
 	e.kelos.Delete(name) // the owner cancelled it
@@ -86,7 +86,7 @@ func (failingList) List(context.Context, string) ([]kelos.Task, error) {
 }
 
 func TestObserverListFailureChangesNothing(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.perform(t)
 	o := e.observer()
@@ -100,7 +100,7 @@ func TestObserverListFailureChangesNothing(t *testing.T) {
 }
 
 func TestObserverWithNoRunsListsNothing(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	o := e.observer()
 	o.Kelos = failingList{e.api}
 	if err := o.Once(ctx); err != nil {

@@ -78,7 +78,7 @@ func conflictReconciler(cfg config.Worker, s *store.Store, github upstream.GitHu
 	if cfg.GitHub.ConflictInterval <= 0 {
 		return nil
 	}
-	return &ghlife.ConflictReconciler{GitHub: github, Store: s, Config: cfg.Routing, Ownership: cfg.Ownership,
+	return &ghlife.ConflictReconciler{GitHub: github, Store: s, Config: cfg.Routing,
 		Metrics: m, Log: log.With("pass", "conflict-reconcile")}
 }
 

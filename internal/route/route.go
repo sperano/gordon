@@ -8,7 +8,6 @@ import (
 	"github.com/sperano/gordon/internal/auth"
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
 )
 
@@ -36,9 +35,8 @@ const (
 
 // Router decides deliveries. It holds only trusted configuration.
 type Router struct {
-	Config    profile.Config
-	Ownership rollout.Table
-	Keys      auth.Keys
+	Config profile.Config
+	Keys   auth.Keys
 }
 
 // Decide authenticates, parses and routes one delivery.
@@ -115,13 +113,9 @@ func parseRefusal(err error) Decision {
 	return Decision{Outcome: Reject, Reason: ReasonMalformed, Status: auth.Status(err)}
 }
 
-// family starts a family decision with its ownership filled in.
+// family starts a family decision.
 func (r Router) family(f run.Family, project string) FamilyDecision {
-	return FamilyDecision{
-		Family: f, Project: project,
-		Owner:   r.Ownership.Owner(project, f),
-		Execute: r.Ownership.Executes(project, f),
-	}
+	return FamilyDecision{Family: f, Project: project}
 }
 
 // resolved builds a run, or a Reject naming the configuration's refusal
@@ -158,19 +152,6 @@ func existing(led Ledger, name string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-// existingRun is existing for a run's name, then for the name it had
-// before the task id led it (run.Identity.PreviousName), so a run started
-// before the rename is not submitted again under the new name.
-func existingRun(led Ledger, id run.Identity) (string, bool) {
-	if reason, dup := existing(led, id.Name()); dup {
-		return reason, true
-	}
-	if prev := id.PreviousName(); prev != "" {
-		return existing(led, prev)
-	}
-	return "", false
 }
 
 // isRequest matches an owner command the way the legacy filters do: the

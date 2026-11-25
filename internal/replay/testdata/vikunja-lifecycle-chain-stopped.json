@@ -79,12 +79,6 @@
     ]
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [],
-    "writes": [
-      "post-notice:vikunja/task/4350:chain-stopped:4351"
-    ]
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "vikunja/task.updated/4350/84f812026792e6670440aecc8591a0d0",
@@ -93,16 +87,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "in-progress"
       },
       {
         "family": "vikunja-chain",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "actions": [
           {

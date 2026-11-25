@@ -13,9 +13,7 @@ import (
 	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -32,17 +30,15 @@ type ReadinessInbox interface {
 
 // ReadinessReconciler is the readiness backstop (the legacy */5 cron
 // TaskSpawner): each pass lists the open pull requests of every
-// repository whose PR project does not leave pr-readiness to legacy, and
-// queues one synthetic delivery per readiness candidate, which the router
+// configured repository, and queues one synthetic delivery per readiness candidate, which the router
 // decides from the fresh state. Its delivery key names the head and the
 // pass's interval window, so one window queues a head once. Completed
 // check runs decide their heads between passes; the legacy event waiter's
 // polling (WAIT_SECONDS, POLL_SECONDS) is the pass's interval.
 type ReadinessReconciler struct {
-	GitHub    OpenPullRequests
-	Inbox     ReadinessInbox
-	Config    profile.Config
-	Ownership rollout.Table
+	GitHub OpenPullRequests
+	Inbox  ReadinessInbox
+	Config profile.Config
 	// Interval is the pass's interval: the delivery key's window.
 	Interval time.Duration
 	Now      func() time.Time
@@ -67,19 +63,12 @@ func (c *ReadinessReconciler) Once(ctx context.Context) error {
 	return nil
 }
 
-// repositories are the repositories scanned, once each, in project order:
-// the family's owner is the repository's PR project's, as the router
-// decides it.
+// repositories are the configured repositories scanned, once each, in
+// project order.
 func (c *ReadinessReconciler) repositories() []string {
 	var out []string
 	for _, p := range c.Config.Projects {
-		if p.Repository == "" || slices.Contains(out, p.Repository) {
-			continue
-		}
-		if proj, _ := c.Config.PRProject(p.Repository); proj.Name != p.Name {
-			continue
-		}
-		if c.Ownership.Owner(p.Name, run.PRReadiness) != rollout.Legacy {
+		if p.Repository != "" && !slices.Contains(out, p.Repository) {
 			out = append(out, p.Repository)
 		}
 	}

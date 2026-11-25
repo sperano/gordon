@@ -56,17 +56,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-fu-hollingsworth-4140-c91000"
-    ],
-    "writes": [
-      "react:vikunja/comment/91000:eyes",
-      "remove-label:vikunja/task/4140:action-needed",
-      "remove-label:vikunja/task/4140:agent-error",
-      "post-notice:vikunja/task/4140:start:vikunja-fu-hollingsworth-4140-c91000"
-    ]
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "vikunja/comment/91000",
@@ -75,8 +64,6 @@
       {
         "family": "vikunja-followup",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {

@@ -68,12 +68,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-merge-lucarne-7-false"
-    ],
-    "divergence": "legacy's merge_close.py ran on the event and removed the task's pr open label"
-  },
   "expect": {
     "outcome": "stale",
     "delivery_key": "github/delivery/aaaaaaaa-2222-3333-4444-555555555555",
@@ -82,8 +76,6 @@
       {
         "family": "merge-close",
         "project": "lucarne",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "stale",
         "reason": "pull-request-reopened"
       }

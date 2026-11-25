@@ -215,7 +215,7 @@ func (r Router) projectOf(sent int64, fresh *event.Task) (p profile.Project, ok,
 // submit resolves and deduplicates one run; on success fd dispatches it
 // and submit is its submission, which the run's claim waits for.
 func (r Router) submit(fd *FamilyDecision, led Ledger, id run.Identity, req profile.Request) (Run, action.Action, bool) {
-	if reason, dup := existingRun(led, id); dup {
+	if reason, dup := existing(led, id.Name()); dup {
 		fd.Outcome, fd.Reason = Duplicate, reason
 		return Run{}, action.Action{}, false
 	}

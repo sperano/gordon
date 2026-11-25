@@ -36,9 +36,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "ignore",
     "delivery_key": "vikunja/comment/90005",
@@ -47,8 +44,6 @@
       {
         "family": "vikunja-followup-answer",
         "project": "sillage",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "no-agent-assignee",
         "actions": [

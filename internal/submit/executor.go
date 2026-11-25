@@ -1,7 +1,7 @@
 // Package submit performs Gordon's Kelos writes and follows their
 // results: the submit-task executor of the outbox, the observer that
-// keeps each run's state current from Kelos, and the shadow comparison of
-// the Tasks shadow decisions would have submitted with the legacy ones.
+// keeps each run's state current from Kelos, and the run cancellations
+// and review supersedes.
 package submit
 
 import (

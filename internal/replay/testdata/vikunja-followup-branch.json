@@ -48,11 +48,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-fu-sillage-4301-c90001"
-    ]
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "vikunja/comment/90001",
@@ -61,8 +56,6 @@
       {
         "family": "vikunja-followup",
         "project": "sillage",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {

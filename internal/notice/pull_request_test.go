@@ -2,8 +2,8 @@ package notice
 
 import "testing"
 
-func TestPullRequestTextsEqualLegacy(t *testing.T) {
-	l := legacy(t)
+func TestPullRequestTextsGolden(t *testing.T) {
+	l := golden(t)
 	url, err := PRURL("sperano/vigie#4")
 	if err != nil || url != "https://github.com/sperano/vigie/pull/4" {
 		t.Fatalf("PRURL: %q, %v", url, err)

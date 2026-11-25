@@ -71,26 +71,6 @@
     }
   },
   "ledger": {},
-  "ownership": {
-    "rules": [
-      {
-        "evidence": [
-          "replay-parity",
-          "shadow-parity",
-          "rollback-tested",
-          "legacy-disabled"
-        ],
-        "family": "pr-conflict",
-        "owner": "gordon",
-        "project": "lucarne"
-      }
-    ]
-  },
-  "legacy": {
-    "tasks": [
-      "pr-conflict-22fa40d7-7-11111111-01234567"
-    ]
-  },
   "expect": {
     "delivery_key": "github/delivery/gordon-conflict/sperano/lucarne/lucarne/x/1",
     "families": [
@@ -110,10 +90,8 @@
             "value": "start"
           }
         ],
-        "execute": true,
         "family": "pr-conflict",
         "outcome": "dispatch",
-        "owner": "gordon",
         "project": "lucarne",
         "runs": [
           {

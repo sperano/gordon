@@ -45,9 +45,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "reject",
     "reason": "signature-invalid",

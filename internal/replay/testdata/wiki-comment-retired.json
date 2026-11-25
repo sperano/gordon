@@ -1,5 +1,5 @@
 {
-  "description": "The legacy Wiki.js follow-up source is authenticated, then ignored: the family is retired.",
+  "description": "The retired Wiki.js follow-up source is authenticated, then ignored.",
   "delivery": {
     "source": "wiki-comment",
     "body": {
@@ -12,12 +12,6 @@
   },
   "state": {},
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "wiki-fu-hollingsworth-5-c9"
-    ],
-    "divergence": "retired: Wiki.js is read-only legacy since 2026-10-23"
-  },
   "expect": {
     "outcome": "ignore",
     "reason": "family-retired"

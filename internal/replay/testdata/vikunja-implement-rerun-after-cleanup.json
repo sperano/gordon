@@ -52,11 +52,6 @@
       }
     ]
   },
-  "legacy": {
-    "tasks": [
-      "vikunja-4101-hollingsworth-opus"
-    ]
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594",
@@ -65,8 +60,6 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {

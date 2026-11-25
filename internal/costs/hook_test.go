@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sperano/gordon/internal/kelos"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 )
@@ -24,11 +23,6 @@ func (r *recorded) RecordCostRun(_ context.Context, c store.CostRun) error {
 	return r.err
 }
 
-func owns(f run.Family) rollout.Table {
-	return rollout.Table{Rules: []rollout.Rule{{Project: "gordon", Family: f, Owner: rollout.Gordon,
-		Evidence: []rollout.Gate{rollout.ReplayParity, rollout.ShadowParity, rollout.RollbackTested, rollout.LegacyDisabled}}}}
-}
-
 var seen = time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
 
 func finishedTask(phase, completed string) kelos.Task {
@@ -40,7 +34,7 @@ func finishedTask(phase, completed string) kelos.Task {
 func TestHookRecordsFinishedRuns(t *testing.T) {
 	r := store.ObservedRun{Name: runName, InboxID: 9, Family: run.VikunjaImplement, Project: "gordon", TaskID: 5}
 	rec := &recorded{}
-	h := &Hook{Store: rec, Ownership: owns(run.VikunjaCost), Now: func() time.Time { return seen }}
+	h := &Hook{Store: rec, Now: func() time.Time { return seen }}
 	if err := h.Finished(ctx, r, finishedTask(kelos.PhaseFailed, "2026-11-22T11:30:00Z")); err != nil {
 		t.Fatal(err)
 	}
@@ -61,25 +55,18 @@ func TestHookRecordsFinishedRuns(t *testing.T) {
 
 func TestHookSkips(t *testing.T) {
 	base := store.ObservedRun{Name: runName, InboxID: 9, Family: run.VikunjaFollowUp, Project: "gordon", TaskID: 5}
-	review, untasked, other := base, base, base
+	review, untasked := base, base
 	review.Family = run.PRReview
 	untasked.TaskID = 0
-	other.Project = "vigie"
-	for name, c := range map[string]struct {
-		r     store.ObservedRun
-		owner rollout.Table
-	}{
-		"a review": {review, owns(run.VikunjaCost)}, "no Vikunja task": {untasked, owns(run.VikunjaCost)},
-		"another project": {other, owns(run.VikunjaCost)}, "family not owned": {base, owns(run.VikunjaFailure)},
-	} {
+	for name, r := range map[string]store.ObservedRun{"a review": review, "no Vikunja task": untasked} {
 		rec := &recorded{}
-		h := &Hook{Store: rec, Ownership: c.owner}
-		if err := h.Finished(ctx, c.r, finishedTask(kelos.PhaseSucceeded, "")); err != nil || len(rec.runs) != 0 {
+		h := &Hook{Store: rec}
+		if err := h.Finished(ctx, r, finishedTask(kelos.PhaseSucceeded, "")); err != nil || len(rec.runs) != 0 {
 			t.Errorf("%s: %v, recorded %+v", name, err, rec.runs)
 		}
 	}
 	rec := &recorded{err: errors.New("db down")}
-	h := &Hook{Store: rec, Ownership: owns(run.VikunjaCost)}
+	h := &Hook{Store: rec}
 	if err := h.Finished(ctx, base, finishedTask(kelos.PhaseSucceeded, "")); !errors.Is(err, rec.err) {
 		t.Errorf("store error: %v", err)
 	}

@@ -99,9 +99,6 @@ func TestReadinessAnnouncesAReadyHead(t *testing.T) {
 	if n := fd.Actions[1]; n.Value != readyHead || n.Detail != headDetail("") {
 		t.Errorf("notify %+v", n)
 	}
-	if fd.Owner != "legacy" || fd.Execute {
-		t.Errorf("owner %s execute %v: the zero table leaves it to legacy", fd.Owner, fd.Execute)
-	}
 }
 
 func TestReadinessReadyLabelWaitsForTheNoticeWhenActionNeededIsOn(t *testing.T) {

@@ -1,18 +1,15 @@
 package config
 
 import (
-	"slices"
 	"time"
 
 	"github.com/sperano/gordon/internal/costs"
-	"github.com/sperano/gordon/internal/rollout"
-	"github.com/sperano/gordon/internal/run"
 )
 
 // Costs is the completion cost notices' configuration (Gordon 12).
 type Costs struct {
-	// APIURL is Sillage's read API base (its in-cluster Service), ""
-	// for none: the cost notice pass is then off.
+	// APIURL is Sillage's read API base (its in-cluster Service);
+	// LoadWorker requires it.
 	APIURL string
 	// Wait paces the checks of a notice waiting for a final estimate;
 	// Deadline is how long after its run finished it waits before it is
@@ -33,17 +30,10 @@ func (r *reader) costs() Costs {
 	return c
 }
 
-// checkCosts refuses a worker that would own the vikunja-cost family
-// without Sillage's API to read: its runs' notices would wait for ever.
+// checkCosts refuses a worker without Sillage's API to read: its runs'
+// cost notices would wait for ever.
 func (r *reader) checkCosts(c Worker) {
-	if c.Shadow || c.Costs.APIURL != "" {
-		return
-	}
-	i := slices.IndexFunc(c.Ownership.Rules, func(rule rollout.Rule) bool {
-		return rule.Owner == rollout.Gordon && rule.Family == run.VikunjaCost
-	})
-	if i >= 0 {
-		rule := c.Ownership.Rules[i]
-		r.fail("ownership rule %s/%s reads Sillage: GORDON_SILLAGE_API_URL is required", rule.Project, rule.Family)
+	if c.Costs.APIURL == "" {
+		r.fail("GORDON_SILLAGE_API_URL is required: the completion cost notices read it")
 	}
 }

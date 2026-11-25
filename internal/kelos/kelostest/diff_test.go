@@ -1,4 +1,4 @@
-package kelos_test
+package kelostest_test
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sperano/gordon/internal/kelos"
+	"github.com/sperano/gordon/internal/kelos/kelostest"
 )
 
 func raw(t *testing.T, v any) json.RawMessage {
@@ -37,7 +38,7 @@ func TestDiff(t *testing.T) {
 				map[string]any{"name": "A", "value": "1"}}}}},
 		"status": map[string]any{"phase": "Running"},
 	}
-	diff, err := kelos.Diff(want, raw(t, same), "mine", "inbox")
+	diff, err := kelostest.Diff(want, raw(t, same), "mine", "inbox")
 	if err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want none", diff, err)
 	}
@@ -46,7 +47,7 @@ func TestDiff(t *testing.T) {
 		"spec": map[string]any{"prompt": "q", "worker": map[string]any{"type": "claude-code",
 			"podOverrides": map[string]any{"env": []any{map[string]any{"name": "A", "value": "9"}}}}},
 	})
-	diff, err = kelos.Diff(want, other)
+	diff, err = kelostest.Diff(want, other)
 	wantPaths := []string{"metadata.annotations.inbox", "metadata.annotations.repo", "metadata.labels.extra",
 		"metadata.labels.mine", "metadata.labels.role", "spec.branch", "spec.prompt",
 		"spec.worker.podOverrides.env[name=A].value", "spec.worker.podOverrides.env[name=B]"}
@@ -58,23 +59,23 @@ func TestDiff(t *testing.T) {
 func TestDiffListsAndCap(t *testing.T) {
 	want := kelos.Task{Spec: kelos.Spec{PodFailurePolicy: json.RawMessage(`{"rules":[1,2]}`)}}
 	got := raw(t, map[string]any{"spec": map[string]any{"podFailurePolicy": map[string]any{"rules": []any{1, 3}}}})
-	diff, _ := kelos.Diff(want, got)
+	diff, _ := kelostest.Diff(want, got)
 	if !slices.Equal(diff, []string{"spec.podFailurePolicy.rules[1]", "spec.prompt"}) {
 		t.Fatalf("unnamed list of equal length: %v", diff)
 	}
 	got = raw(t, map[string]any{"spec": map[string]any{"prompt": "", "podFailurePolicy": map[string]any{"rules": []any{1}}}})
-	if diff, _ := kelos.Diff(want, got); !slices.Equal(diff, []string{"spec.podFailurePolicy.rules"}) {
+	if diff, _ := kelostest.Diff(want, got); !slices.Equal(diff, []string{"spec.podFailurePolicy.rules"}) {
 		t.Fatalf("lists of different lengths: %v", diff)
 	}
 	labels := map[string]string{}
 	for i := range 60 {
 		labels[fmt.Sprintf("l%02d", i)] = "x"
 	}
-	diff, _ = kelos.Diff(kelos.Task{Metadata: kelos.Metadata{Labels: labels}}, raw(t, map[string]any{"spec": map[string]any{"prompt": ""}}))
+	diff, _ = kelostest.Diff(kelos.Task{Metadata: kelos.Metadata{Labels: labels}}, raw(t, map[string]any{"spec": map[string]any{"prompt": ""}}))
 	if len(diff) != 51 || diff[50] != "…" || diff[0] != "metadata.labels.l00" {
 		t.Fatalf("capped diff has %d paths ending %q", len(diff), diff[len(diff)-1])
 	}
-	if _, err := kelos.Diff(kelos.Task{}, json.RawMessage(`[]`)); err == nil {
+	if _, err := kelostest.Diff(kelos.Task{}, json.RawMessage(`[]`)); err == nil {
 		t.Fatal("a non-object Task compared")
 	}
 }
@@ -88,7 +89,7 @@ func TestDiffKelosTypedDefaults(t *testing.T) {
 		}},
 	}}
 	base := `{"spec":{"prompt":"","podFailurePolicy":{"rules":[{"onPodConditions":[{"type":"DisruptionTarget","status":""}]}]},"worker":{"type":"claude-code","podOverrides":{"extraInitContainers":[{"name":"wait","resources":{}}],"volumeMounts":[{"name":"skip","mountPath":"/kelos-skip","readOnly":false}]}}}}`
-	if diff, err := kelos.Diff(want, json.RawMessage(base)); err != nil || len(diff) != 0 {
+	if diff, err := kelostest.Diff(want, json.RawMessage(base)); err != nil || len(diff) != 0 {
 		t.Fatalf("typed defaults: Diff = %v, %v", diff, err)
 	}
 	for _, tc := range []struct {
@@ -100,7 +101,7 @@ func TestDiffKelosTypedDefaults(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := json.RawMessage(strings.Replace(base, tc.old, tc.new, 1))
-			if diff, err := kelos.Diff(want, got); err != nil || !slices.Equal(diff, []string{tc.path}) {
+			if diff, err := kelostest.Diff(want, got); err != nil || !slices.Equal(diff, []string{tc.path}) {
 				t.Fatalf("Diff = %v, %v; want %s", diff, err, tc.path)
 			}
 		})
@@ -111,13 +112,13 @@ func TestDiffKelosLabelsLeftOutOnBothSides(t *testing.T) {
 	want := kelos.Task{Metadata: kelos.Metadata{Labels: map[string]string{"kelos.dev/taskspawner": "mine", "role": "x"}}}
 	got := raw(t, map[string]any{"metadata": map[string]any{"labels": map[string]any{"role": "x"}},
 		"spec": map[string]any{"prompt": ""}})
-	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+	if diff, err := kelostest.Diff(want, got); err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want a kelos.dev/ label of want left out", diff, err)
 	}
 	want = kelos.Task{Metadata: kelos.Metadata{Labels: map[string]string{"role": "x"}}}
 	got = raw(t, map[string]any{"metadata": map[string]any{"labels": map[string]any{"role": "x", "kelos.dev/taskspawner": "s"}},
 		"spec": map[string]any{"prompt": ""}})
-	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+	if diff, err := kelostest.Diff(want, got); err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want a kelos.dev/ label of got left out", diff, err)
 	}
 }
@@ -128,13 +129,13 @@ func TestDiffVolumesByName(t *testing.T) {
 	reversed := []any{map[string]any{"name": "b"}, map[string]any{"name": "a"}}
 	got := raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
 		"podOverrides": map[string]any{"volumes": reversed}}}})
-	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+	if diff, err := kelostest.Diff(want, got); err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want volumes in another order to be the same", diff, err)
 	}
 	changed := []any{map[string]any{"name": "a", "readOnly": true}}
 	got = raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
 		"podOverrides": map[string]any{"volumes": changed}}}})
-	diff, err := kelos.Diff(want, got)
+	diff, err := kelostest.Diff(want, got)
 	wantPaths := []string{"spec.worker.podOverrides.volumes[name=a].readOnly", "spec.worker.podOverrides.volumes[name=b]"}
 	if err != nil || !slices.Equal(diff, wantPaths) {
 		t.Fatalf("Diff = %v, %v\nwant %v: a changed or dropped volume is a difference", diff, err, wantPaths)
@@ -151,14 +152,14 @@ func TestDiffVolumeMountsByMountPath(t *testing.T) {
 		map[string]any{"name": "a", "mountPath": "/x"}}
 	got := raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
 		"podOverrides": map[string]any{"volumeMounts": reversed}}}})
-	if diff, err := kelos.Diff(want, got); err != nil || len(diff) != 0 {
+	if diff, err := kelostest.Diff(want, got); err != nil || len(diff) != 0 {
 		t.Fatalf("Diff = %v, %v; want mounts in another order to be the same", diff, err)
 	}
 	changed := []any{map[string]any{"name": "a", "mountPath": "/x", "readOnly": true},
 		map[string]any{"name": "a", "mountPath": "/y"}}
 	got = raw(t, map[string]any{"spec": map[string]any{"prompt": "", "worker": map[string]any{"type": "claude-code",
 		"podOverrides": map[string]any{"volumeMounts": changed}}}})
-	diff, err := kelos.Diff(want, got)
+	diff, err := kelostest.Diff(want, got)
 	wantPaths := []string{"spec.worker.podOverrides.volumeMounts[mountPath=/x].readOnly",
 		"spec.worker.podOverrides.volumeMounts[mountPath=/z]"}
 	if err != nil || !slices.Equal(diff, wantPaths) {
@@ -175,7 +176,7 @@ func TestDiffOrderedNamedLists(t *testing.T) {
 		"agentConfigRefs": []any{map[string]any{"name": "b"}, map[string]any{"name": "a"}},
 		"podOverrides": map[string]any{"extraInitContainers": []any{map[string]any{"name": "y"},
 			map[string]any{"name": "x"}}}}}})
-	diff, err := kelos.Diff(want, got)
+	diff, err := kelostest.Diff(want, got)
 	wantPaths := []string{"spec.worker.agentConfigRefs[0].name", "spec.worker.agentConfigRefs[1].name",
 		"spec.worker.podOverrides.extraInitContainers[0].name", "spec.worker.podOverrides.extraInitContainers[1].name"}
 	if err != nil || !slices.Equal(diff, wantPaths) {
@@ -200,7 +201,7 @@ func TestDiffDependentEnvInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	diff, err := kelos.Diff(want, swapped)
+	diff, err := kelostest.Diff(want, swapped)
 	wantPaths := []string{"spec.worker.podOverrides.env[0].name", "spec.worker.podOverrides.env[0].value",
 		"spec.worker.podOverrides.env[1].name", "spec.worker.podOverrides.env[1].value"}
 	if err != nil || !slices.Equal(diff, wantPaths) {
@@ -224,7 +225,7 @@ func TestDiffEnvInOrderWhenOneSideReferences(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if diff, err := kelos.Diff(want, got); err != nil || !slices.Equal(diff, wantPaths) {
+		if diff, err := kelostest.Diff(want, got); err != nil || !slices.Equal(diff, wantPaths) {
 			t.Errorf("%s: Diff = %v, %v\nwant %v", name, diff, err, wantPaths)
 		}
 	}

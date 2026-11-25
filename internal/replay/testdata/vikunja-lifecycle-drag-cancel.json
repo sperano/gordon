@@ -61,14 +61,6 @@
       }
     ]
   },
-  "legacy": {
-    "tasks": [],
-    "writes": [
-      "cancel-run:vikunja/task/4120",
-      "remove-label:vikunja/task/4120:in progress",
-      "post-notice:vikunja/task/4120:stop:vikunja-4120-hollingsworth-opus"
-    ]
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "vikunja/task.updated/4120/14c8469747f3fe0a3f058dbb44def72b",
@@ -77,16 +69,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "not-in-doing"
       },
       {
         "family": "vikunja-drag-cancel",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "actions": [
           {

@@ -18,7 +18,6 @@ import (
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/metrics"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/sillage"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/worker"
@@ -168,7 +167,7 @@ func fixture(t *testing.T) sillage.TaskCost {
 
 func publisher(s *fakeStore, sl *fakeSillage) (*Publisher, *bytes.Buffer) {
 	var logs bytes.Buffer
-	return &Publisher{Store: s, Sillage: sl, Ownership: owns(run.VikunjaCost), Links: links{}, VikunjaWeb: "https://vikunja.example",
+	return &Publisher{Store: s, Sillage: sl, Links: links{}, VikunjaWeb: "https://vikunja.example",
 		Now: func() time.Time { return now }, Metrics: metrics.New(), Log: logging.New(&logs, slog.LevelDebug)}, &logs
 }
 
@@ -458,22 +457,5 @@ func TestNoVikunjaHost(t *testing.T) {
 	p.VikunjaWeb = ""
 	if err := p.Once(ctx); err == nil || err.Error() != `cost notices: no Vikunja host in ""` {
 		t.Errorf("Once = %v", err)
-	}
-}
-
-// TestRollbackStopsTheNotices: once the project's rule is gone, a due
-// notice reads nothing and writes nothing; it is checked again later.
-func TestRollbackStopsTheNotices(t *testing.T) {
-	s := &fakeStore{}
-	r := s.add(waitingRow(now.Add(-time.Hour)))
-	sl := &fakeSillage{costs: map[int64]sillage.TaskCost{5: fixture(t)}, reads: map[int64]int{}}
-	p, _ := publisher(s, sl)
-	p.Ownership = owns(run.VikunjaFailure)
-	once(t, p)
-	if r.State != store.CostWaiting || len(s.actions) != 0 || len(sl.reads) != 0 || !r.next.Equal(now.Add(DefaultRefresh)) {
-		t.Errorf("row %+v next %s, actions %v, reads %v", r.CostNotice, r.next, s.actions, sl.reads)
-	}
-	if got := checks(p, ResultNotOwned); got != 1 {
-		t.Errorf("not-owned checks %v", got)
 	}
 }

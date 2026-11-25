@@ -1,4 +1,4 @@
-package kelos
+package kelostest
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/sperano/gordon/internal/kelos"
 )
 
 // maxDiffPaths caps the differing paths Diff reports.
@@ -15,12 +17,12 @@ const maxDiffPaths = 50
 // kelosLabelPrefix marks labels Kelos itself adds to a spawner's Task.
 const kelosLabelPrefix = "kelos.dev/"
 
-// Diff lists the paths where got (a Task as the API returns it) differs
+// Diff lists, for tests comparing a built Task with the one submitted, the paths where got (a Task as the API returns it) differs
 // from want, over the metadata labels and annotations and the whole spec.
 // Labels under kelos.dev/ (Kelos adds them to a spawner's Task) and the
 // ignored metadata keys are left out on both sides. Paths are sorted, at most maxDiffPaths of them,
 // followed by a "…" entry when more were cut.
-func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
+func Diff(want kelos.Task, got json.RawMessage, ignore ...string) ([]string, error) {
 	w, err := taskMap(want)
 	if err != nil {
 		return nil, err
@@ -49,7 +51,7 @@ func Diff(want Task, got json.RawMessage, ignore ...string) ([]string, error) {
 }
 
 // taskMap is t as generic JSON, limited to what Diff compares.
-func taskMap(t Task) (map[string]any, error) {
+func taskMap(t kelos.Task) (map[string]any, error) {
 	b, err := json.Marshal(t)
 	if err != nil {
 		return nil, err

@@ -19,7 +19,6 @@ import (
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -73,16 +72,6 @@ func (l *lister) List(_ context.Context, selector string) ([]kelos.Task, error) 
 	return l.tasks, l.err
 }
 
-var gates = []rollout.Gate{rollout.ReplayParity, rollout.ShadowParity, rollout.RollbackTested, rollout.LegacyDisabled}
-
-func ownsRestarts(projects ...string) rollout.Table {
-	var t rollout.Table
-	for _, p := range projects {
-		t.Rules = append(t.Rules, rollout.Rule{Project: p, Family: run.LimitRestart, Owner: rollout.Gordon, Evidence: gates})
-	}
-	return t
-}
-
 // now is the tests' clock; most stops' limits reset an hour before it.
 var now = time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 
@@ -110,9 +99,9 @@ func implRun(name string, inbox int64, task int64, retry int) store.FailedRun {
 		Profile: profile.Resolved{Variant: "claude-opus"}}
 }
 
-func reaper(st *fakeStore, tasks []kelos.Task, owner rollout.Table) (*Reaper, *bytes.Buffer) {
+func reaper(st *fakeStore, tasks []kelos.Task) (*Reaper, *bytes.Buffer) {
 	var logs bytes.Buffer
-	return &Reaper{Store: st, Kelos: &lister{tasks: tasks}, Config: profile.Defaults(), Ownership: owner,
+	return &Reaper{Store: st, Kelos: &lister{tasks: tasks}, Config: profile.Defaults(),
 		Now: func() time.Time { return now }, Metrics: metrics.New(), Log: logging.New(&logs, slog.LevelDebug)}, &logs
 }
 
@@ -128,12 +117,12 @@ func TestRestartAfterTheReset(t *testing.T) {
 	name := "vikunja-5-gordon-opus"
 	st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}}
 	task := stopTask(name, 9, implLabels("5"), "2026-11-20T08:00:00Z", now.Add(-time.Hour))
-	r, _ := reaper(st, []kelos.Task{task}, ownsRestarts("gordon"))
+	r, _ := reaper(st, []kelos.Task{task})
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(st.projects, []string{"gordon"}) {
-		t.Errorf("read the failed runs of %v, want [gordon]", st.projects)
+	if want := configuredProjects(); !slices.Equal(st.projects, want) {
+		t.Errorf("read the failed runs of %v, want every configured project %v", st.projects, want)
 	}
 	if len(st.decisions) != 1 {
 		t.Fatalf("decisions %+v", st.decisions)
@@ -176,7 +165,7 @@ func TestRestartWaits(t *testing.T) {
 	}
 	for label, reset := range cases {
 		st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}}
-		r, _ := reaper(st, []kelos.Task{stopTask(name, 9, implLabels("5"), "", reset)}, ownsRestarts("gordon"))
+		r, _ := reaper(st, []kelos.Task{stopTask(name, 9, implLabels("5"), "", reset)})
 		if err := r.Once(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +183,7 @@ func TestRestartWithoutAKnownReset(t *testing.T) {
 	task.Status.CompletionTime = ""
 	delete(task.Status.Results, kelos.ResultLimitResetsAt)
 	st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}}
-	r, _ := reaper(st, []kelos.Task{task}, ownsRestarts("gordon"))
+	r, _ := reaper(st, []kelos.Task{task})
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +211,7 @@ func TestRestartAfterTheFallback(t *testing.T) {
 			task.Status.CompletionTime = completed.Format(time.RFC3339)
 			delete(task.Status.Results, kelos.ResultLimitResetsAt)
 			st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}}
-			r, _ := reaper(st, []kelos.Task{task}, ownsRestarts("gordon"))
+			r, _ := reaper(st, []kelos.Task{task})
 			r.Now = func() time.Time { return c.at }
 			if err := r.Once(context.Background()); err != nil {
 				t.Fatal(err)
@@ -235,15 +224,26 @@ func TestRestartAfterTheFallback(t *testing.T) {
 	}
 }
 
-func TestNoRestartWhereLegacyOwnsThem(t *testing.T) {
+// configuredProjects are the default projects' names, each once.
+func configuredProjects() []string {
+	var out []string
+	for _, p := range profile.Defaults().Projects {
+		if !slices.Contains(out, p.Name) {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+func TestNoRestartWithoutProjects(t *testing.T) {
 	st := &fakeStore{failed: []store.FailedRun{implRun("vikunja-5-gordon-opus", 9, 5, 0)}}
-	r, _ := reaper(st, nil, ownsRestarts("vigie"))
-	r.Config.Projects = slices.DeleteFunc(slices.Clone(r.Config.Projects), func(p profile.Project) bool { return p.Name == "vigie" })
+	r, _ := reaper(st, nil)
+	r.Config.Projects = nil
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if st.projects != nil || len(st.decisions) != 0 {
-		t.Errorf("read %v, decided %+v: no project is Gordon's", st.projects, st.decisions)
+		t.Errorf("read %v, decided %+v: no project is configured", st.projects, st.decisions)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestBusyGroupWaits(t *testing.T) {
 		"vikunja.spe.quebec/project": "gordon", "vikunja.spe.quebec/task": "6", "vikunja.spe.quebec/role": "pr-open"}}}
 	otherStop := stopTask("vikunja-6-gordon-opus", 10, implLabels("6"), "", now.Add(-time.Hour))
 	st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0), implRun("vikunja-6-gordon-opus", 10, 6, 0)}}
-	r, _ := reaper(st, []kelos.Task{stop, running, prOpen, otherStop}, ownsRestarts("gordon"))
+	r, _ := reaper(st, []kelos.Task{stop, running, prOpen, otherStop})
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestNewestRestartsOlderSuperseded(t *testing.T) {
 		stopTask(newer, 9, implLabels("5"), "2026-11-20T08:00:00Z", now.Add(-time.Hour)),
 		stopTask(older, 9, implLabels("5"), "2026-11-20T07:00:00Z", now.Add(-time.Hour)),
 	}
-	r, _ := reaper(st, tasks, ownsRestarts("gordon"))
+	r, _ := reaper(st, tasks)
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestNewestRestartsOlderSuperseded(t *testing.T) {
 func TestGiveUpAfterTheLastRestart(t *testing.T) {
 	name := "vikunja-5-gordon-opus-retry3"
 	st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 3)}}
-	r, _ := reaper(st, []kelos.Task{stopTask(name, 9, implLabels("5"), "", now.Add(time.Hour))}, ownsRestarts("gordon"))
+	r, _ := reaper(st, []kelos.Task{stopTask(name, 9, implLabels("5"), "", now.Add(time.Hour))})
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestGiveUpAfterTheLastRestart(t *testing.T) {
 	}
 	// A configured maximum counts instead of the default.
 	st = &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 3)}}
-	r, _ = reaper(st, []kelos.Task{stopTask(name, 9, implLabels("5"), "", now.Add(-time.Hour))}, ownsRestarts("gordon"))
+	r, _ = reaper(st, []kelos.Task{stopTask(name, 9, implLabels("5"), "", now.Add(-time.Hour))})
 	r.MaxRestarts = 4
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
@@ -333,7 +333,7 @@ func TestPullRequestGiveUp(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			st := &fakeStore{failed: []store.FailedRun{{Name: "stopped", InboxID: 3, Project: "gordon", Identity: c.id}}}
 			task := stopTask("stopped", 3, map[string]string{"vikunja.spe.quebec/role": "pr-followup"}, "", now.Add(-time.Hour))
-			r, _ := reaper(st, []kelos.Task{task}, ownsRestarts("gordon"))
+			r, _ := reaper(st, []kelos.Task{task})
 			if err := r.Once(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -352,7 +352,7 @@ func TestRestartNameTooLong(t *testing.T) {
 	f.Identity.Project = strings.Repeat("p", run.MaxNameLength-len("vikunja-5--opus")-len("-retry1")+1)
 	f.Name = f.Identity.Name()
 	st := &fakeStore{failed: []store.FailedRun{f}}
-	r, _ := reaper(st, []kelos.Task{stopTask(f.Name, 9, implLabels("5"), "", now.Add(-time.Hour))}, ownsRestarts("gordon"))
+	r, _ := reaper(st, []kelos.Task{stopTask(f.Name, 9, implLabels("5"), "", now.Add(-time.Hour))})
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestNotALimitStop(t *testing.T) {
 	foreign := stopTask("vikunja-6-gordon-opus", 99, implLabels("6"), "", now.Add(-time.Hour))
 	st := &fakeStore{failed: []store.FailedRun{implRun(plain.Metadata.Name, 9, 5, 0), implRun(foreign.Metadata.Name, 10, 6, 0),
 		implRun("vikunja-7-gordon-opus", 11, 7, 0)}}
-	r, _ := reaper(st, []kelos.Task{plain, foreign}, ownsRestarts("gordon"))
+	r, _ := reaper(st, []kelos.Task{plain, foreign})
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestPullRequestRestarts(t *testing.T) {
 	tasks := []kelos.Task{stopTask(fuName, 3, map[string]string{"vikunja.spe.quebec/role": "pr-followup"}, "", now.Add(-time.Hour)),
 		stopTask(reviewName, 4, reviewLabels, "", now.Add(-time.Hour)),
 		stopTask(conflictName, 5, map[string]string{"vikunja.spe.quebec/role": "pr-conflict", "vikunja.spe.quebec/pr": "8"}, "", now.Add(-time.Hour))}
-	r, _ := reaper(st, tasks, ownsRestarts("gordon"))
+	r, _ := reaper(st, tasks)
 	if err := r.Once(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -422,12 +422,12 @@ func TestPullRequestRestarts(t *testing.T) {
 func TestPassErrors(t *testing.T) {
 	name := "vikunja-5-gordon-opus"
 	st := &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}, listErr: errors.New("store down")}
-	r, _ := reaper(st, nil, ownsRestarts("gordon"))
+	r, _ := reaper(st, nil)
 	if err := r.Once(context.Background()); err == nil || !strings.Contains(err.Error(), "store down") {
 		t.Errorf("store failure: %v", err)
 	}
 	st = &fakeStore{failed: []store.FailedRun{implRun(name, 9, 5, 0)}}
-	r, _ = reaper(st, nil, ownsRestarts("gordon"))
+	r, _ = reaper(st, nil)
 	r.Kelos = &lister{err: errors.New("kelos down")}
 	if err := r.Once(context.Background()); err == nil || !strings.Contains(err.Error(), "kelos down") || len(st.decisions) != 0 {
 		t.Errorf("list failure: %v, decisions %+v", err, st.decisions)
@@ -440,7 +440,7 @@ func TestPassErrors(t *testing.T) {
 		refuse: map[string]error{name: errors.New("conflict")}, decided: map[string]bool{taken: true}}
 	tasks := []kelos.Task{stopTask(name, 9, implLabels("5"), "", now.Add(-time.Hour)),
 		stopTask(other, 10, implLabels("6"), "", now.Add(-time.Hour)), stopTask(taken, 11, implLabels("7"), "", now.Add(-time.Hour))}
-	r, _ = reaper(st, tasks, ownsRestarts("gordon"))
+	r, _ = reaper(st, tasks)
 	err := r.Once(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "limit stop "+name+": conflict") {
 		t.Errorf("decision failure: %v", err)
@@ -455,7 +455,7 @@ func TestPassErrors(t *testing.T) {
 
 func TestNoFailedRunsListsNoTasks(t *testing.T) {
 	st := &fakeStore{}
-	r, _ := reaper(st, nil, ownsRestarts("gordon"))
+	r, _ := reaper(st, nil)
 	r.Kelos = &lister{err: errors.New("must not be called")}
 	if err := r.Once(context.Background()); err != nil {
 		t.Errorf("Once: %v", err)

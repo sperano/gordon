@@ -44,12 +44,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-4201-puckdb-astra-discuss"
-    ],
-    "divergence": "same Task; legacy ran it as the writing image-build-submitter ServiceAccount, Gordon as kelos-discuss"
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "vikunja/task.updated/4201/d6ceaa4b7573164cf6062d4bc8746a6c",
@@ -58,8 +52,6 @@
       {
         "family": "vikunja-discuss",
         "project": "puckdb",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {

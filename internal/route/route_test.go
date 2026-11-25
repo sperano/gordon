@@ -9,7 +9,6 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/replay"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 )
@@ -85,17 +84,6 @@ func TestMalformedAndUnsupported(t *testing.T) {
 	push := signed(t, event.SourceGitHub, map[string]string{event.GitHubEventHeader: "push", event.GitHubDeliveryHeader: "g"},
 		map[string]any{"ref": "refs/heads/main", "repository": map[string]any{"full_name": "sperano/vigie"}})
 	expect(t, r.Decide(push, route.State{}, replay.Ledger{}), route.Ignore, route.ReasonNotRouted)
-}
-
-func TestShadowOwnershipRecordsWithoutExecuting(t *testing.T) {
-	r := router()
-	r.Ownership = rollout.Table{Rules: []rollout.Rule{{Project: rollout.AllProjects, Family: run.VikunjaImplement,
-		Owner: rollout.Shadow, Evidence: []rollout.Gate{rollout.ReplayParity}}}}
-	d := r.Decide(updated(t, task(5, 136, nil, "claude-opus")), route.State{Task: fresh(5, 136, nil, "claude-opus")}, replay.Ledger{})
-	fd := family(t, d)
-	if fd.Owner != rollout.Shadow || fd.Execute || fd.Outcome != route.Dispatch {
-		t.Errorf("shadow family %+v", fd)
-	}
 }
 
 func TestDecideAuthenticatedSkipsOnlyTheSignature(t *testing.T) {

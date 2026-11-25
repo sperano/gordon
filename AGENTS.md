@@ -2,10 +2,10 @@
 
 ## Repository purpose
 
-Gordon is a Go service that replaces Hollingsworth's webhook glue with one
-durable, deterministic orchestrator for Kelos tasks. Read `README.md` for the
-package contracts and `DEPLOYMENT.md` before changing runtime configuration,
-permissions, rollout ownership, database roles, or deployment behaviour.
+Gordon is a Go service, Hollingsworth's only dispatcher: one durable,
+deterministic orchestrator for Kelos tasks. Read `README.md` for the package
+contracts and `DEPLOYMENT.md` before changing runtime configuration,
+permissions, database roles, or deployment behaviour.
 
 ## Development workflow
 
@@ -30,8 +30,8 @@ permissions, rollout ownership, database roles, or deployment behaviour.
 ## Design constraints
 
 - Preserve deterministic delivery keys, request keys, task names, branches,
-  routing decisions, action keys, and rendered task specifications. These are
-  compatibility contracts with legacy Hollingsworth tasks and pod hooks.
+  routing decisions, action keys, and rendered task specifications. Pod hooks
+  and running Tasks depend on them.
 - Route from fresh upstream state. Treat webhook payloads as notification data,
   not authoritative state.
 - Put every external write through the durable action outbox. Give each action
@@ -42,11 +42,13 @@ permissions, rollout ownership, database roles, or deployment behaviour.
 - Keep routing and execution profiles in trusted configuration. Never derive
   credentials, ServiceAccounts, secret access, permission modes, or pod pieces
   from an untrusted webhook payload.
-- While shadow mode exists, it records decisions and comparisons but performs
-  no external writes. A routing family has exactly one active owner per scope.
-  No rollback path to legacy handling is required: the owner fixes forward, so
-  do not keep legacy handling, shadow comparison, or ownership switches alive
-  only for rollback, and do not hold back a change for rollback safety.
+- Gordon executes every family; there is no shadow mode, ownership table or
+  rollback path to legacy handling. The owner fixes forward: do not add a
+  switch or keep code alive only for rollback, and do not hold back a change
+  for rollback safety.
+- Keep removed settings tolerated: the deployment may still set them
+  (`config.RemovedWorkerVars`), so never make an unknown or removed variable
+  fatal.
 - Keep provider and project concurrency bounded. Deferrals caused by limits or
   held branches are not failed attempts.
 - Do not log webhook bodies, prompts, credentials, tokens, secret contents, or
@@ -67,22 +69,20 @@ permissions, rollout ownership, database roles, or deployment behaviour.
 
 - Sanitized deliveries and exact routing outcomes belong in
   `internal/replay/testdata`.
-- Dispatch changes must keep Gordon's rendered tasks equal to the legacy
-  fixtures in `internal/dispatch/testdata` unless the compatibility contract is
-  intentionally changed in both systems.
-- Notice text and markers are compatibility APIs. Preserve byte-exact legacy
-  text where tests require it, and only recognize Gordon notices authored by
-  the configured Gordon Vikunja user.
-- When adding or moving a dispatch or lifecycle family, update
-  `internal/inventory` and verify `go run ./cmd/gordon-inventory` reflects its
-  owner, stages, legacy implementation, and rollback switch.
+- Dispatch changes must keep Gordon's rendered tasks equal to the golden
+  Tasks in `internal/dispatch/testdata/tasks` unless the change is intended:
+  update the golden in the same change.
+- Notice text and markers are compatibility APIs (vigie and sillage parse
+  them). Keep them byte-exact to the goldens in `internal/notice/testdata`,
+  and only recognize Gordon notices authored by the configured Gordon Vikunja
+  user.
 
 ## Scope boundaries
 
-- This repository builds the Gordon image; deployment manifests and production
-  rollout switches live in Hollingsworth.
+- This repository builds the Gordon image; deployment manifests live in
+  Hollingsworth. Every merge to `main` is built and deployed there
+  automatically, so the new image must start with the deployed configuration.
 - Do not contact live Vikunja, GitHub, Kubernetes, or PostgreSQL services from
   tests. Use package fakes, `internal/kelos/kelostest`, replay fixtures, and the
   disposable PostgreSQL harness.
-- Do not deploy, change ownership gates, or disable legacy handlers as part of
-  an ordinary Gordon code change.
+- Do not deploy as part of an ordinary Gordon code change.

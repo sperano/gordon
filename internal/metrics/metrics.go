@@ -46,11 +46,10 @@ type Metrics struct {
 	Upstream         *prometheus.CounterVec
 	UpstreamDuration *prometheus.HistogramVec
 
-	Kelos             *prometheus.CounterVec
-	KelosDuration     *prometheus.HistogramVec
-	Submissions       *prometheus.CounterVec
-	ShadowComparisons *prometheus.CounterVec
-	RunObservations   *prometheus.CounterVec
+	Kelos           *prometheus.CounterVec
+	KelosDuration   *prometheus.HistogramVec
+	Submissions     *prometheus.CounterVec
+	RunObservations *prometheus.CounterVec
 
 	Reconciles           *prometheus.CounterVec
 	ReconcileDuration    prometheus.Histogram
@@ -114,9 +113,7 @@ func New() *Metrics {
 		Kelos: counter("kelos_requests_total", "Kelos Task API requests by operation and result.", "op", "result"),
 		KelosDuration: histogram("kelos_request_duration_seconds", "Duration of one Kelos Task API request.",
 			callBuckets, "op"),
-		Submissions: counter("kelos_submissions_total", "Task submissions by result.", "result"),
-		ShadowComparisons: counter("shadow_comparisons_total",
-			"Shadow Tasks compared with the legacy Task of the same name, by family and result.", "family", "result"),
+		Submissions:     counter("kelos_submissions_total", "Task submissions by result.", "result"),
 		RunObservations: counter("run_observations_total", "Run states recorded from Kelos, by state.", "state"),
 		Reconciles:      counter("reconcile_runs_total", "Periodic reconciliation runs by result.", "result"),
 		ReconcileDuration: prometheus.NewHistogram(prometheus.HistogramOpts{Namespace: namespace,
@@ -131,7 +128,7 @@ func New() *Metrics {
 	m.Registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		m.Intake, m.Decisions, m.DecisionLatency, m.InboxRetries, m.InboxFailures, m.Deferred,
 		m.QueueDepth, m.QueueOldest, m.ActionResults, m.ActionDuration, m.ActionQueueLatency,
-		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions, m.ShadowComparisons,
+		m.Upstream, m.UpstreamDuration, m.Kelos, m.KelosDuration, m.Submissions,
 		m.RunObservations, m.Reconciles, m.ReconcileDuration, m.ReconcileLastSuccess,
 		m.LeasesExpired, m.BodiesPruned, m.VikunjaReconciles, m.VikunjaReconcileQueued,
 		m.GitHubReconciles, m.GitHubReconcileQueued, m.LimitRestarts, m.ConflictReconciles, m.ConflictReconcileQueued,

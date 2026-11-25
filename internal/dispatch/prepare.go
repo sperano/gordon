@@ -15,8 +15,7 @@ type CommentReader interface {
 	Comments(ctx context.Context, taskID int64, maxBytes int) (json.RawMessage, error)
 }
 
-// Preparer builds the Task of every run a decision dispatches, executed
-// or not (a shadow run's Task is what the shadow comparison diffs).
+// Preparer builds the Task of every run a decision dispatches.
 type Preparer struct {
 	Builder  Builder
 	Comments CommentReader

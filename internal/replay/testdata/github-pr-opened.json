@@ -76,14 +76,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "review-lucarne-pr-challenger-7-01234567",
-      "review-lucarne-idiomatic-go-7-01234567",
-      "vikunja-pr-open-lucarne-7-opened"
-    ],
-    "divergence": "pr-open is a direct write instead of the model-free vikunja-pr-open Task"
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "github/delivery/66666666-2222-3333-4444-555555555555",
@@ -92,8 +84,6 @@
       {
         "family": "pr-review",
         "project": "lucarne",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {
@@ -187,8 +177,6 @@
       {
         "family": "pr-open",
         "project": "lucarne",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "act",
         "actions": [
           {

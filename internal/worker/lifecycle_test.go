@@ -12,7 +12,6 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/replay"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/upstream"
 )
 
@@ -172,7 +171,7 @@ func TestByProviderDefersAProviderWithoutWriter(t *testing.T) {
 // from the blocked task's fresh state and dispatches its run, executed
 // with its claim waiting for the submission.
 func TestDoneBlockerStartsTheTaskItHeld(t *testing.T) {
-	e := newEnv(t, gordonOwns(run.VikunjaImplement))
+	e := newEnv(t)
 	blocked := eligible()
 	blocked.Relations.BlockedBy = []event.Related{{ID: 9, ProjectID: 136, Done: true}}
 	e.tasks.tasks[blocked.ID] = blocked
@@ -189,7 +188,7 @@ func TestDoneBlockerStartsTheTaskItHeld(t *testing.T) {
 	if n := e.tick(t); n != 1 {
 		t.Fatalf("decided %d deliveries, want the requeue", n)
 	}
-	name := "vikunja-hollingsworth-claude-opus-" + strconv.FormatInt(blocked.ID, 10)
+	name := "vikunja-" + strconv.FormatInt(blocked.ID, 10) + "-hollingsworth-opus"
 	if n := e.count(t, `SELECT count(*) FROM runs WHERE name = $1`, name); n != 1 {
 		t.Fatalf("run %s not recorded", name)
 	}

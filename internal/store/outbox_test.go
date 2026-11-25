@@ -17,7 +17,7 @@ func queued(t *testing.T) (*store.Store, string) {
 	s, dbURL := storetest.Open(t)
 	accept(t, s, "k")
 	it := claimOne(t, s, "w")
-	if _, err := s.Complete(ctx, it.Lease, dispatch(true), false); err != nil {
+	if _, err := s.Complete(ctx, it.Lease, dispatch()); err != nil {
 		t.Fatal(err)
 	}
 	return s, dbURL

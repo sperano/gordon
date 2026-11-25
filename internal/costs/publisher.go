@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/sperano/gordon/internal/metrics"
-	"github.com/sperano/gordon/internal/rollout"
-	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/sillage"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/worker"
@@ -56,14 +54,11 @@ const (
 	// ResultExpired: Sillage still failed to answer once the notice's
 	// live window passed; it is checked no more.
 	ResultExpired = "expired"
-	// ResultNotOwned: Gordon no longer owns the project's vikunja-cost
-	// (a rollback); the notice is checked again later, nothing read.
-	ResultNotOwned = "not-owned"
 )
 
 // Results lists every result label.
 var Results = []string{ResultPublished, ResultUpdated, ResultUnchanged, ResultWaiting, ResultSettled,
-	ResultUnavailable, ResultIncompatible, ResultRaced, ResultNotOwned, ResultExpired}
+	ResultUnavailable, ResultIncompatible, ResultRaced, ResultExpired}
 
 // PassStore is the part of the store the pass uses.
 type PassStore interface {
@@ -88,10 +83,7 @@ type Links interface {
 type Publisher struct {
 	Store   PassStore
 	Sillage Reader
-	// Ownership gates every check: a project whose vikunja-cost rule was
-	// removed reads and writes nothing more.
-	Ownership rollout.Table
-	Links     Links
+	Links   Links
 	// VikunjaWeb is the Vikunja web base, whose host names the task to
 	// Sillage.
 	VikunjaWeb                             string
@@ -124,10 +116,6 @@ func (p *Publisher) Once(ctx context.Context) error {
 	reads := map[int64]read{}
 	var errs []error
 	for _, n := range due {
-		if !p.Ownership.Executes(n.Project, run.VikunjaCost) {
-			errs = append(errs, p.recheck(ctx, n, now.Add(cmp.Or(p.Refresh, DefaultRefresh)), ResultNotOwned))
-			continue
-		}
 		r, ok := reads[n.TaskID]
 		if !ok {
 			c, err := p.Sillage.TaskCost(ctx, host, n.TaskID)

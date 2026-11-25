@@ -116,33 +116,6 @@
     "readiness_read": true
   },
   "ledger": {},
-  "ownership": {
-    "rules": [
-      {
-        "project": "lucarne",
-        "family": "pr-readiness",
-        "owner": "gordon",
-        "evidence": [
-          "replay-parity",
-          "shadow-parity",
-          "rollback-tested",
-          "legacy-disabled"
-        ]
-      }
-    ]
-  },
-  "legacy": {
-    "tasks": [
-      "pr-ready-47d85cbe-0123456789ab"
-    ],
-    "divergence": "Gordon decides each completed check run itself: no model-free pr-ready waiter Task polling the head",
-    "writes": [
-      "post-notice:vikunja/task/4402:round-limit:sperano/lucarne#7@0123456789abcdef0123456789abcdef01234567 [{\"author\":\"gordon-cole-ai[bot]\",\"review\":880001}]",
-      "remove-label:vikunja/task/4402:ready to merge",
-      "add-label:vikunja/task/4402:action-needed",
-      "add-label:vikunja/task/4402:round-limit-reached"
-    ]
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "github/delivery/44444444-2222-3333-4444-000000000071",
@@ -150,8 +123,6 @@
       {
         "family": "pr-readiness",
         "project": "lucarne",
-        "owner": "gordon",
-        "execute": true,
         "outcome": "act",
         "reason": "round-limit",
         "actions": [

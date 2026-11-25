@@ -6,11 +6,12 @@ import (
 	"testing"
 )
 
-// legacy_restart_texts.json holds limit_reaper.restarted_comment and
-// gave_up_comment (Hollingsworth helm/kelos/scripts at e60c284) for the
-// same inputs, printed by running them.
-func TestRestartTextsEqualLegacy(t *testing.T) {
-	b, err := os.ReadFile("testdata/legacy_restart_texts.json")
+// restart_texts.json holds the exact restart notice texts for these
+// inputs, first printed by the script Gordon replaced
+// (limit_reaper.restarted_comment and gave_up_comment, Hollingsworth
+// helm/kelos/scripts at e60c284).
+func TestRestartTextsGolden(t *testing.T) {
+	b, err := os.ReadFile("testdata/restart_texts.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func TestRestartTextsEqualLegacy(t *testing.T) {
 		"gave_up_bare": GaveUpText("pr-followup-vigie-4-r9-retry1", "", 1),
 	}
 	if len(cases) != len(l) {
-		t.Fatalf("%d cases for %d legacy texts", len(cases), len(l))
+		t.Fatalf("%d cases for %d golden texts", len(cases), len(l))
 	}
 	for key, got := range cases {
 		if got != l[key] {

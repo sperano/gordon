@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// legacyGitHub are the texts announce_github_start.py and
-// cap_review_rounds.py print (hollingsworth bf043be, helm/kelos/scripts,
-// run with python3 -I).
-func legacyGitHub(t *testing.T) map[string]string {
+// githubTexts are the exact GitHub notice texts, first printed by the
+// scripts Gordon replaced (hollingsworth bf043be, helm/kelos/scripts:
+// announce_github_start.py and cap_review_rounds.py).
+func githubTexts(t *testing.T) map[string]string {
 	t.Helper()
-	b, err := os.ReadFile("testdata/legacy_github_texts.json")
+	b, err := os.ReadFile("testdata/github_texts.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,8 +22,8 @@ func legacyGitHub(t *testing.T) map[string]string {
 	return out
 }
 
-func TestGitHubTextsMatchLegacy(t *testing.T) {
-	want := legacyGitHub(t)
+func TestGitHubTextsGolden(t *testing.T) {
+	want := githubTexts(t)
 	sillage := SillagePRURL("https://sillage.example/", "https://github.com/sperano/gordon/pull/12")
 	got := map[string]string{
 		"start_full": PRStartText(PRStartInfo{Task: "pr-followup-gordon-12-r345", Model: "claude-opus-5-5", Effort: "high",
@@ -37,7 +37,7 @@ func TestGitHubTextsMatchLegacy(t *testing.T) {
 		"sillage":          sillage,
 	}
 	if len(got) != len(want) {
-		t.Fatalf("%d texts, legacy has %d", len(got), len(want))
+		t.Fatalf("%d texts, the goldens have %d", len(got), len(want))
 	}
 	for k, w := range want {
 		if got[k] != w {

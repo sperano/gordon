@@ -145,8 +145,7 @@ func (s *Store) ObserveRun(ctx context.Context, name string, inboxID int64, exis
 }
 
 // PruneTasks drops the built Tasks (their prompts quote the task and its
-// comments) of runs finished, and of shadow Tasks compared, more than
-// retention ago.
+// comments) of runs finished more than retention ago.
 func (s *Store) PruneTasks(ctx context.Context, retention time.Duration) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE runs SET task = NULL
 		WHERE task IS NOT NULL AND state = 'finished' AND updated_at < now() - make_interval(secs => $1)`,
@@ -154,9 +153,5 @@ func (s *Store) PruneTasks(ctx context.Context, retention time.Duration) (int64,
 	if err != nil {
 		return 0, err
 	}
-	n := tag.RowsAffected()
-	tag, err = s.pool.Exec(ctx, `UPDATE shadow_tasks SET task = NULL
-		WHERE task IS NOT NULL AND result <> 'pending' AND compared_at < now() - make_interval(secs => $1)`,
-		retention.Seconds())
-	return n + tag.RowsAffected(), err
+	return tag.RowsAffected(), nil
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/intake"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/upstream"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -80,11 +79,11 @@ func LoadReceiver(env Getenv) (Receiver, error) {
 // Worker is the worker mode's configuration.
 type Worker struct {
 	Common
-	// Shadow (the default) records decisions and executes none.
-	Shadow    bool
-	ID        string
-	Routing   profile.Config
-	Ownership rollout.Table
+	ID      string
+	Routing profile.Config
+	// Deprecated names the removed settings still set (RemovedWorkerVars),
+	// which the worker ignores and logs once at start.
+	Deprecated []string
 
 	VikunjaURL       string
 	VikunjaTokenFile string
@@ -104,8 +103,7 @@ type Worker struct {
 	UpstreamTimeout   time.Duration
 	ShutdownGrace     time.Duration
 
-	// Kelos is nil without a dispatch configuration: runs then carry no
-	// Task and the worker can only shadow.
+	// Kelos is the Task submission configuration; LoadWorker requires it.
 	Kelos *Kelos
 	// Lifecycle is the Vikunja lifecycle's writer, reconciliation and links.
 	Lifecycle Lifecycle
@@ -140,7 +138,7 @@ const (
 func LoadWorker(env Getenv) (Worker, error) {
 	r := &reader{env: env}
 	host, _ := os.Hostname()
-	c := Worker{Common: r.common(), Shadow: r.boolean("GORDON_SHADOW", true), ID: r.str("GORDON_WORKER_ID", host),
+	c := Worker{Common: r.common(), Deprecated: r.removed(RemovedWorkerVars), ID: r.str("GORDON_WORKER_ID", host),
 		Routing:          profile.Defaults(),
 		VikunjaURL:       r.baseURL("GORDON_VIKUNJA_URL", ""),
 		VikunjaTokenFile: r.requiredSecretFile("GORDON_VIKUNJA_TOKEN_FILE"),
@@ -182,14 +180,6 @@ func LoadWorker(env Getenv) (Worker, error) {
 		r.fail("GORDON_ROUTING_CONFIG_FILE policy max_rounds_per_pr and suggestions_max_rounds must not be negative")
 	}
 	c.Kelos = r.kelos()
-	if !c.Shadow && r.str("GORDON_DISPATCH_CONFIG_FILE", "") == "" {
-		r.fail("GORDON_SHADOW=false needs GORDON_DISPATCH_CONFIG_FILE: nothing could be submitted")
-	}
-	if r.jsonFile("GORDON_OWNERSHIP_FILE", &c.Ownership) {
-		if err := c.Ownership.Validate(); err != nil {
-			r.fail("GORDON_OWNERSHIP_FILE: %v", err)
-		}
-	}
 	c.Lifecycle = r.lifecycle()
 	c.GitHub = r.github()
 	c.Restart = r.restart()
@@ -250,12 +240,12 @@ func (c Worker) String() string {
 	if c.Kelos != nil {
 		dispatchVersion, kelosURL = c.Kelos.Dispatch.Version, c.Kelos.APIURL
 	}
-	return fmt.Sprintf("shadow=%v id=%s concurrency=%d lease=%s poll=%s attempts=%d backoff=%s..%s project_limit=%d "+
-		"upstream=%v reconcile=%s retention=%s config=%s rules=%d dispatch=%s kelos=%s vikunja_writer=%v "+
+	return fmt.Sprintf("id=%s concurrency=%d lease=%s poll=%s attempts=%d backoff=%s..%s project_limit=%d "+
+		"upstream=%v reconcile=%s retention=%s config=%s dispatch=%s kelos=%s vikunja_writer=%v "+
 		"vikunja_reconcile=%s github_writer=%v github_reconcile=%s conflict_reconcile=%s readiness_reconcile=%s ntfy=%v sillage_api=%v",
-		c.Shadow, c.ID, c.Concurrency,
+		c.ID, c.Concurrency,
 		c.LeaseTTL, c.PollInterval, c.MaxAttempts, c.Backoff.Base, c.Backoff.Max, c.ProjectLimit, c.UpstreamLimit,
-		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, len(c.Ownership.Rules), dispatchVersion, kelosURL,
+		c.ReconcileInterval, c.BodyRetention, c.Routing.Version, dispatchVersion, kelosURL,
 		c.Lifecycle.WriteTokenFile != "", c.Lifecycle.ReconcileInterval, c.GitHub.AppDir != "", c.GitHub.ReconcileInterval,
 		c.GitHub.ConflictInterval, c.Readiness.ReconcileInterval, c.Readiness.NtfyToken != "", c.Costs.APIURL != "")
 }

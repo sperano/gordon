@@ -1,5 +1,5 @@
 {
-  "description": "A legacy reconciler resend is a new delivery of a request already handled (legacy reached the same Task name).",
+  "description": "A reconciliation resend is a new delivery of a request already handled: duplicate.",
   "delivery": {
     "source": "vikunja",
     "body": {
@@ -52,9 +52,6 @@
     "requests": [
       "vikunja/comment/90001"
     ]
-  },
-  "legacy": {
-    "tasks": []
   },
   "expect": {
     "outcome": "duplicate",

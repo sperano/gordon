@@ -47,13 +47,9 @@ type Processor struct {
 	Router route.Router
 	State  StateReader
 	// Tasks, when set, builds each dispatched run's Task before the
-	// decision is recorded; without it runs carry no Task (a worker
-	// without dispatch configuration, shadow only).
+	// decision is recorded; without it runs carry no Task.
 	Tasks TaskPreparer
-	// Shadow records every decision and executes none, whatever the
-	// ownership table says: no run and no action is queued.
-	Shadow bool
-	Owner  string
+	Owner string
 
 	Concurrency int
 	LeaseTTL    time.Duration
@@ -192,7 +188,7 @@ func (p *Processor) retry(ctx context.Context, log *slog.Logger, it store.Item, 
 }
 
 func (p *Processor) complete(ctx context.Context, log *slog.Logger, it store.Item, source string, dec route.Decision) {
-	rec, err := p.Store.Complete(ctx, it.Lease, dec, p.Shadow)
+	rec, err := p.Store.Complete(ctx, it.Lease, dec)
 	switch {
 	case errors.Is(err, store.ErrLeaseLost):
 		p.Metrics.InboxRetries.WithLabelValues(source, RetryLeaseLost).Inc()
@@ -207,17 +203,17 @@ func (p *Processor) complete(ctx context.Context, log *slog.Logger, it store.Ite
 	if len(rec.Families) == 0 {
 		p.Metrics.Decisions.WithLabelValues(source, metrics.None, metrics.Bound(string(rec.Outcome), metrics.Outcomes), "false").Inc()
 	}
-	attrs := []any{"outcome", string(rec.Outcome), "shadow", p.Shadow}
+	attrs := []any{"outcome", string(rec.Outcome)}
 	if rec.Reason != "" {
 		attrs = append(attrs, "reason", rec.Reason)
 	}
 	for _, f := range rec.Families {
 		// Executed as Complete records it: only a family with work queued.
-		executed := f.Execute && !p.Shadow && (len(f.Runs) > 0 || len(f.Actions) > 0)
+		executed := len(f.Runs) > 0 || len(f.Actions) > 0
 		p.Metrics.Decisions.WithLabelValues(source, metrics.Bound(string(f.Family), families),
 			metrics.Bound(string(f.Outcome), metrics.Outcomes), strconv.FormatBool(executed)).Inc()
 		attrs = append(attrs, slog.Group(string(f.Family), "outcome", string(f.Outcome), "reason", f.Reason,
-			"owner", string(f.Owner), "executed", executed, "runs", runNames(f.Runs), "actions", len(f.Actions)))
+			"executed", executed, "runs", runNames(f.Runs), "actions", len(f.Actions)))
 	}
 	log.Info("decided", attrs...)
 }

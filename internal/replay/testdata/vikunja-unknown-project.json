@@ -25,9 +25,6 @@
   },
   "state": {},
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "outcome": "ignore",
     "reason": "project-not-configured",

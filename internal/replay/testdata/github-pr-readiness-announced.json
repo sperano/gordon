@@ -126,26 +126,6 @@
     "readiness_read": true
   },
   "ledger": {},
-  "ownership": {
-    "rules": [
-      {
-        "project": "lucarne",
-        "family": "pr-readiness",
-        "owner": "gordon",
-        "evidence": [
-          "replay-parity",
-          "shadow-parity",
-          "rollback-tested",
-          "legacy-disabled"
-        ]
-      }
-    ]
-  },
-  "legacy": {
-    "tasks": [],
-    "divergence": "Gordon's backstop scan queues this delivery itself: no model-free pr-ready-cron-47d85cbe-\u003ctime\u003e Task scanning the repository",
-    "writes": []
-  },
   "expect": {
     "outcome": "duplicate",
     "delivery_key": "github/delivery/gordon-readiness/sperano/lucarne/7/0123456789abcdef0123456789abcdef01234567/5898240",
@@ -154,8 +134,6 @@
       {
         "family": "pr-readiness",
         "project": "lucarne",
-        "owner": "gordon",
-        "execute": true,
         "outcome": "duplicate",
         "reason": "already-announced"
       }

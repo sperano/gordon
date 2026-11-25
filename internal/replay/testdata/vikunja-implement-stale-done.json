@@ -44,12 +44,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "vikunja-4101-hollingsworth-opus"
-    ],
-    "divergence": "legacy filtered on the payload's done=false and started a run on a done task"
-  },
   "expect": {
     "outcome": "stale",
     "delivery_key": "vikunja/task.updated/4101/3111b25e431d9abc456c45a817b91594",
@@ -58,8 +52,6 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "stale",
         "reason": "task-done"
       }

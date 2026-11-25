@@ -2,8 +2,8 @@
 // stopped (limit_reaper.py), once the limit reset: a Kelos Task the limit
 // stopped has failed for good, and nothing fires when the limit resets.
 //
-// Each pass takes the failed runs of the projects where Gordon owns the
-// limit-restart family and that it has not decided about yet, reads the
+// Each pass takes the failed runs of the configured projects that it has
+// not decided about yet, reads the
 // namespace's Tasks once, and for each group of runs that must not run at
 // the same time (one Vikunja task, one reviewer on one pull request, one
 // pull request's follow-ups) with no Task still pending or running,
@@ -31,7 +31,6 @@ import (
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
-	"github.com/sperano/gordon/internal/rollout"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -77,10 +76,9 @@ type TaskLister interface {
 
 // Reaper is the limit restart pass (a worker.Pass).
 type Reaper struct {
-	Store     Store
-	Kelos     TaskLister
-	Config    profile.Config
-	Ownership rollout.Table
+	Store  Store
+	Kelos  TaskLister
+	Config profile.Config
 	// MaxRestarts bounds a chain; Grace is waited after the reset,
 	// Fallback after the completion when no reset time is known.
 	MaxRestarts     int
@@ -99,7 +97,7 @@ type stopped struct {
 
 // Once runs one pass. A decision that fails does not stop the others.
 func (r *Reaper) Once(ctx context.Context) error {
-	projects := r.owned()
+	projects := r.projects()
 	if len(projects) == 0 {
 		return nil
 	}
@@ -127,11 +125,12 @@ func (r *Reaper) Once(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// owned are the configured projects where Gordon executes limit restarts.
-func (r *Reaper) owned() []string {
+// projects are the configured projects, each once: Gordon restarts their
+// limit stops.
+func (r *Reaper) projects() []string {
 	var out []string
 	for _, p := range r.Config.Projects {
-		if r.Ownership.Executes(p.Name, run.LimitRestart) && !slices.Contains(out, p.Name) {
+		if !slices.Contains(out, p.Name) {
 			out = append(out, p.Name)
 		}
 	}
@@ -236,7 +235,7 @@ func (r *Reaper) newest(ctx context.Context, s stopped) error {
 
 // decide records one decision, counted.
 func (r *Reaper) decide(ctx context.Context, f store.FailedRun, mark string, rn *route.Run, actions []action.Action) error {
-	fd := route.FamilyDecision{Family: run.LimitRestart, Project: f.Project, Owner: rollout.Gordon, Execute: true,
+	fd := route.FamilyDecision{Family: run.LimitRestart, Project: f.Project,
 		Outcome: route.Act, Actions: actions}
 	if rn != nil {
 		fd.Outcome, fd.Runs = route.Dispatch, []route.Run{*rn}

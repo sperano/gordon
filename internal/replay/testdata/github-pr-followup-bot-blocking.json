@@ -75,11 +75,6 @@
     }
   },
   "ledger": {},
-  "legacy": {
-    "tasks": [
-      "pr-followup-vigie-42-r800001"
-    ]
-  },
   "expect": {
     "outcome": "dispatch",
     "delivery_key": "github/delivery/33333333-2222-3333-4444-555555555555",
@@ -88,8 +83,6 @@
       {
         "family": "pr-followup",
         "project": "vigie",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "dispatch",
         "runs": [
           {

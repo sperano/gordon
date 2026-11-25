@@ -1,18 +1,13 @@
 package config
 
 import (
-	"slices"
 	"time"
-
-	"github.com/sperano/gordon/internal/rollout"
-	"github.com/sperano/gordon/internal/run"
 )
 
 // GitHub is the worker's GitHub lifecycle configuration (Gordon 08).
 type GitHub struct {
 	// AppDir holds the GitHub App's keys (appID, installationID,
-	// privateKey), "" for none: GitHub actions then stay queued,
-	// deferred, as before this stage.
+	// privateKey); LoadWorker requires it.
 	AppDir string
 	// ReconcileInterval paces the GitHub reconciliation (0: off).
 	ReconcileInterval time.Duration
@@ -30,9 +25,6 @@ const (
 	DefaultGitHubGrace    = 10 * time.Minute
 )
 
-// githubWriting are the families whose actions write to GitHub.
-var githubWriting = []run.Family{run.PRFollowUp, run.PRReview, run.PRConflict, run.PRReadiness}
-
 func (r *reader) github() GitHub {
 	g := GitHub{AppDir: r.str("GORDON_GITHUB_APP_DIR", ""),
 		ReconcileInterval: r.offDuration("GORDON_GITHUB_RECONCILE_INTERVAL"),
@@ -45,16 +37,10 @@ func (r *reader) github() GitHub {
 	return g
 }
 
-// checkGitHubWriter refuses a worker that would execute a Gordon-owned
-// family writing to GitHub without the App to write as: its writes would
-// queue for ever while legacy, switched off for that family, writes none.
+// checkGitHubWriter refuses a worker without the App to write to GitHub
+// as (and to read check runs with): its GitHub writes would queue for ever.
 func (r *reader) checkGitHubWriter(c Worker) {
-	if c.Shadow {
-		return
-	}
-	for _, rule := range c.Ownership.Rules {
-		if rule.Owner == rollout.Gordon && slices.Contains(githubWriting, rule.Family) && c.GitHub.AppDir == "" {
-			r.fail("ownership rule %s/%s writes to GitHub: GORDON_GITHUB_APP_DIR is required", rule.Project, rule.Family)
-		}
+	if c.GitHub.AppDir == "" {
+		r.fail("GORDON_GITHUB_APP_DIR is required: Gordon's GitHub writes and check run reads need it")
 	}
 }

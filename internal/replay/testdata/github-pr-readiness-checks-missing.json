@@ -116,28 +116,6 @@
     "readiness_read": true
   },
   "ledger": {},
-  "ownership": {
-    "rules": [
-      {
-        "project": "vigie",
-        "family": "pr-readiness",
-        "owner": "gordon",
-        "evidence": [
-          "replay-parity",
-          "shadow-parity",
-          "rollback-tested",
-          "legacy-disabled"
-        ]
-      }
-    ]
-  },
-  "legacy": {
-    "tasks": [],
-    "divergence": "Gordon's backstop scan queues this delivery itself: no model-free pr-ready-cron-8b9418db-\u003ctime\u003e Task scanning the repository",
-    "writes": [
-      "post-notice:vikunja/task/4405:checks-missing:sperano/vigie#7@0123456789abcdef0123456789abcdef01234567 [\"check\"]"
-    ]
-  },
   "expect": {
     "outcome": "act",
     "delivery_key": "github/delivery/gordon-readiness/sperano/vigie/7/0123456789abcdef0123456789abcdef01234567/5898240",
@@ -146,8 +124,6 @@
       {
         "family": "pr-readiness",
         "project": "vigie",
-        "owner": "gordon",
-        "execute": true,
         "outcome": "act",
         "reason": "checks-missing",
         "actions": [

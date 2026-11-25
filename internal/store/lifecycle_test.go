@@ -17,10 +17,10 @@ import (
 
 const submitKey = "submit-task:kelos/kelos-agents/" + runName
 
-// claimed is dispatch(true) whose run's claim waits for its submission:
+// claimed is dispatch() whose run's claim waits for its submission:
 // a label after the submit, a notice after the label.
 func claimed() route.Decision {
-	dec := dispatch(true)
+	dec := dispatch()
 	fd := &dec.Families[0]
 	label := action.New(action.AddLabel, action.VikunjaTask(5), "in progress").WaitFor(fd.Actions[0])
 	fd.Actions = append(fd.Actions, label, action.Notice(action.VikunjaTask(5), "start", runName).WaitFor(label))
@@ -127,7 +127,7 @@ func TestCompleteDropsTheClaimOfARunTakenConcurrently(t *testing.T) {
 	dec := claimed()
 	dec.RequestKey = "vikunja/comment/2"
 	acceptRequest(t, s, "k2", "vikunja/comment/2")
-	rec, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec, false)
+	rec, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,14 +139,14 @@ func TestCompleteDropsTheClaimOfARunTakenConcurrently(t *testing.T) {
 	}
 }
 
-// TestCompleteQueuesRequeuesInShadow: a decision's requeues are synthetic
-// deliveries queued once, in shadow too.
-func TestCompleteQueuesRequeuesInShadow(t *testing.T) {
+// TestCompleteQueuesRequeues: a decision's requeues are synthetic
+// deliveries queued once.
+func TestCompleteQueuesRequeues(t *testing.T) {
 	s, dbURL := storetest.Open(t)
 	accept(t, s, "k1")
 	dec := route.Decision{Outcome: route.Ignore, DeliveryKey: "k1",
 		Requeue: []route.Requeue{{TaskID: 7, ProjectID: 3, Depth: 1}, {TaskID: 8, ProjectID: 3, Depth: 1}}}
-	if _, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec, true); err != nil {
+	if _, err := s.Complete(ctx, claimOne(t, s, "w").Lease, dec); err != nil {
 		t.Fatal(err)
 	}
 	if got := count(t, dbURL, `SELECT count(*) FROM inbox WHERE headers->>'X-Gordon-Synthetic' = 'requeue' AND state = 'pending'`); got != 2 {

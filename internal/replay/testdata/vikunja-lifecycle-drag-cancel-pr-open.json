@@ -58,10 +58,6 @@
       }
     ]
   },
-  "legacy": {
-    "tasks": [],
-    "writes": []
-  },
   "expect": {
     "outcome": "ignore",
     "delivery_key": "vikunja/task.updated/4121/c194b6505c56dc9fbbade61831cca5cb",
@@ -70,16 +66,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "not-in-doing"
       },
       {
         "family": "vikunja-drag-cancel",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "pr-open"
       }

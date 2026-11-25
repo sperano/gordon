@@ -1,5 +1,5 @@
 {
-  "description": "A card in To-Do whose run already finished stops nothing and keeps its label, as legacy does.",
+  "description": "A card in To-Do whose run already finished stops nothing and keeps its label.",
   "delivery": {
     "source": "vikunja",
     "body": {
@@ -54,10 +54,6 @@
       }
     ]
   },
-  "legacy": {
-    "tasks": [],
-    "writes": []
-  },
   "expect": {
     "outcome": "ignore",
     "delivery_key": "vikunja/task.updated/4122/93324397b77edb54092d939824bdaca7",
@@ -66,16 +62,12 @@
       {
         "family": "vikunja-implement",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "not-in-doing"
       },
       {
         "family": "vikunja-drag-cancel",
         "project": "hollingsworth",
-        "owner": "legacy",
-        "execute": false,
         "outcome": "ignore",
         "reason": "no-live-agent"
       }

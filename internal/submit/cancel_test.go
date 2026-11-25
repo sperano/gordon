@@ -41,7 +41,7 @@ func cancelOf(task string, runs ...string) action.Action {
 // implementation and discuss Tasks, a limit restart and a legacy
 // spawner's included, never a follow-up, a finished Task or another task's.
 func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	for _, tk := range []kelos.Task{
 		agentTask("vikunja-7-gordon-opus", "7", "", kelos.PhaseRunning),
 		agentTask("vikunja-7-gordon-opus-retry1", "7", "", kelos.PhasePending),
@@ -122,7 +122,7 @@ func (r recreateOnList) List(ctx context.Context, selector string) ([]kelos.Task
 // preconditioned on the listed uid, so the newer Task stays and the
 // cancellation is retried (not dead-lettered) to list it again.
 func TestCancelNeverDeletesATaskRecreatedSinceTheList(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	tk := agentTask("vikunja-gordon-claude-opus-7", "7", "", kelos.PhaseRunning)
 	e.kelos.Put(tk)
 	c := &Canceller{Store: e.store, Kelos: recreateOnList{Deleter: e.api, srv: e.kelos, task: tk}}
@@ -140,7 +140,7 @@ func TestCancelNeverDeletesATaskRecreatedSinceTheList(t *testing.T) {
 // TestCancelledRunIsNeverCreated: a drag before the queued submission
 // ran finishes the run; the submission then creates nothing.
 func TestCancelledRunIsNeverCreated(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	c := &Canceller{Store: e.store, Kelos: e.api}
 	if err := c.Execute(ctx, cancelOf("1624", name)); err != nil {
@@ -177,7 +177,7 @@ func (c cancelOnAdmission) WithAdmission(ctx context.Context, fn func(context.Co
 // read creates nothing, and the submission is recorded cancelled, as one
 // cancelled before it was claimed.
 func TestRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	e.exec.Runs = cancelOnAdmission{Store: e.store, name: name}
 	e.perform(t)
@@ -195,7 +195,7 @@ func TestRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
 // TestUncheckedRunCancelledDuringAdmissionIsNotCreated: an implementation
 // run with no limit and no branch also reads its run again under the lock.
 func TestUncheckedRunCancelledDuringAdmissionIsNotCreated(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	storetest.Exec(t, e.dbURL, `UPDATE runs SET task = task #- '{spec,branch}'`)
 	e.exec.Runs = cancelOnAdmission{Store: e.store, name: name}
@@ -226,7 +226,7 @@ func (s submitOnAdmission) WithAdmission(ctx context.Context, fn func(context.Co
 // TestRunSubmittedDuringAdmissionIsNotLoggedStopped: a run another
 // submitter created is skipped and logged as already submitted.
 func TestRunSubmittedDuringAdmissionIsNotLoggedStopped(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	r, err := e.store.RunToSubmit(ctx, name)
 	if err != nil {
@@ -247,7 +247,7 @@ func TestRunSubmittedDuringAdmissionIsNotLoggedStopped(t *testing.T) {
 // still finishes the queued run its first attempt did not, so its
 // submission creates nothing.
 func TestRecoverFinishesTheRuns(t *testing.T) {
-	e := newEnv(t, false, dispatch.Limits{})
+	e := newEnv(t, dispatch.Limits{})
 	name := e.implement(t, implementID, "claude-opus")
 	c := &Canceller{Store: e.store, Kelos: e.api}
 	if applied, err := c.Recover(ctx, cancelOf("1624", name)); err != nil || !applied {

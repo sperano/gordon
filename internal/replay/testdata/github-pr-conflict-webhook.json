@@ -48,9 +48,6 @@
   },
   "state": {},
   "ledger": {},
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "delivery_key": "github/delivery/33333333-2222-3333-4444-555555555555",
     "outcome": "ignore",

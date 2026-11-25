@@ -1,5 +1,5 @@
 {
-  "description": "The episode's run finished but its Task is still there: the episode is not run again, as the legacy Task name deduplicated it until its TTL.",
+  "description": "The episode's run finished but its Task is still there: the episode is not run again until the Task is gone.",
   "delivery": {
     "body": {
       "action": "gordon-conflict",
@@ -79,17 +79,12 @@
       }
     ]
   },
-  "legacy": {
-    "tasks": []
-  },
   "expect": {
     "delivery_key": "github/delivery/gordon-conflict/sperano/lucarne/lucarne/z/1",
     "families": [
       {
-        "execute": false,
         "family": "pr-conflict",
         "outcome": "duplicate",
-        "owner": "legacy",
         "project": "lucarne",
         "reason": "run-exists"
       }
