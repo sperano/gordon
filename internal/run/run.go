@@ -4,9 +4,12 @@
 // Names are exactly the legacy TaskSpawner nameTemplates (hollingsworth
 // helm/kelos/templates/taskspawners.yaml, commentspawners.yaml,
 // followupspawners.yaml, reviewspawners.yaml), because legacy pod hooks
-// (wait_for_blockers.py, announce_start.py, dedupe_pr_task.py,
-// limit_reaper.py) parse ids back out of them; a Task Gordon submits during
-// the migration must look like the one the spawner would have made.
+// (drag_cancel.py, followup_queued_notice.py, limit_reaper.py) match them
+// and shadow mode pairs a Gordon Task with the legacy Task of its name; a
+// Task Gordon submits during the migration must look like the one the
+// spawner would have made. An implementation or discuss run's name leads
+// with the Vikunja task id (vikunja-<task>-<project>-<variant>), so runs of
+// one task sort together.
 package run
 
 import (
@@ -98,7 +101,7 @@ type Identity struct {
 	Retry int `json:"retry,omitempty"`
 	// Ops marks a VikunjaImplement run in the ops mode (the legacy
 	// vikunja-ops-* spawners): the task's implementation run, named
-	// OpsNamePrefix-<project>-<variant>-<task>.
+	// OpsNamePrefix-<task>-<project>-<variant>.
 	Ops bool `json:"ops,omitempty"`
 }
 
@@ -116,15 +119,37 @@ func (i Identity) Name() string {
 	return name
 }
 
+// PreviousName is the name an implementation or discuss run had before
+// its name led with the task id (vikunja-<project>-<variant>-<task>), so
+// a run started under it still deduplicates; "" for every other family,
+// whose name did not change.
+func (i Identity) PreviousName() string {
+	var name string
+	switch {
+	case i.Family == VikunjaImplement && i.Ops:
+		name = fmt.Sprintf("%s-%s-%s-%d", OpsNamePrefix, i.Project, i.Variant, i.TaskID)
+	case i.Family == VikunjaImplement:
+		name = fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+	case i.Family == VikunjaDiscuss:
+		name = fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+	default:
+		return ""
+	}
+	if i.Retry > 0 {
+		name += fmt.Sprintf("-retry%d", i.Retry)
+	}
+	return name
+}
+
 func (i Identity) baseName() string {
 	switch i.Family {
 	case VikunjaImplement:
 		if i.Ops {
-			return fmt.Sprintf("%s-%s-%s-%d", OpsNamePrefix, i.Project, i.Variant, i.TaskID)
+			return fmt.Sprintf("%s-%d-%s-%s", OpsNamePrefix, i.TaskID, i.Project, i.Variant)
 		}
-		return fmt.Sprintf("vikunja-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+		return fmt.Sprintf("vikunja-%d-%s-%s", i.TaskID, i.Project, i.Variant)
 	case VikunjaDiscuss:
-		return fmt.Sprintf("vikunja-discuss-%s-%s-%d", i.Project, i.Variant, i.TaskID)
+		return fmt.Sprintf("vikunja-discuss-%d-%s-%s", i.TaskID, i.Project, i.Variant)
 	case VikunjaFollowUp, VikunjaFollowUpAnswer, VikunjaFollowUpDiscuss:
 		// One name across the three modes, so a task whose labels change
 		// between deliveries still deduplicates (commentspawners.yaml).

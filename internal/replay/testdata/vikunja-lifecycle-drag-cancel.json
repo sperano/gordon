@@ -46,7 +46,7 @@
   "ledger": {
     "runs": [
       {
-        "name": "vikunja-hollingsworth-claude-opus-4120",
+        "name": "vikunja-4120-hollingsworth-claude-opus",
         "active": true,
         "exists": true,
         "family": "vikunja-implement",
@@ -66,7 +66,7 @@
     "writes": [
       "cancel-run:vikunja/task/4120",
       "remove-label:vikunja/task/4120:in progress",
-      "post-notice:vikunja/task/4120:stop:vikunja-hollingsworth-claude-opus-4120"
+      "post-notice:vikunja/task/4120:stop:vikunja-4120-hollingsworth-claude-opus"
     ]
   },
   "expect": {
@@ -93,7 +93,7 @@
             "key": "cancel-run:vikunja/task/4120",
             "kind": "cancel-run",
             "target": "vikunja/task/4120",
-            "detail": "vikunja-hollingsworth-claude-opus-4120"
+            "detail": "vikunja-4120-hollingsworth-claude-opus"
           },
           {
             "key": "remove-label:vikunja/task/4120:in progress",
@@ -103,11 +103,11 @@
             "after": "cancel-run:vikunja/task/4120"
           },
           {
-            "key": "post-notice:vikunja/task/4120:stop:vikunja-hollingsworth-claude-opus-4120",
+            "key": "post-notice:vikunja/task/4120:stop:vikunja-4120-hollingsworth-claude-opus",
             "kind": "post-notice",
             "target": "vikunja/task/4120",
             "value": "stop",
-            "detail": "vikunja-hollingsworth-claude-opus-4120",
+            "detail": "vikunja-4120-hollingsworth-claude-opus",
             "after": "remove-label:vikunja/task/4120:in progress"
           }
         ]

@@ -342,7 +342,7 @@ func TestNewVariantIsConfiguration(t *testing.T) {
 	for i, r := range w.AgentConfigRefs {
 		refs[i] = r.Name
 	}
-	if rn.Name != "vikunja-gordon-claude-next-1624" || w.Model != "claude-next-6" || w.Effort != "high" ||
+	if rn.Name != "vikunja-1624-gordon-claude-next" || w.Model != "claude-next-6" || w.Effort != "high" ||
 		!slices.Equal(refs, []string{"base", "vikunja-claude-next"}) || !containsEnv(w.PodOverrides.Env, "AGENT_MODEL", "claude-next-6") ||
 		rn.Task.Metadata.Labels[dispatch.VariantLabel] != "claude-next" {
 		t.Fatalf("run %s worker %+v refs %v", rn.Name, w, refs)

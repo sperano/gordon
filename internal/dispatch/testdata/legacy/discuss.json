@@ -16,7 +16,7 @@
       "vikunja.spe.quebec/task": "1624",
       "vikunja.spe.quebec/variant": "claude-opus"
     },
-    "name": "vikunja-discuss-gordon-claude-opus-1624",
+    "name": "vikunja-discuss-1624-gordon-claude-opus",
     "namespace": "kelos-agents"
   },
   "spec": {

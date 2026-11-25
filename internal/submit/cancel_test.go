@@ -43,9 +43,11 @@ func cancelOf(task string, runs ...string) action.Action {
 func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 	e := newEnv(t, false, dispatch.Limits{})
 	for _, tk := range []kelos.Task{
-		agentTask("vikunja-gordon-claude-opus-7", "7", "", kelos.PhaseRunning),
-		agentTask("vikunja-gordon-claude-opus-7-retry1", "7", "", kelos.PhasePending),
-		agentTask("vikunja-discuss-gordon-gpt-sol-7", "7", "", kelos.PhaseRunning),
+		agentTask("vikunja-7-gordon-claude-opus", "7", "", kelos.PhaseRunning),
+		agentTask("vikunja-7-gordon-claude-opus-retry1", "7", "", kelos.PhasePending),
+		agentTask("vikunja-discuss-7-gordon-gpt-sol", "7", "", kelos.PhaseRunning),
+		// Started before the task id led the name.
+		agentTask("vikunja-gordon-claude-sonnet-7", "7", "", kelos.PhaseRunning),
 		agentTask("vikunja-discuss-gordon-claude-opus-7", "7", "", kelos.PhaseSucceeded),
 		agentTask("vikunja-fu-gordon-7-c1", "7", "task-followup", kelos.PhaseRunning),
 		// No role label and named for the task: only the name guard skips it.
@@ -55,14 +57,14 @@ func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 		e.kelos.Put(tk)
 	}
 	c := &Canceller{Store: e.store, Kelos: e.api}
-	a := cancelOf("7", "vikunja-gordon-claude-opus-7")
+	a := cancelOf("7", "vikunja-7-gordon-claude-opus")
 	if applied, err := c.Recover(ctx, a); err != nil || applied {
 		t.Fatalf("Recover before = %v, %v", applied, err)
 	}
 	if err := c.Execute(ctx, a); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"vikunja-discuss-gordon-gpt-sol-7", "vikunja-gordon-claude-opus-7", "vikunja-gordon-claude-opus-7-retry1"}
+	want := []string{"vikunja-7-gordon-claude-opus", "vikunja-7-gordon-claude-opus-retry1", "vikunja-discuss-7-gordon-gpt-sol", "vikunja-gordon-claude-sonnet-7"}
 	if got := e.kelos.Deletes(); !slices.Equal(got, want) {
 		t.Fatalf("deleted %v, want %v", got, want)
 	}
@@ -71,6 +73,34 @@ func TestCancelDeletesTheLiveAgentTasks(t *testing.T) {
 	}
 	if err := c.Execute(ctx, cancelOf("7")); err != nil || len(e.kelos.Deletes()) != len(want) {
 		t.Fatalf("a second cancellation: %v, deletes %v", err, e.kelos.Deletes())
+	}
+}
+
+// TestAgentTaskNameMatchesBothShapes: the name guard takes the task's
+// implementation, ops and discuss runs named with the task id first and in
+// the shape before it, never a follow-up or another task's run.
+func TestAgentTaskNameMatchesBothShapes(t *testing.T) {
+	cases := map[string]bool{
+		"vikunja-7-gordon-claude-opus":            true,
+		"vikunja-7-gordon-claude-opus-retry2":     true,
+		"vikunja-discuss-7-gordon-gpt-sol":        true,
+		"vikunja-ops-7-hollingsworth-claude-opus": true,
+		"vikunja-gordon-claude-opus-7":            true,
+		"vikunja-gordon-claude-opus-7-retry1":     true,
+		"vikunja-discuss-gordon-gpt-sol-7":        true,
+		"vikunja-ops-hollingsworth-claude-opus-7": true,
+		"vikunja-fu-gordon-7-c1":                  false,
+		"vikunja-fu-gordon-7":                     false,
+		"vikunja-17-gordon-claude-opus":           false,
+		"vikunja-gordon-claude-opus-17":           false,
+		"vikunja-7":                               false,
+		"vikunja-7-":                              false,
+	}
+	re := agentTaskName("7")
+	for name, want := range cases {
+		if got := re.MatchString(name); got != want {
+			t.Errorf("agentTaskName(7) matches %q = %v, want %v", name, got, want)
+		}
 	}
 }
 

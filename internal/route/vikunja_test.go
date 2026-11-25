@@ -153,7 +153,7 @@ func TestFreshProjectWins(t *testing.T) {
 	r := router()
 	moved := r.Decide(updated(t, task(5, 136, nil, "claude-opus")), route.State{Task: fresh(5, 139, nil, "claude-opus")}, replay.Ledger{})
 	fd := family(t, moved)
-	if fd.Project != "lucarne" || len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-lucarne-claude-opus-5" {
+	if fd.Project != "lucarne" || len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-5-lucarne-claude-opus" {
 		t.Errorf("moved task: project %q runs %+v", fd.Project, fd.Runs)
 	}
 	gone := r.Decide(updated(t, task(5, 136, nil, "claude-opus")), route.State{Task: fresh(5, 99, nil, "claude-opus")}, replay.Ledger{})

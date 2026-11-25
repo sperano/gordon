@@ -31,7 +31,7 @@
   "ledger": {},
   "legacy": {
     "tasks": [
-      "vikunja-hollingsworth-claude-opus-4101"
+      "vikunja-4101-hollingsworth-claude-opus"
     ],
     "divergence": "Legacy dispatched from the webhook payload; Gordon decides from fresh state, so it retries until the task can be read."
   },
