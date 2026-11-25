@@ -297,7 +297,7 @@ func TestPermissionSetsAreNarrow(t *testing.T) {
 		{"pull requests", PullRequests, `{"pull_requests":"write"}`},
 		{"draft", Draft, `{"contents":"write","pull_requests":"write"}`},
 		{"checks", Checks, `{"checks":"write"}`},
-		{"comments", Comments, `{"issues":"write","metadata":"read"}`},
+		{"comments", Comments, `{"metadata":"read","pull_requests":"write"}`},
 	} {
 		if got, _ := json.Marshal(c.perms); string(got) != c.want {
 			t.Errorf("%s permissions %s, want %s", c.name, got, c.want)

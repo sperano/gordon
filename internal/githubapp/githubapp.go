@@ -58,10 +58,11 @@ var (
 	PullRequests = map[string]string{"pull_requests": "write"}
 	Draft        = map[string]string{"pull_requests": "write", "contents": "write"}
 	Checks       = map[string]string{"checks": "write"}
-	// Comments posts and reads PR conversation comments (Issues: write is
-	// enough, GitHub takes it or Pull requests: write) and reads the
-	// repository's visibility.
-	Comments = map[string]string{"issues": "write", "metadata": "read"}
+	// Comments posts and reads PR conversation comments and reads the
+	// repository's visibility. The endpoint is /issues/{n}/comments, but on
+	// a pull request an App token needs Pull requests: write; Issues:
+	// write alone is refused with 403.
+	Comments = map[string]string{"pull_requests": "write", "metadata": "read"}
 	// Merge merges a pull request (auto_merge.MERGE_PERMISSIONS); without
 	// Workflows, a PR touching .github/workflows is refused.
 	Merge = map[string]string{"contents": "write", "pull_requests": "write"}
