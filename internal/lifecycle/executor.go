@@ -102,7 +102,7 @@ func (e *Executor) handler(k action.Kind) (handler, bool) {
 	case action.AddLabel:
 		return handler{e.labelApplied, e.addLabel}, true
 	case action.RemoveLabel:
-		return handler{e.unlabelApplied, e.removeLabel}, true
+		return handler{e.unlabelApplied, e.unlabel}, true
 	case action.MoveBucket:
 		return handler{e.moveApplied, e.move}, true
 	case action.Assign:
@@ -221,29 +221,6 @@ func (e *Executor) addLabel(ctx context.Context, a action.Action) error {
 	return e.unlessStillHeld(ctx, a)
 }
 
-// unlessStillHeld takes a held run's queued label off again when the run
-// started or stopped while it was added: its removal, which waits for the
-// submission only, may have run before the label landed. A run still
-// held after the add leaves that removal to come, and another held run
-// of the task keeps the label for its own. A failed read is
-// retried, and the retry finds the label there: the reconciliation's
-// cleanup takes it off then.
-func (e *Executor) unlessStillHeld(ctx context.Context, a action.Action) error {
-	name := route.HeldRun(a.Detail)
-	if name == "" {
-		return nil
-	}
-	held, err := e.held(ctx, name)
-	if err != nil || held {
-		return err
-	}
-	id, _ := taskTarget(a)
-	if other, err := e.Runs.TaskHeldBesides(ctx, id, name, run.TaskFamilies); err != nil || other {
-		return err
-	}
-	return e.removeLabel(ctx, a)
-}
-
 func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, error) {
 	id, err := taskTarget(a)
 	if err != nil {
@@ -267,19 +244,27 @@ func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, e
 // removeLabel removes every label of that title, by the ids on the task
 // (Gordon may not see a label by title it did not create).
 func (e *Executor) removeLabel(ctx context.Context, a action.Action) error {
+	_, err := e.removeLabels(ctx, a)
+	return err
+}
+
+// removeLabels removes the labels and returns the ids it removed.
+func (e *Executor) removeLabels(ctx context.Context, a action.Action) ([]int64, error) {
 	id, _ := taskTarget(a)
 	t, err := e.W.Task(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var removed []int64
 	for _, l := range t.Labels {
 		if l.Title == a.Value {
 			if err := e.W.RemoveLabel(ctx, id, l.ID); err != nil {
-				return err
+				return removed, err
 			}
+			removed = append(removed, l.ID)
 		}
 	}
-	return nil
+	return removed, nil
 }
 
 func (e *Executor) doneApplied(ctx context.Context, a action.Action) (bool, error) {
