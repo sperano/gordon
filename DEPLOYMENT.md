@@ -91,7 +91,7 @@ client address to `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for`).
 | `GORDON_KELOS_CA_FILE` | the pod's ServiceAccount `ca.crt` | CA bundle trusted for the API server; an empty value is the same as unset |
 | `GORDON_KELOS_BUSY_DELAY` | `30s` | wait of a submission deferred by a full variant limit, a held branch or a timed-out wait for the admission lock |
 | `GORDON_VIKUNJA_WRITE_TOKEN_FILE` | required | the token the Vikunja lifecycle writes with (labels, buckets, assignees, reactions, comments), Gordon Cole's (`policy.vikunja_service_user`): only that user's comments count as Gordon's notices. The worker is also refused with an empty `policy.vikunja_service_user`, `policy.vikunja_web_url` or `policy.cancel_reaction`. Re-read per request, so a rotated Secret applies without a restart |
-| `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress` or `action-needed`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
+| `GORDON_VIKUNJA_RECONCILE_INTERVAL` | `0` (off) | pace of the Vikunja reconciliation: every open task of the configured projects (and every done one still labelled `in progress`, `action-needed` or `policy.queued_label`) whose state the router may act on is queued as a synthetic `task.updated`, once per state; owner `/gordon` comments of the window that no delivery brought are queued too. Needs a read token that may list tasks (`tasks.read_all`) |
 | `GORDON_FOLLOWUP_LOOKBACK`, `GORDON_FOLLOWUP_REDISPATCH_AFTER` | `12h`, `2m` | the window of the owner requests the reconciliation recovers: older than the second (the webhook may still be on its way), younger than the first |
 | `GORDON_LUCARNE_URL`, `GORDON_LUCARNE_CLUSTER`, `GORDON_SILLAGE_URL` | empty | the start and failure notices' private links (`<lucarne>/runs/<cluster>/kelos-agents/<Task uid>`, `<sillage>/task/<Vikunja host>/<task id>`, on a pull request `<sillage>/open?url=<PR URL>`, only on a private repository); unset, no link |
 | `GORDON_GITHUB_APP_DIR` | required | directory of the GitHub App's keys, one file each: `appID`, `installationID`, `privateKey` (PEM, PKCS#1 or PKCS#8; the `github-app` Secret). Every GitHub write uses an installation token narrowed to its repository and that write's permissions, minted once per scope and cached until near expiry; readiness reads check runs as the App |
@@ -215,6 +215,24 @@ pr-open notice promises a ready-to-merge one).
   created), the task's live agent Tasks deleted (limit restarts and
   legacy spawners' included), then `in progress` removed and the stop
   notice posted.
+- **Held runs** (`vikunja-queued`): with the routing config's
+  `policy.queued_label` set (Hollingsworth: `queued`; it must exist in
+  Vikunja and be visible to Gordon's user), a run of a Vikunja task
+  (implementation, discuss, follow-ups) whose submission is held back
+  (its variant limit full, its branch held) gets that label on its task
+  and one `queued` notice saying why (`<variant> ALREADY RUNS 2 OF ITS 2`,
+  `BRANCH <branch> IS HELD BY KELOS TASK <task>`). Both are queued by the
+  submit executor on the run's generation, keyed by the run and, for the
+  notice, the hold without its count: retries for the same reason write
+  nothing, a new reason posts a new notice. Neither is written once the
+  run started or stopped. The label comes off when the Task is created,
+  when a drag-cancel stops the run, and when the observer finishes a run
+  whose submission was dead-lettered; a task still labelled with no run
+  held loses it on its next `task.updated` (the reconciliation queues
+  such a task again once its hold ended). The first deferral of any
+  action, and each change of its reason, is logged at info (`action held
+  back`), later ones at debug. The worker refuses a queued label another
+  policy label already holds. Unset, nothing is labelled.
 - **Done cleanup** (`vikunja-done-cleanup`): a done task loses `in progress`
   and `action-needed`, each only while it is still done.
 - **Chains** (`vikunja-chain`): `subtask_chain.py`'s rules, from the
@@ -240,6 +258,7 @@ pr-open notice promises a ready-to-merge one).
 | `vikunja-drag-cancel` | the write token; `list` and `delete` on `tasks` |
 | `vikunja-done-cleanup`, `vikunja-chain` | the write token; the reconciliation |
 | `vikunja-failure` | the write token |
+| `vikunja-queued` | the write token; `policy.queued_label` and its label in Vikunja; the reconciliation for stale labels |
 | `vikunja-cost` | the write token; `GORDON_SILLAGE_API_URL` and egress to Sillage |
 
 ## GitHub lifecycle (Gordon 08, 08b)

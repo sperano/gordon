@@ -96,6 +96,7 @@ func (p Policy) labelNamed(label string) (string, bool) {
 		{"auto_merge_label", p.AutoMergeLabel}, {"ready_to_merge_label", p.ReadyToMergeLabel},
 		{"round_limit_label", p.RoundLimitLabel}, {"draft_label", p.DraftLabel},
 		{"fix_suggestions_label", p.FixSuggestionsLabel}, {"no_review_label", p.NoReviewLabel},
+		{"queued_label", p.QueuedLabel},
 	} {
 		if l.value == label {
 			return l.name, true

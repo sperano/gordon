@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/event"
+	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
@@ -259,5 +261,103 @@ func TestKnownDeliveriesAndHandledRequests(t *testing.T) {
 	handled, err := s.HandledRequests(ctx, []string{"vikunja/comment/1", "vikunja/comment/9"})
 	if err != nil || !handled["vikunja/comment/1"] || handled["vikunja/comment/9"] {
 		t.Fatalf("HandledRequests = %v, %v", handled, err)
+	}
+}
+
+// TestHeldTasks: a task is held while a run of the families is still
+// submitting; not once its Task exists, not for another family.
+func TestHeldTasks(t *testing.T) {
+	s, _ := storetest.Open(t)
+	id := recorded(t, s, "k1", "vikunja/comment/1", submitOnly())
+	families := []run.Family{run.VikunjaFollowUp}
+	got, err := s.HeldTasks(ctx, []int64{5, 55}, families)
+	if err != nil || !maps.Equal(got, map[int64]bool{5: true}) {
+		t.Fatalf("HeldTasks = %v (%v), want task 5", got, err)
+	}
+	if got, err := s.HeldTasks(ctx, []int64{5}, run.AgentFamilies); err != nil || len(got) != 0 {
+		t.Fatalf("HeldTasks of other families = %v (%v), want none", got, err)
+	}
+	if err := s.RunSubmitted(ctx, runName, id, "uid", kelos.PhaseRunning); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.HeldTasks(ctx, []int64{5}, families); err != nil || len(got) != 0 {
+		t.Fatalf("HeldTasks once created = %v (%v), want none", got, err)
+	}
+}
+
+// TestTaskHeldBesides: another run of the task still submitting holds
+// it; the run itself, another family's run or another task's does not,
+// nor the run once its Task is created.
+func TestTaskHeldBesides(t *testing.T) {
+	s, _ := storetest.Open(t)
+	id := recorded(t, s, "k1", "vikunja/comment/1", submitOnly())
+	families := []run.Family{run.VikunjaFollowUp}
+	for _, c := range []struct {
+		name     string
+		task     int64
+		besides  string
+		families []run.Family
+		want     bool
+	}{
+		{"another run", 5, "vikunja-5-gordon-opus", families, true},
+		{"the run itself", 5, runName, families, false},
+		{"another family", 5, "vikunja-5-gordon-opus", run.AgentFamilies, false},
+		{"another task", 55, "vikunja-5-gordon-opus", families, false},
+	} {
+		if got, err := s.TaskHeldBesides(ctx, c.task, c.besides, c.families); err != nil || got != c.want {
+			t.Errorf("%s: TaskHeldBesides = %v (%v), want %v", c.name, got, err, c.want)
+		}
+	}
+	if err := s.RunSubmitted(ctx, runName, id, "uid", kelos.PhaseRunning); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.TaskHeldBesides(ctx, 5, "vikunja-5-gordon-opus", families); err != nil || got {
+		t.Fatalf("TaskHeldBesides once created = %v (%v), want false", got, err)
+	}
+}
+
+// TestHoldNotices: the run's hold notices of the generation, counted
+// once per key, the newest one's detail last; another run's, another
+// generation's and another kind's are not counted.
+func TestHoldNotices(t *testing.T) {
+	s, _ := storetest.Open(t)
+	id := recorded(t, s, "k1", "vikunja/comment/1", submitOnly())
+	if n, last, err := s.HoldNotices(ctx, id, runName, "queued"); err != nil || n != 0 || last != "" {
+		t.Fatalf("HoldNotices of none = %d, %q (%v), want 0", n, last, err)
+	}
+	target := action.VikunjaTask(5)
+	limit := action.Notice(target, "queued", runName+":limit:claude-opus:2")
+	limit.Detail += ":2"
+	branch := action.Notice(target, "queued", runName+":branch:b:other-1")
+	others := []action.Action{action.Notice(target, "queued", "other-run:limit:claude-opus:2"),
+		action.Notice(target, "stop", runName)}
+	for _, as := range [][]action.Action{{limit}, {limit}, others, {branch}} {
+		if err := s.QueueRunActions(ctx, id, run.VikunjaQueued, "gordon", as); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, last, err := s.HoldNotices(ctx, id, runName, "queued"); err != nil || n != 2 || last != branch.Detail {
+		t.Fatalf("HoldNotices = %d, %q (%v), want 2, %q", n, last, err, branch.Detail)
+	}
+	if n, _, err := s.HoldNotices(ctx, id+1, runName, "queued"); err != nil || n != 0 {
+		t.Fatalf("HoldNotices of another generation = %d (%v), want 0", n, err)
+	}
+}
+
+// TestClaimedActionCarriesItsLastError: a deferred action is claimed
+// again with the reason of its deferral.
+func TestClaimedActionCarriesItsLastError(t *testing.T) {
+	s, _ := storetest.Open(t)
+	recorded(t, s, "k1", "vikunja/comment/1", submitOnly())
+	first, err := s.ClaimActions(ctx, "w", 1, time.Minute)
+	if err != nil || len(first) != 1 || first[0].LastError != "" {
+		t.Fatalf("first claim %+v (%v), want no last error", first, err)
+	}
+	if err := s.ActionDefer(ctx, first[0].Lease, false, 0, "variant x runs 1 of 1"); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.ClaimActions(ctx, "w", 1, time.Minute)
+	if err != nil || len(again) != 1 || again[0].LastError != "variant x runs 1 of 1" {
+		t.Fatalf("second claim %+v (%v), want the deferral's reason", again, err)
 	}
 }

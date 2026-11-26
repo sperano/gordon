@@ -182,7 +182,7 @@ func vikunjaReconciler(cfg config.Worker, s *store.Store, vikunja upstream.Vikun
 	if l.ReconcileInterval <= 0 {
 		return nil
 	}
-	return &lifecycle.Reconciler{Tasks: vikunja, Inbox: s, Config: cfg.Routing,
+	return &lifecycle.Reconciler{Tasks: vikunja, Inbox: s, Held: s, Config: cfg.Routing,
 		Lookback: l.Lookback, After: l.RedispatchAfter, Metrics: m, Log: log.With("pass", "vikunja-reconcile")}
 }
 

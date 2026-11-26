@@ -200,7 +200,13 @@ func (o *Outbox) Perform(ctx context.Context, c store.ClaimedAction) {
 		if delay <= 0 {
 			delay = o.DeferDelay
 		}
-		o.deferAction(ctx, log, c, kind, d.limit, delay, logging.Scrub(d.err.Error()))
+		reason := logging.Scrub(d.err.Error())
+		if reason != c.LastError {
+			// The first deferral of this hold (a new reason since the
+			// last one): later retries for the same reason stay at debug.
+			log.Info("action held back", "reason", reason, "limit", d.limit, "delay", delay.String())
+		}
+		o.deferAction(ctx, log, c, kind, d.limit, delay, reason)
 		return
 	}
 	o.finish(ctx, log, c, kind, result, err)

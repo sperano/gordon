@@ -35,6 +35,10 @@ type ClaimedAction struct {
 	// before writing again.
 	Recover   bool
 	CreatedAt time.Time
+	// LastError is the row's last error before this claim, "" for none:
+	// the reason of its previous deferral, or the error that left it to
+	// retry, ambiguous or with its lease expired.
+	LastError string
 }
 
 // ClaimActions leases up to limit due actions to owner for ttl: pending
@@ -44,7 +48,7 @@ type ClaimedAction struct {
 // does not count.
 func (s *Store) ClaimActions(ctx context.Context, owner string, limit int, ttl time.Duration) ([]ClaimedAction, error) {
 	rows, err := s.pool.Query(ctx, `WITH due AS (
-			SELECT id, state FROM actions a
+			SELECT id, state, last_error FROM actions a
 			WHERE ((state IN ('pending', 'ambiguous') AND next_attempt_at <= now())
 			   OR (state = 'running' AND lease_until < now()))
 			  AND (after_key = '' OR state <> 'pending' OR EXISTS (SELECT 1 FROM actions d
@@ -58,7 +62,7 @@ func (s *Store) ClaimActions(ctx context.Context, owner string, limit int, ttl t
 		FROM due WHERE a.id = due.id
 		RETURNING a.id, a.lease_token::text, a.key, a.kind, a.target, a.value, a.detail, a.after_key,
 			a.family, a.project,
-			coalesce((SELECT i.scope FROM inbox i WHERE i.id = a.inbox_id), ''), a.inbox_id, a.attempts, due.state <> 'pending', a.created_at`,
+			coalesce((SELECT i.scope FROM inbox i WHERE i.id = a.inbox_id), ''), a.inbox_id, a.attempts, due.state <> 'pending', a.created_at, due.last_error`,
 		limit, owner, ttl.Seconds())
 	if err != nil {
 		return nil, err
@@ -67,7 +71,7 @@ func (s *Store) ClaimActions(ctx context.Context, owner string, limit int, ttl t
 		var c ClaimedAction
 		var kind, target string
 		err := r.Scan(&c.ID, &c.Token, &c.Action.Key, &kind, &target, &c.Action.Value, &c.Action.Detail, &c.Action.After,
-			&c.Family, &c.Project, &c.Scope, &c.InboxID, &c.Attempts, &c.Recover, &c.CreatedAt)
+			&c.Family, &c.Project, &c.Scope, &c.InboxID, &c.Attempts, &c.Recover, &c.CreatedAt, &c.LastError)
 		c.Action.Kind, c.Action.Target = action.Kind(kind), action.Target(target)
 		return c, err
 	})

@@ -24,6 +24,10 @@ type SubmitRun struct {
 	Family  run.Family
 	State   string
 	Task    *kelos.Task
+	// Project and TaskID locate the run on its Vikunja task (0 for a run
+	// of none), for the notice of a held submission.
+	Project string
+	TaskID  int64
 }
 
 // Submitted reports a run no longer submitting: its Task created by this
@@ -38,8 +42,9 @@ func (r SubmitRun) Stopped() bool { return r.State == runFinished }
 // RunToSubmit reads a run by Task name; ErrNoRun when there is none.
 func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error) {
 	r := SubmitRun{Name: name}
-	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), family, state, task
-		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.Family, &r.State, &r.Task)
+	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), family, state, task,
+			project, coalesce((identity->>'task_id')::bigint, 0)
+		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.Family, &r.State, &r.Task, &r.Project, &r.TaskID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SubmitRun{}, ErrNoRun
 	}
@@ -154,4 +159,42 @@ func (s *Store) PruneTasks(ctx context.Context, retention time.Duration) (int64,
 		return 0, err
 	}
 	return tag.RowsAffected(), nil
+}
+
+// HeldTasks returns which of the Vikunja tasks have a run of families
+// still submitting: a run Gordon may hold back from Kelos.
+func (s *Store) HeldTasks(ctx context.Context, ids []int64, families []run.Family) (map[int64]bool, error) {
+	fs := make([]string, len(families))
+	for i, f := range families {
+		fs[i] = string(f)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT (identity->>'task_id')::bigint FROM runs
+		WHERE state = '`+runSubmitting+`' AND family = ANY($2)
+		  AND identity->>'task_id' = ANY(SELECT unnest($1::bigint[])::text)`, ids, fs)
+	if err != nil {
+		return nil, err
+	}
+	held, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]bool, len(held))
+	for _, id := range held {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// TaskHeldBesides reports a run of families other than name, of the
+// Vikunja task, still submitting: one more run Gordon holds back on it.
+func (s *Store) TaskHeldBesides(ctx context.Context, task int64, name string, families []run.Family) (bool, error) {
+	fs := make([]string, len(families))
+	for i, f := range families {
+		fs[i] = string(f)
+	}
+	var held bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM runs
+		WHERE state = '`+runSubmitting+`' AND family = ANY($3) AND name <> $2
+		  AND identity->>'task_id' = $1::bigint::text)`, task, name, fs).Scan(&held)
+	return held, err
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/sperano/gordon/internal/event"
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -38,7 +40,8 @@ func (l *lister) TaskComments(_ context.Context, id int64) ([]event.TaskComment,
 }
 
 func (l *lister) LabelID(_ context.Context, title string) (int64, bool, error) {
-	return map[string]int64{"in progress": 1}[title], title == "in progress", nil
+	id, ok := map[string]int64{"in progress": 1, queuedLabel: queuedLabelID}[title]
+	return id, ok, nil
 }
 
 // inbox is an in-memory Inbox that, like the store, keeps each key once.
@@ -225,5 +228,70 @@ func TestReconcileSkipsOnlyATaskWhoseCommentsFail(t *testing.T) {
 	}
 	if got := queuedTasks(in); !slices.Equal(got, []string{"comment/20", "task/1"}) {
 		t.Fatalf("queued %v, want task 1's update and task 2's request", got)
+	}
+}
+
+// heldTasks answers HeldTasks from a set, recording the asks.
+type heldTasks struct {
+	held map[int64]bool
+	asks [][]int64
+	err  error
+}
+
+func (h *heldTasks) HeldTasks(_ context.Context, ids []int64, families []run.Family) (map[int64]bool, error) {
+	if !slices.Equal(families, run.TaskFamilies) {
+		return nil, errors.New("asked for other families")
+	}
+	h.asks = append(h.asks, ids)
+	return h.held, h.err
+}
+
+// TestReconcileRequeuesAQueuedTaskOnceNoRunIsHeld: a task carrying queued
+// is a candidate, and its run's hold ending is a new state even though
+// nothing on the task changed, so the router can take a stale label off.
+func TestReconcileRequeuesAQueuedTaskOnceNoRunIsHeld(t *testing.T) {
+	q := upstream.ListedTask{Task: event.Task{ID: 1, ProjectID: 3, Labels: []string{queuedLabel}}}
+	plain := upstream.ListedTask{Task: event.Task{ID: 2, ProjectID: 3, Labels: []string{"in progress"}}}
+	doneQueued := upstream.ListedTask{Task: event.Task{ID: 4, ProjectID: 3, Done: true, Labels: []string{queuedLabel}}}
+	l := &lister{open: []upstream.ListedTask{q, plain}, done: []upstream.ListedTask{doneQueued}}
+	in := &inbox{keys: map[string]store.Delivery{}}
+	r := reconciler(l, in)
+	r.Config.Policy.QueuedLabel = queuedLabel
+	held := &heldTasks{held: map[int64]bool{1: true}}
+	r.Held = held
+	if n, err := r.pass(context.Background()); err != nil || n != 3 {
+		t.Fatalf("first pass queued %d (%v), want the queued, in-progress and done queued tasks", n, err)
+	}
+	if !slices.Contains(l.filters, fmt.Sprintf("done = true && labels in %d && project in %s", queuedLabelID, r.projectIDs())) {
+		t.Errorf("filters %q lack the queued done sweep", l.filters)
+	}
+	// Both done sweeps list task 4 here; it is asked for once. The
+	// in-progress task carries no queued label.
+	if len(held.asks) != 1 || !slices.Equal(held.asks[0], []int64{1, 4}) {
+		t.Fatalf("held asked %v, want tasks 1 and 4 once", held.asks)
+	}
+	if n, _ := r.pass(context.Background()); n != 0 {
+		t.Fatalf("an unchanged pass queued %d", n)
+	}
+	held.held = nil
+	if n, _ := r.pass(context.Background()); n != 1 {
+		t.Fatalf("the hold ending queued %d, want the queued task again", n)
+	}
+	held.err = errors.New("store down")
+	if _, err := r.pass(context.Background()); err == nil || err.Error() != "held runs of queued tasks: store down" {
+		t.Fatalf("a failed held read: %v", err)
+	}
+}
+
+// TestReconcileWithoutQueuedLabelAsksNothing: no queued label configured,
+// the held runs are never read and the label makes no candidate.
+func TestReconcileWithoutQueuedLabelAsksNothing(t *testing.T) {
+	q := upstream.ListedTask{Task: event.Task{ID: 1, ProjectID: 3, Labels: []string{queuedLabel}}}
+	l := &lister{open: []upstream.ListedTask{q}}
+	r := reconciler(l, &inbox{keys: map[string]store.Delivery{}})
+	held := &heldTasks{}
+	r.Held = held
+	if n, err := r.pass(context.Background()); err != nil || n != 0 || len(held.asks) != 0 {
+		t.Fatalf("queued %d (%v) with %d held asks, want nothing", n, err, len(held.asks))
 	}
 }

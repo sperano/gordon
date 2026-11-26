@@ -178,6 +178,10 @@ type Policy struct {
 	AutoMergeLabelCreator string `json:"auto_merge_label_creator,omitempty"`
 	VikunjaServiceUser    string `json:"vikunja_service_user,omitempty"`
 	VikunjaWebURL         string `json:"vikunja_web_url,omitempty"`
+	// QueuedLabel marks a Vikunja task whose run Gordon holds back from
+	// Kelos (its variant limit full, its branch held), "" for none: the
+	// label comes off once the Task is created or the run stops.
+	QueuedLabel string `json:"queued_label,omitempty"`
 	// PRReadiness is pr_open's PR_READINESS_ENABLED: the pr-open notice
 	// promises a ready-to-merge notice.
 	PRReadiness bool `json:"pr_readiness,omitempty"`

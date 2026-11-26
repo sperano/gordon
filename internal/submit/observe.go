@@ -42,14 +42,23 @@ type Observer struct {
 	// Succeeded or Failed), in order: the run's completion record, the
 	// lifecycle's failure notices.
 	Finished []FinishHook
-	Batch    int
-	Metrics  *metrics.Metrics
-	Log      *slog.Logger
+	// Unsubmitted is told of each run whose submission ended without a
+	// Task (dead-lettered), before the run is recorded finished (nil:
+	// none): the lifecycle takes a held run's queued label off.
+	Unsubmitted UnsubmittedHook
+	Batch       int
+	Metrics     *metrics.Metrics
+	Log         *slog.Logger
 }
 
 // FinishHook handles a run whose Task t finished.
 type FinishHook interface {
 	Finished(ctx context.Context, r store.ObservedRun, t kelos.Task) error
+}
+
+// UnsubmittedHook handles a run finished before its Task was created.
+type UnsubmittedHook interface {
+	Unsubmitted(ctx context.Context, r store.ObservedRun) error
 }
 
 // Once observes one batch of runs against one Task list.
@@ -89,13 +98,20 @@ func (o *Observer) observe(ctx context.Context, r store.ObservedRun, tasks map[s
 		if t.Finished() {
 			state = ObservedFinished
 		}
-		if r.Exists && r.Phase == t.Phase() && r.State != "submitting" {
+		if r.Exists && r.Phase == t.Phase() && r.State != store.RunSubmitting {
 			return nil
 		}
 		return o.record(ctx, r, &t, state)
-	case r.State == "submitting" && pendingSubmit(r.SubmitState):
+	case r.State == store.RunSubmitting && pendingSubmit(r.SubmitState):
 		return nil // not created yet
 	default:
+		if r.State == store.RunSubmitting && o.Unsubmitted != nil {
+			// Written first, as the finish hooks: an observation not
+			// recorded after it is observed, and told, again.
+			if err := o.Unsubmitted.Unsubmitted(ctx, r); err != nil {
+				return fmt.Errorf("lifecycle of unsubmitted run %s: %w", r.Name, err)
+			}
+		}
 		return o.record(ctx, r, nil, ObservedGone)
 	}
 }

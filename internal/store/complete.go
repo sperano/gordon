@@ -23,6 +23,9 @@ const (
 // RunFinished is a finished run's state.
 const RunFinished = runFinished
 
+// RunSubmitting is the state of a run whose Task is not created yet.
+const RunSubmitting = runSubmitting
+
 // requestKinds are the event kinds whose request key names an owner
 // request the router deduplicates (a `/gordon` comment or review). A
 // task.updated's request key names the task, which changes many times.

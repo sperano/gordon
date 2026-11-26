@@ -11,6 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -19,9 +20,11 @@ import (
 // stores (webhook_enricher.FOLLOWUP_REACTION, the reconciler's ⏳).
 var reactionEmoji = map[string]string{"eyes": "👀", "hourglass": "⏳"}
 
-// Runs reads the runs a notice names.
+// Runs reads the runs a notice names, and whether a Vikunja task has
+// another run still held back from Kelos.
 type Runs interface {
 	RunInfo(ctx context.Context, name string) (store.RunInfo, error)
+	TaskHeldBesides(ctx context.Context, task int64, name string, families []run.Family) (bool, error)
 }
 
 // Locker serialises the check and the post of notices on one target, so
@@ -99,7 +102,7 @@ func (e *Executor) handler(k action.Kind) (handler, bool) {
 	case action.AddLabel:
 		return handler{e.labelApplied, e.addLabel}, true
 	case action.RemoveLabel:
-		return handler{e.unlabelApplied, e.removeLabel}, true
+		return handler{e.unlabelApplied, e.unlabel}, true
 	case action.MoveBucket:
 		return handler{e.moveApplied, e.move}, true
 	case action.Assign:
@@ -183,19 +186,47 @@ func (e *Executor) labelApplied(ctx context.Context, a action.Action) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return hasLabel(t, a.Value) || e.skip(t, a), nil
+	if hasLabel(t, a.Value) || e.skip(t, a) {
+		return true, nil
+	}
+	if name := route.HeldRun(a.Detail); name != "" {
+		return e.heldLabelApplied(ctx, t, name)
+	}
+	return false, nil
+}
+
+// held reports a run still waiting for its Task: a held run's queued
+// label and notice are not written once it started or stopped.
+func (e *Executor) held(ctx context.Context, name string) (bool, error) {
+	r, err := e.Runs.RunInfo(ctx, name)
+	if errors.Is(err, store.ErrUnknownRun) {
+		return false, nil
+	}
+	return err == nil && r.State == store.RunSubmitting, err
+}
+
+// labelID is the id of the label titled title.
+func (e *Executor) labelID(ctx context.Context, title string) (int64, error) {
+	label, ok, err := e.W.LabelID(ctx, title)
+	switch {
+	case err != nil:
+		return 0, err
+	case !ok:
+		return 0, worker.Permanent(fmt.Errorf("no label titled %q visible to Gordon", title))
+	}
+	return label, nil
 }
 
 func (e *Executor) addLabel(ctx context.Context, a action.Action) error {
 	id, _ := taskTarget(a)
-	label, ok, err := e.W.LabelID(ctx, a.Value)
-	switch {
-	case err != nil:
+	label, err := e.labelID(ctx, a.Value)
+	if err != nil {
 		return err
-	case !ok:
-		return worker.Permanent(fmt.Errorf("no label titled %q visible to Gordon", a.Value))
 	}
-	return e.W.AddLabel(ctx, id, label)
+	if err := e.W.AddLabel(ctx, id, label); err != nil {
+		return err
+	}
+	return e.unlessStillHeld(ctx, a)
 }
 
 func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, error) {
@@ -207,25 +238,39 @@ func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, e
 	if err != nil {
 		return false, err
 	}
-	return !hasLabel(t, a.Value) || e.skip(t, a), nil
+	if e.skip(t, a) {
+		return true, nil
+	}
+	if name := route.UnheldRun(a.Detail); name != "" {
+		return e.unheldApplied(ctx, t, name, hasLabel(t, a.Value))
+	}
+	return !hasLabel(t, a.Value), nil
 }
 
 // removeLabel removes every label of that title, by the ids on the task
 // (Gordon may not see a label by title it did not create).
 func (e *Executor) removeLabel(ctx context.Context, a action.Action) error {
+	_, err := e.removeLabels(ctx, a)
+	return err
+}
+
+// removeLabels removes the labels and returns the ids it removed.
+func (e *Executor) removeLabels(ctx context.Context, a action.Action) ([]int64, error) {
 	id, _ := taskTarget(a)
 	t, err := e.W.Task(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var removed []int64
 	for _, l := range t.Labels {
 		if l.Title == a.Value {
 			if err := e.W.RemoveLabel(ctx, id, l.ID); err != nil {
-				return err
+				return removed, err
 			}
+			removed = append(removed, l.ID)
 		}
 	}
-	return nil
+	return removed, nil
 }
 
 func (e *Executor) doneApplied(ctx context.Context, a action.Action) (bool, error) {

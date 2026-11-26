@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 )
 
@@ -40,6 +41,11 @@ type fakeVikunja struct {
 	// refuseReactions answers that many task reactions of a value 503,
 	// unapplied.
 	refuseReactions map[string]int
+	// refuseLabelAdds answers the i-th label add 503, unapplied, when
+	// its i-th value is true.
+	refuseLabelAdds []bool
+	// refuseLabelLists answers that many label lists 503.
+	refuseLabelLists int
 }
 
 func newFake(t *testing.T) *fakeVikunja {
@@ -193,6 +199,14 @@ func (f *fakeVikunja) addLabel(w http.ResponseWriter, r *http.Request, ids []int
 		http.Error(w, `{"code":4002}`, http.StatusNotFound)
 		return
 	}
+	refuse := len(f.refuseLabelAdds) > 0 && f.refuseLabelAdds[0]
+	if len(f.refuseLabelAdds) > 0 {
+		f.refuseLabelAdds = f.refuseLabelAdds[1:]
+	}
+	if refuse {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	t.Labels = append(t.Labels, f.labels[i])
 	reply(w, f.labels[i])
 }
@@ -222,6 +236,11 @@ func (f *fakeVikunja) assign(w http.ResponseWriter, r *http.Request, ids []int64
 }
 
 func (f *fakeVikunja) listLabels(w http.ResponseWriter, r *http.Request, _ []int64) {
+	if f.refuseLabelLists > 0 {
+		f.refuseLabelLists--
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	s := r.URL.Query().Get("s")
 	reply(w, paged(r, slices.DeleteFunc(slices.Clone(f.labels), func(l Label) bool { return !strings.Contains(l.Title, s) })))
 }
@@ -344,6 +363,17 @@ func (r runs) RunInfo(_ context.Context, name string) (store.RunInfo, error) {
 		return i, nil
 	}
 	return store.RunInfo{}, fmt.Errorf("%w: %s", store.ErrUnknownRun, name)
+}
+
+// TaskHeldBesides reports a run of families but name, of the task, still
+// submitting.
+func (r runs) TaskHeldBesides(_ context.Context, task int64, name string, families []run.Family) (bool, error) {
+	for _, i := range r {
+		if i.Name != name && i.Identity.TaskID == task && i.State == store.RunSubmitting && slices.Contains(families, i.Family) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // noLock is a Locker for tests that run one executor.

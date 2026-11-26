@@ -49,7 +49,8 @@ func TestRunToSubmitAndSubmitted(t *testing.T) {
 	r, err := s.RunToSubmit(ctx, runName)
 	if err != nil || r.InboxID != id || r.Variant != "claude-opus" || r.Family != run.VikunjaFollowUp ||
 		r.State != "submitting" || r.Submitted() || r.Stopped() ||
-		r.Task == nil || r.Task.Spec.Prompt != "do it" || r.Task.Metadata.Labels["a"] != "b" {
+		r.Task == nil || r.Task.Spec.Prompt != "do it" || r.Task.Metadata.Labels["a"] != "b" ||
+		r.Project != "gordon" || r.TaskID != 5 {
 		t.Fatalf("RunToSubmit = %+v, %v", r, err)
 	}
 	if err := s.RunSubmitted(ctx, runName, id+1, "uid-other", kelos.PhaseRunning); err != nil {

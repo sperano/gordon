@@ -154,6 +154,23 @@ func TestWorkerOpsMode(t *testing.T) {
 	}
 }
 
+func TestWorkerQueuedLabel(t *testing.T) {
+	env := workerEnv(t)
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"policy":{"pr_readiness":true,"queued_label":"queued"}}`)
+	c, err := LoadWorker(envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Routing.Policy.QueuedLabel; got != "queued" {
+		t.Fatalf("queued label %q", got)
+	}
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", `{"policy":{"pr_readiness":true,"queued_label":"in progress"}}`)
+	if _, err := LoadWorker(envOf(env)); err == nil || !strings.Contains(err.Error(),
+		`GORDON_ROUTING_CONFIG_FILE: policy queued_label "in progress" is already policy in_progress_label`) {
+		t.Fatalf("queued label shared with in progress: %v", err)
+	}
+}
+
 func TestWorkerRefusals(t *testing.T) {
 	cases := map[string]struct {
 		set  map[string]string

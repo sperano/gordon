@@ -126,3 +126,15 @@ func (s *Store) OlderReviews(ctx context.Context, name string) ([]string, error)
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
+
+// HoldNotices returns how many hold notices (post-notice actions of
+// kind, their detail led by the run's name) the generation inboxID
+// queued for the run, and the newest one's detail ("" for none).
+func (s *Store) HoldNotices(ctx context.Context, inboxID int64, name, kind string) (int, string, error) {
+	var n int
+	var last string
+	err := s.pool.QueryRow(ctx, `SELECT count(*), coalesce((array_agg(detail ORDER BY id DESC))[1], '')
+		FROM actions WHERE inbox_id = $1 AND kind = $2 AND value = $3 AND split_part(detail, ':', 1) = $4`,
+		inboxID, string(action.PostNotice), kind, name).Scan(&n, &last)
+	return n, last, err
+}

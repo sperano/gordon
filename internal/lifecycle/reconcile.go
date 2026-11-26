@@ -16,6 +16,7 @@ import (
 	"github.com/sperano/gordon/internal/metrics"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/upstream"
 )
@@ -43,6 +44,11 @@ type Inbox interface {
 	HandledRequests(ctx context.Context, keys []string) (map[string]bool, error)
 }
 
+// HeldTasks reports which tasks have a run of families still submitting.
+type HeldTasks interface {
+	HeldTasks(ctx context.Context, ids []int64, families []run.Family) (map[int64]bool, error)
+}
+
 // Reconciler recovers what webhooks missed (subtask-chain-reconcile,
 // reconcile_vikunja_followups.py, the failure reporter's done sweeps):
 // every pass lists the configured projects' open tasks and the done ones
@@ -61,8 +67,12 @@ type Reconciler struct {
 	// Lookback, older than After (the webhook may still be on its way).
 	Lookback, After time.Duration
 	Now             func() time.Time
-	Metrics         *metrics.Metrics
-	Log             *slog.Logger
+	// Held answers which tasks have a run still submitting (nil: none
+	// asked): a queued task's state includes it, so a hold that ended
+	// queues the task again and the router takes a stale label off.
+	Held    HeldTasks
+	Metrics *metrics.Metrics
+	Log     *slog.Logger
 }
 
 // Reconcile results, the vikunja_reconcile_runs_total result label.
@@ -104,13 +114,18 @@ func (r *Reconciler) pass(ctx context.Context) (int, error) {
 	for _, lt := range open {
 		byID[lt.Task.ID] = lt
 	}
+	all := append(open, done...)
+	held, err := r.held(ctx, all)
+	if err != nil {
+		return 0, err
+	}
 	var ds []store.Delivery
-	for _, lt := range append(open, done...) {
+	for _, lt := range all {
 		if !r.candidate(lt.Task) {
 			continue
 		}
 		d, err := store.TaskUpdate(lt.Task.ID, lt.Task.ProjectID,
-			event.Synthetic{Reconcile: digest(lt, r.openSubtasks(lt.Task, byID)), Depth: route.MaxRequeueDepth})
+			event.Synthetic{Reconcile: digest(lt, r.openSubtasks(lt.Task, byID), held[lt.Task.ID]), Depth: route.MaxRequeueDepth})
 		if err != nil {
 			r.Log.Warn("vikunja reconciliation skipped a task", "task", lt.Task.ID, "error", err)
 			continue
@@ -132,12 +147,35 @@ func (r *Reconciler) projectIDs() string {
 	return strings.Join(ids, ", ")
 }
 
-// doneLabelled lists the done tasks still carrying in progress or
-// action-needed (done_unlabel.sweep, Flagger.sweep_done).
+// held is which of the listed tasks carrying the queued label have a run
+// still submitting.
+func (r *Reconciler) held(ctx context.Context, tasks []upstream.ListedTask) (map[int64]bool, error) {
+	label := r.Config.Policy.QueuedLabel
+	if r.Held == nil || label == "" {
+		return nil, nil
+	}
+	var ids []int64
+	for _, lt := range tasks {
+		if lt.Task.HasLabel(label) && !slices.Contains(ids, lt.Task.ID) {
+			ids = append(ids, lt.Task.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	held, err := r.Held.HeldTasks(ctx, ids, run.TaskFamilies)
+	if err != nil {
+		return nil, fmt.Errorf("held runs of queued tasks: %w", err)
+	}
+	return held, nil
+}
+
+// doneLabelled lists the done tasks still carrying in progress,
+// action-needed (done_unlabel.sweep, Flagger.sweep_done) or queued.
 func (r *Reconciler) doneLabelled(ctx context.Context, projects string) ([]upstream.ListedTask, error) {
 	p := r.Config.Policy
 	var out []upstream.ListedTask
-	for _, title := range []string{p.InProgressLabel, p.ActionNeededLabel} {
+	for _, title := range []string{p.InProgressLabel, p.ActionNeededLabel, p.QueuedLabel} {
 		if title == "" {
 			continue
 		}
@@ -158,8 +196,9 @@ func (r *Reconciler) doneLabelled(ctx context.Context, projects string) ([]upstr
 }
 
 // candidate is a task the router may act on: one with an agent assignee
-// (a run to start, a chain), a chain label, or the in-progress or
-// action-needed label (a drag to stop, a done task to clean).
+// (a run to start, a chain), a chain label, or the in-progress,
+// action-needed or queued label (a drag to stop, a done task to clean, a
+// stale queued label).
 func (r *Reconciler) candidate(t event.Task) bool {
 	p := r.Config.Policy
 	for _, a := range t.Assignees {
@@ -167,7 +206,7 @@ func (r *Reconciler) candidate(t event.Task) bool {
 			return true
 		}
 	}
-	for _, l := range []string{p.ChainLabel, p.InProgressLabel, p.ActionNeededLabel} {
+	for _, l := range []string{p.ChainLabel, p.InProgressLabel, p.ActionNeededLabel, p.QueuedLabel} {
 		if l != "" && t.HasLabel(l) {
 			return true
 		}
@@ -195,8 +234,9 @@ func (r *Reconciler) openSubtasks(t event.Task, open map[int64]upstream.ListedTa
 
 // digest names a listed task's state: a change of labels, assignees,
 // buckets, relations (a blocker done) or its update time is a new state,
-// and so is one of a chain parent's open subtasks.
-func digest(lt upstream.ListedTask, subtasks []upstream.ListedTask) string {
+// and so is one of a chain parent's open subtasks, and a queued task's
+// held run ending (held: a run of the task still submitting).
+func digest(lt upstream.ListedTask, subtasks []upstream.ListedTask, held bool) string {
 	type state struct {
 		T event.Task `json:"t"`
 		U time.Time  `json:"u"`
@@ -213,7 +253,8 @@ func digest(lt upstream.ListedTask, subtasks []upstream.ListedTask) string {
 	b, _ := json.Marshal(struct { //nolint:errcheck // plain structs
 		state
 		S []state `json:"s,omitempty"`
-	}{of(lt), subs})
+		H bool    `json:"h,omitempty"`
+	}{of(lt), subs, held})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:digestBytes])
 }

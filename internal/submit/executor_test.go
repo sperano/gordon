@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/sperano/gordon/internal/kelos/kelostest"
 	"github.com/sperano/gordon/internal/logging"
 	"github.com/sperano/gordon/internal/metrics"
+	"github.com/sperano/gordon/internal/notice"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
@@ -426,5 +429,67 @@ func TestSubmitWithoutABuiltTaskIsPermanent(t *testing.T) {
 	unknown := action.New(action.SubmitTask, action.KelosTask(route.KelosNamespace, "nobody"), "")
 	if err := e.exec.Execute(ctx, unknown); err == nil || err.Error() != "permanent: nobody: no such run" {
 		t.Fatalf("submission of an unknown run = %v, want a permanent refusal", err)
+	}
+}
+
+// holds records the holds it is told of.
+type holds struct {
+	got []notice.Hold
+	err error
+}
+
+func (h *holds) Held(_ context.Context, r store.SubmitRun, hold notice.Hold) error {
+	if r.Name != hold.Run || r.TaskID != implementID || r.Project != "gordon" || r.Family != run.VikunjaImplement {
+		return errors.New("told of another run: " + r.Name)
+	}
+	h.got = append(h.got, hold)
+	return h.err
+}
+
+// TestDeferralsTellTheHolds: every deferral tells the hook why, the
+// variant's count included; a created Task tells nothing.
+func TestDeferralsTellTheHolds(t *testing.T) {
+	e := newEnv(t, dispatch.Limits{Default: 1})
+	h := &holds{}
+	e.exec.Holds = h
+	e.kelos.Put(running("other-1", "claude-opus", "vigie", "", kelos.PhaseRunning))
+	name := e.implement(t, implementID, "claude-opus")
+	e.perform(t)
+	e.kelos.Put(running("vikunja-fu-gordon-1624-c1", "claude-sonnet", "gordon", "kelos/vikunja-1624", kelos.PhaseRunning))
+	e.due(t)
+	e.perform(t)
+	e.kelos.SetPhase("other-1", kelos.PhaseSucceeded)
+	e.kelos.SetPhase("vikunja-fu-gordon-1624-c1", kelos.PhaseSucceeded)
+	e.due(t)
+	e.perform(t)
+	want := []notice.Hold{
+		{Run: name, Reason: notice.HoldLimit, Variant: "claude-opus", Running: 1, Limit: 1},
+		{Run: name, Reason: notice.HoldBranch, Branch: "kelos/vikunja-1624", Holder: "vikunja-fu-gordon-1624-c1"},
+	}
+	if !slices.Equal(h.got, want) {
+		t.Fatalf("holds %+v, want %+v", h.got, want)
+	}
+	if st, _, _ := e.action(t, name); st != store.ActionDone {
+		t.Fatalf("after the holds: %s, want done", st)
+	}
+}
+
+// TestFailedHoldsStillDefer: a hook that failed is logged; the
+// submission stays deferred, uncounted, and tells it again next time.
+func TestFailedHoldsStillDefer(t *testing.T) {
+	e := newEnv(t, dispatch.Limits{Default: 1})
+	h := &holds{err: errors.New("store down")}
+	e.exec.Holds = h
+	e.kelos.Put(running("other-1", "claude-opus", "vigie", "", kelos.PhaseRunning))
+	name := e.implement(t, implementID, "claude-opus")
+	e.perform(t)
+	e.due(t)
+	e.perform(t)
+	if st, attempts, msg := e.action(t, name); st != store.ActionPending || attempts != 0 || msg != "variant claude-opus runs 1 of 1" {
+		t.Fatalf("after a failed hook: %s, %d attempts, %q; want deferred, uncounted", st, attempts, msg)
+	}
+	if len(h.got) != 2 || !strings.Contains(e.logs.String(), `"msg":"held run not reported on its task"`) ||
+		!strings.Contains(e.logs.String(), `"error":"store down"`) {
+		t.Fatalf("told %d times, logs %s; want twice with the failure logged", len(h.got), e.logs.String())
 	}
 }

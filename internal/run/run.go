@@ -15,6 +15,7 @@ package run
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -56,6 +57,10 @@ const (
 	// the latest one current (Gordon 12): model-free writes with no
 	// legacy implementation.
 	VikunjaCost Family = "vikunja-cost"
+	// VikunjaQueued labels and explains a Vikunja task's run Gordon holds
+	// back from Kelos, and takes the label off once no run of the task is
+	// held: model-free writes with no legacy implementation.
+	VikunjaQueued Family = "vikunja-queued"
 )
 
 // Families lists every family the router decides, in a stable order.
@@ -63,12 +68,16 @@ var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
 	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure, VikunjaAutoAssign,
-	PRConflict, LimitRestart, PRReadiness, VikunjaCost,
+	PRConflict, LimitRestart, PRReadiness, VikunjaCost, VikunjaQueued,
 }
 
 // AgentFamilies are the families whose runs work on a Vikunja task as its
 // agent (the implementation and discuss runs a drag to the backlog stops).
 var AgentFamilies = []Family{VikunjaImplement, VikunjaDiscuss}
+
+// TaskFamilies are the families whose runs come from a Vikunja task: its
+// agent runs and its follow-ups.
+var TaskFamilies = append(slices.Clone(AgentFamilies), VikunjaFollowUp, VikunjaFollowUpAnswer, VikunjaFollowUpDiscuss)
 
 // BranchPrefix is the legacy agent branch prefix (vikunjaSpawners.branchPrefix).
 const BranchPrefix = "kelos/vikunja-"
