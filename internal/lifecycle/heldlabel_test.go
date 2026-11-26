@@ -11,6 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
+	"github.com/sperano/gordon/internal/worker"
 )
 
 var errRead = errors.New("read failed")
@@ -186,5 +187,67 @@ func TestUnheldRemovalRestoresForARunHeldMeanwhile(t *testing.T) {
 				t.Fatalf("labels %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// TestHeldLabelAppliedCheckReadFails: a failed read in the held label's
+// applied check writes nothing and is retried.
+func TestHeldLabelAppliedCheckReadFails(t *testing.T) {
+	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	for name, rs := range map[string]*scriptedRuns{
+		"run read": {infos: []func() (store.RunInfo, error){readFails},
+			besides: []func() (bool, error){answer(false, nil)}},
+		"other-run read": {infos: []func() (store.RunInfo, error){runIn("active")},
+			besides: []func() (bool, error){answer(false, errRead)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ex, f := heldExecutor(t, "")
+			ex.Runs = rs
+			if err := ex.Execute(ctx, label); !errors.Is(err, errRead) {
+				t.Fatalf("Execute: %v, want %v", err, errRead)
+			}
+			if len(f.writes) != 0 {
+				t.Fatalf("writes %v, want none", f.writes)
+			}
+			if got := labels(f.get(5)); len(got) != 0 {
+				t.Fatalf("labels %v, want none", got)
+			}
+		})
+	}
+}
+
+// TestUnheldRemovalNothingRemovedCheckFails: a removal finding the label
+// already off, whose check after the removal fails, returns the failure
+// without adding the label.
+func TestUnheldRemovalNothingRemovedCheckFails(t *testing.T) {
+	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	ex, f := heldExecutor(t, "")
+	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
+		besides: []func() (bool, error){answer(true, nil), answer(false, errRead)}}
+	if err := ex.Execute(ctx, removal); !errors.Is(err, errRead) {
+		t.Fatalf("Execute: %v, want %v", err, errRead)
+	}
+	if len(f.writes) != 0 {
+		t.Fatalf("writes %v, want none", f.writes)
+	}
+	if got := labels(f.get(5)); len(got) != 0 {
+		t.Fatalf("labels %v, want none", got)
+	}
+}
+
+// TestUnheldRestoreLabelMissing: a removal restoring a label already off,
+// while another run is held, fails permanently when no label of that
+// title is visible.
+func TestUnheldRestoreLabelMissing(t *testing.T) {
+	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	ex, f := heldExecutor(t, "")
+	f.labels = slices.DeleteFunc(f.labels, func(l Label) bool { return l.Title == queuedLabel })
+	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
+		besides: []func() (bool, error){answer(true, nil)}}
+	if err := ex.Execute(ctx, removal); !worker.IsPermanent(err) {
+		t.Fatalf("Execute: %v, want a permanent error", err)
+	}
+	if len(f.writes) != 0 {
+		t.Fatalf("writes %v, want none", f.writes)
 	}
 }

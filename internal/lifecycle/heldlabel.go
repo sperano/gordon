@@ -68,7 +68,8 @@ func (e *Executor) unlabel(ctx context.Context, a action.Action) error {
 }
 
 // unheldRemove removes a run's queued label, then puts it back when
-// another run of the task is held by then. The check before the removal
+// another run of the task is held by then, or when that check fails
+// after a label was removed. The check before the removal
 // reads the runs outside any lock (the target lock's transaction holds a
 // pool connection), so another run can be held, and its label added,
 // between that check and the removal; a run held after this second check
@@ -82,14 +83,18 @@ func (e *Executor) unheldRemove(ctx context.Context, a action.Action, name strin
 	}
 	id, _ := taskTarget(a)
 	other, err := e.Runs.TaskHeldBesides(ctx, id, name, run.TaskFamilies)
-	if err == nil && !other {
+	switch {
+	case err == nil && !other:
 		return nil
+	case err != nil && len(removed) == 0:
+		return err
 	}
 	return errors.Join(err, e.restoreLabels(ctx, a, removed))
 }
 
 // restoreLabels puts the removed labels back, or the label titled as the
-// action's when none was removed (a retry after a failed restore).
+// action's when none was removed while another run is held (a retry
+// after a failed restore, or a label already off).
 func (e *Executor) restoreLabels(ctx context.Context, a action.Action, removed []int64) error {
 	if len(removed) == 0 {
 		l, err := e.labelID(ctx, a.Value)
