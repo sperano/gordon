@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/config"
 	"github.com/sperano/gordon/internal/costs"
 	"github.com/sperano/gordon/internal/dispatch"
@@ -19,8 +20,10 @@ import (
 	"github.com/sperano/gordon/internal/restart"
 	"github.com/sperano/gordon/internal/route"
 	"github.com/sperano/gordon/internal/sillage"
+	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/store/storetest"
 	"github.com/sperano/gordon/internal/submit"
+	"github.com/sperano/gordon/internal/upstream"
 )
 
 const kelosToken = "kelos-sa-token"
@@ -101,6 +104,26 @@ func TestServiceSubmitsToKelos(t *testing.T) {
 	}
 }
 
+// TestHoldWiring: the submit executor tells the held-run hooks of each
+// deferral, with the routing policy's queued label, and the Vikunja
+// reconciliation reads which tasks are held from the store.
+func TestHoldWiring(t *testing.T) {
+	cfg := config.Worker{Routing: profile.Defaults(), Kelos: &config.Kelos{}}
+	cfg.Routing.Policy.QueuedLabel = "queued"
+	s := &store.Store{}
+	ex, ok := executors(cfg, s, &kelos.Client{}, nil, nil, discardLog(), nil)[action.SubmitTask].(*submit.Executor)
+	if !ok {
+		t.Fatal("no submit executor with Kelos")
+	}
+	if h, ok := ex.Holds.(*lifecycle.Holds); !ok || h.Policy.QueuedLabel != "queued" || h.Store != s {
+		t.Errorf("submit executor holds %+v, want the held-run hooks on the store with the queued label", ex.Holds)
+	}
+	cfg.Lifecycle.ReconcileInterval = time.Minute
+	if r := vikunjaReconciler(cfg, s, upstream.Vikunja{}, nil, discardLog()); r == nil || r.Held != s {
+		t.Errorf("vikunja reconciler %+v, want the store's held tasks", r)
+	}
+}
+
 // TestPasses: the observer (its completion record first, then the
 // failure notices, then the cost notices) and the limit restarts.
 func TestPasses(t *testing.T) {
@@ -126,6 +149,9 @@ func TestPasses(t *testing.T) {
 	}
 	if _, ok := obs.Finished[2].(*costs.Hook); !ok {
 		t.Errorf("third hook %T, want the cost notices", obs.Finished[2])
+	}
+	if h, ok := obs.Unsubmitted.(*lifecycle.Holds); !ok || h.Policy.QueuedLabel != cfg.Routing.Policy.QueuedLabel {
+		t.Errorf("unsubmitted hook %+v, want the held-run hooks with the routing policy", obs.Unsubmitted)
 	}
 	r, ok := got[1].(*restart.Reaper)
 	if !ok || r.MaxRestarts != 4 || r.Grace != time.Minute || r.Fallback != time.Hour || len(r.Config.Projects) == 0 {

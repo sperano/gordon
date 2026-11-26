@@ -16,6 +16,7 @@ import (
 
 	"github.com/sperano/gordon/internal/lifecycle"
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 )
 
@@ -241,6 +242,11 @@ func (f fakeRuns) RunInfo(_ context.Context, name string) (store.RunInfo, error)
 		return store.RunInfo{}, fmt.Errorf("%w: %s", store.ErrUnknownRun, name)
 	}
 	return r, nil
+}
+
+// TaskHeldBesides: no GitHub write asks.
+func (fakeRuns) TaskHeldBesides(context.Context, int64, string, []run.Family) (bool, error) {
+	return false, nil
 }
 
 // lockCount counts target locks taken.

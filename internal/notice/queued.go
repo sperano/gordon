@@ -37,9 +37,11 @@ type Hold struct {
 // ErrHold is a hold detail that names no hold.
 var ErrHold = errors.New("bad hold detail")
 
-// Key names the hold, its counts left out: a run held again for the same
-// reason, however many Tasks its variant runs, is the same hold, and its
-// notice is posted once.
+// Key names the hold: the run, the reason and, for a full limit, the
+// variant and its limit, the running count left out (a run held again
+// for the same reason, however many Tasks its variant runs, is the same
+// hold, and its notice is posted once); for a held branch, the branch
+// and the Task holding it.
 func (h Hold) Key() string {
 	if h.Reason == HoldBranch {
 		return strings.Join([]string{h.Run, HoldBranch, h.Branch, h.Holder}, holdSep)

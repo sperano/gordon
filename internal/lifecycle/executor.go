@@ -11,6 +11,7 @@ import (
 	"github.com/sperano/gordon/internal/action"
 	"github.com/sperano/gordon/internal/profile"
 	"github.com/sperano/gordon/internal/route"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 	"github.com/sperano/gordon/internal/worker"
 )
@@ -19,9 +20,11 @@ import (
 // stores (webhook_enricher.FOLLOWUP_REACTION, the reconciler's ⏳).
 var reactionEmoji = map[string]string{"eyes": "👀", "hourglass": "⏳"}
 
-// Runs reads the runs a notice names.
+// Runs reads the runs a notice names, and whether a Vikunja task has
+// another run still held back from Kelos.
 type Runs interface {
 	RunInfo(ctx context.Context, name string) (store.RunInfo, error)
+	TaskHeldBesides(ctx context.Context, task int64, name string, families []run.Family) (bool, error)
 }
 
 // Locker serialises the check and the post of notices on one target, so
@@ -212,7 +215,33 @@ func (e *Executor) addLabel(ctx context.Context, a action.Action) error {
 	case !ok:
 		return worker.Permanent(fmt.Errorf("no label titled %q visible to Gordon", a.Value))
 	}
-	return e.W.AddLabel(ctx, id, label)
+	if err := e.W.AddLabel(ctx, id, label); err != nil {
+		return err
+	}
+	return e.unlessStillHeld(ctx, a)
+}
+
+// unlessStillHeld takes a held run's queued label off again when the run
+// started or stopped while it was added: its removal, which waits for the
+// submission only, may have run before the label landed. A run still
+// held after the add leaves that removal to come, and another held run
+// of the task keeps the label for its own. A failed read is
+// retried, and the retry finds the label there: the reconciliation's
+// cleanup takes it off then.
+func (e *Executor) unlessStillHeld(ctx context.Context, a action.Action) error {
+	name := route.HeldRun(a.Detail)
+	if name == "" {
+		return nil
+	}
+	held, err := e.held(ctx, name)
+	if err != nil || held {
+		return err
+	}
+	id, _ := taskTarget(a)
+	if other, err := e.Runs.TaskHeldBesides(ctx, id, name, run.TaskFamilies); err != nil || other {
+		return err
+	}
+	return e.removeLabel(ctx, a)
 }
 
 func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, error) {
@@ -224,7 +253,15 @@ func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, e
 	if err != nil {
 		return false, err
 	}
-	return !hasLabel(t, a.Value) || e.skip(t, a), nil
+	if !hasLabel(t, a.Value) || e.skip(t, a) {
+		return true, nil
+	}
+	if name := route.UnheldRun(a.Detail); name != "" {
+		// Another run of the task still held keeps the label: its own
+		// removal takes it off.
+		return e.Runs.TaskHeldBesides(ctx, id, name, run.TaskFamilies)
+	}
+	return false, nil
 }
 
 // removeLabel removes every label of that title, by the ids on the task

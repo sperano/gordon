@@ -35,34 +35,44 @@ func TestHoldActions(t *testing.T) {
 			Detail: route.DetailHeld + heldRun},
 		{Key: "post-notice:vikunja/task/5:queued:" + heldRun + ":limit:claude-opus:2", Kind: action.PostNotice,
 			Target: target, Value: notice.Queued, Detail: heldRun + ":limit:claude-opus:2:2"},
-		{Key: "remove-label:vikunja/task/5:queued:created", Kind: action.RemoveLabel, Target: target, Value: "queued",
-			After: "submit-task:kelos/kelos-agents/" + heldRun},
+		{Key: "remove-label:vikunja/task/5:queued:created:" + heldRun, Kind: action.RemoveLabel, Target: target,
+			Value: "queued", Detail: route.DetailUnheld + heldRun, After: "submit-task:kelos/kelos-agents/" + heldRun},
 	}
-	if got := route.HoldActions(queuedPolicy(), 5, h); !reflect.DeepEqual(got, want) {
+	if got := route.HoldActions(queuedPolicy(), 5, h, 0); !reflect.DeepEqual(got, want) {
 		t.Fatalf("hold actions\n%+v\nwant\n%+v", got, want)
 	}
-	if got := route.HoldActions(profile.Defaults().Policy, 5, h); got != nil {
+	want[1].Key += ":2"
+	if got := route.HoldActions(queuedPolicy(), 5, h, 2); !reflect.DeepEqual(got, want) {
+		t.Fatalf("the third hold notice's actions\n%+v\nwant\n%+v", got, want)
+	}
+	if got := route.HoldActions(profile.Defaults().Policy, 5, h, 0); got != nil {
 		t.Fatalf("hold actions without a queued label: %+v", got)
 	}
 }
 
-func TestReleaseAction(t *testing.T) {
-	a, ok := route.ReleaseAction(queuedPolicy(), 5)
-	want := action.Action{Key: "remove-label:vikunja/task/5:queued:released", Kind: action.RemoveLabel,
-		Target: action.VikunjaTask(5), Value: "queued"}
-	if !ok || a != want {
-		t.Fatalf("release %+v (%v), want %+v", a, ok, want)
-	}
-	if _, ok := route.ReleaseAction(profile.Defaults().Policy, 5); ok {
-		t.Fatal("a release without a queued label")
+func TestHeldAndUnheldRun(t *testing.T) {
+	for detail, want := range map[string][2]string{
+		route.DetailHeld + heldRun:   {heldRun, ""},
+		route.DetailUnheld + heldRun: {"", heldRun},
+		heldRun:                      {"", ""},
+		route.DetailClaim:            {"", ""},
+		"":                           {"", ""},
+	} {
+		if got := [2]string{route.HeldRun(detail), route.UnheldRun(detail)}; got != want {
+			t.Errorf("HeldRun, UnheldRun(%q) = %q, want %q", detail, got, want)
+		}
 	}
 }
 
-func TestHeldRun(t *testing.T) {
-	for detail, want := range map[string]string{route.DetailHeld + heldRun: heldRun, route.DetailClaim: "", "": ""} {
-		if got := route.HeldRun(detail); got != want {
-			t.Fatalf("HeldRun(%q) = %q, want %q", detail, got, want)
-		}
+func TestReleaseAction(t *testing.T) {
+	a, ok := route.ReleaseAction(queuedPolicy(), 5, heldRun)
+	want := action.Action{Key: "remove-label:vikunja/task/5:queued:released:" + heldRun, Kind: action.RemoveLabel,
+		Target: action.VikunjaTask(5), Value: "queued", Detail: route.DetailUnheld + heldRun}
+	if !ok || a != want {
+		t.Fatalf("release %+v (%v), want %+v", a, ok, want)
+	}
+	if _, ok := route.ReleaseAction(profile.Defaults().Policy, 5, heldRun); ok {
+		t.Fatal("a release without a queued label")
 	}
 }
 
@@ -85,6 +95,10 @@ func TestQueuedCleanup(t *testing.T) {
 					Target: action.VikunjaTask(5), Value: "queued"}}}},
 		{"a follow-up held", []route.RunRecord{{Name: "vikunja-fu-sillage-5-c9", Active: true, Family: run.VikunjaFollowUp, TaskID: 5}},
 			route.FamilyDecision{Family: run.VikunjaQueued, Project: "sillage", Outcome: route.Ignore, Reason: route.ReasonRunHeld}},
+		{"a run ended with no Task", []route.RunRecord{{Name: heldRun, Family: run.VikunjaImplement, TaskID: 5}},
+			route.FamilyDecision{Family: run.VikunjaQueued, Project: "sillage", Outcome: route.Act,
+				Actions: []action.Action{{Key: "remove-label:vikunja/task/5:queued:cleared", Kind: action.RemoveLabel,
+					Target: action.VikunjaTask(5), Value: "queued"}}}},
 		{"a review held", []route.RunRecord{{Name: "review", Active: true, Family: run.PRReview, TaskID: 5}},
 			route.FamilyDecision{Family: run.VikunjaQueued, Project: "sillage", Outcome: route.Act,
 				Actions: []action.Action{{Key: "remove-label:vikunja/task/5:queued:cleared", Kind: action.RemoveLabel,

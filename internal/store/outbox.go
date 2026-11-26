@@ -35,8 +35,9 @@ type ClaimedAction struct {
 	// before writing again.
 	Recover   bool
 	CreatedAt time.Time
-	// LastError is the row's last error before this claim: the reason
-	// of its previous deferral, "" for none.
+	// LastError is the row's last error before this claim, "" for none:
+	// the reason of its previous deferral, or the error that left it to
+	// retry, ambiguous or with its lease expired.
 	LastError string
 }
 

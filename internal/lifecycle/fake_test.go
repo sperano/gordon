@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/run"
 	"github.com/sperano/gordon/internal/store"
 )
 
@@ -344,6 +345,17 @@ func (r runs) RunInfo(_ context.Context, name string) (store.RunInfo, error) {
 		return i, nil
 	}
 	return store.RunInfo{}, fmt.Errorf("%w: %s", store.ErrUnknownRun, name)
+}
+
+// TaskHeldBesides reports a run of families but name, of the task, still
+// submitting.
+func (r runs) TaskHeldBesides(_ context.Context, task int64, name string, families []run.Family) (bool, error) {
+	for _, i := range r {
+		if i.Name != name && i.Identity.TaskID == task && i.State == store.RunSubmitting && slices.Contains(families, i.Family) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // noLock is a Locker for tests that run one executor.
