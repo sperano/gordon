@@ -37,8 +37,8 @@ func prEvent(t *testing.T, o prOpts) event.Delivery {
 
 // reviewDispatch is one reviewer's submission and the supersede of the
 // older heads' reviews that waits for it.
-var reviewDispatch = []string{"submit-task:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345",
-	"supersede-reviews:kelos/kelos-agents/review-vigie-pr-challenger-4-abc12345"}
+var reviewDispatch = []string{"submit-task:kelos/kelos-agents/vikunja-5-vigie-pr-challenger-4-abc12345",
+	"supersede-reviews:kelos/kelos-agents/vikunja-5-vigie-pr-challenger-4-abc12345"}
 
 func TestReviewGates(t *testing.T) {
 	r := router()
@@ -90,19 +90,46 @@ func TestReviewGates(t *testing.T) {
 	}
 }
 
+// TestReviewRunNameFromFreshBranch: only the fresh head branch decides
+// whether a review is named after its Vikunja task.
+func TestReviewRunNameFromFreshBranch(t *testing.T) {
+	r := router()
+	other := openPR()
+	other.HeadRef = "feature"
+	cases := []struct {
+		name string
+		o    prOpts
+		pr   *event.PullRequest
+		want string
+	}{
+		{"agent branch", prOpts{action: "opened", author: "sperano", head: "feature"}, openPR(),
+			"vikunja-5-vigie-pr-challenger-4-abc12345"},
+		{"other branch", prOpts{action: "synchronize", author: "sperano", head: "kelos/vikunja-5"}, other,
+			"review-vigie-pr-challenger-4-abc12345"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fd := family(t, r.Decide(prEvent(t, c.o), route.State{PullRequest: c.pr}, replay.Ledger{}))
+			if len(fd.Runs) != 1 || fd.Runs[0].Name != c.want || fd.Runs[0].Identity.HeadRef != c.pr.HeadRef {
+				t.Errorf("runs %+v, want one named %s on %s", fd.Runs, c.want, c.pr.HeadRef)
+			}
+		})
+	}
+}
+
 func TestReviewRunsDeduplicateAndRefuse(t *testing.T) {
 	r := router()
 	o := prOpts{action: "synchronize", author: "sperano", head: "feature"}
 	pr := openPR()
 	pr.Files = []string{"cmd/main.go"}
-	led := replay.Ledger{Runs: []route.RunRecord{{Name: "review-vigie-pr-challenger-4-abc12345", Active: true}}}
+	led := replay.Ledger{Runs: []route.RunRecord{{Name: "vikunja-5-vigie-pr-challenger-4-abc12345", Active: true}}}
 	fd := family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, led))
-	if fd.Outcome != route.Dispatch || len(fd.Runs) != 1 || fd.Runs[0].Name != "review-vigie-idiomatic-go-4-abc12345" {
+	if fd.Outcome != route.Dispatch || len(fd.Runs) != 1 || fd.Runs[0].Name != "vikunja-5-vigie-idiomatic-go-4-abc12345" {
 		t.Errorf("partial duplicate: %+v", fd)
 	}
-	allActive := replay.Ledger{Runs: append(slices.Clone(led.Runs), route.RunRecord{Name: "review-vigie-idiomatic-go-4-abc12345", Active: true})}
+	allActive := replay.Ledger{Runs: append(slices.Clone(led.Runs), route.RunRecord{Name: "vikunja-5-vigie-idiomatic-go-4-abc12345", Active: true})}
 	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, allActive)), run.PRReview, route.Duplicate, route.ReasonRunActive)
-	led.Runs = append(led.Runs, route.RunRecord{Name: "review-vigie-idiomatic-go-4-abc12345", Exists: true})
+	led.Runs = append(led.Runs, route.RunRecord{Name: "vikunja-5-vigie-idiomatic-go-4-abc12345", Exists: true})
 	expectFamily(t, family(t, r.Decide(prEvent(t, o), route.State{PullRequest: pr}, led)), run.PRReview, route.Duplicate, route.ReasonRunExists)
 	none := router()
 	none.Config.CommonReviewer = nil

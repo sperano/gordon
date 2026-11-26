@@ -1,15 +1,18 @@
 // Package run defines run identities: which dispatch family a Kelos Task
 // belongs to and the deterministic Task name and branch it gets.
 //
-// Follow-up, PR follow-up, review and conflict names are the legacy
-// TaskSpawner nameTemplates (hollingsworth helm/kelos/templates/
-// commentspawners.yaml, followupspawners.yaml, reviewspawners.yaml),
-// because pod hooks (followup_queued_notice.py, limit_reaper.py) match
-// them. An implementation or discuss run's name departs from the legacy
-// taskspawners.yaml template: it leads with the Vikunja task id and
-// carries the variant without its vendor prefix
-// (vikunja-<task>-<project>-<short variant>, ShortVariant; a discuss run
-// adds -discuss), so runs of one task sort together.
+// Follow-up, PR follow-up and conflict names are the legacy TaskSpawner
+// nameTemplates (hollingsworth helm/kelos/templates/commentspawners.yaml,
+// followupspawners.yaml), because pod hooks (followup_queued_notice.py)
+// match them. A review of an agent pull request (branch
+// kelos/vikunja-<task>) leads with its task id,
+// vikunja-<task>-<workspace>-<reviewer>-<pr>-<sha8>; any other review,
+// and one that name would make too long, keeps the reviewspawners.yaml
+// name, review-<workspace>-<reviewer>-<pr>-<sha8>. An implementation or
+// discuss run's name departs from the legacy taskspawners.yaml template:
+// it leads with the Vikunja task id and carries the variant without its
+// vendor prefix (vikunja-<task>-<project>-<short variant>, ShortVariant;
+// a discuss run adds -discuss), so runs of one task sort together.
 package run
 
 import (
@@ -110,6 +113,13 @@ type Identity struct {
 // spawners' nameTemplate).
 const OpsNamePrefix = "vikunja-ops"
 
+// agentNamePrefix starts the name of a run tied to a Vikunja task by its
+// id; reviewNamePrefix starts a review of a pull request with no task.
+const (
+	agentNamePrefix  = "vikunja"
+	reviewNamePrefix = "review"
+)
+
 // discussNameSuffix ends a discuss run's Task name (before any -retry<n>),
 // so it sorts with the task's implementation runs.
 const discussNameSuffix = "discuss"
@@ -132,14 +142,19 @@ func ShortVariant(variant string) string {
 // Name is the Kelos Task name, or "" for a family that submits no Task;
 // a limit restart's is its original's with -retry<n>.
 func (i Identity) Name() string {
-	name := i.baseName()
-	if name != "" && i.Retry > 0 {
-		name += fmt.Sprintf("-retry%d", i.Retry)
+	suffix := ""
+	if i.Retry > 0 {
+		suffix = fmt.Sprintf("-retry%d", i.Retry)
 	}
-	return name
+	name := i.baseName(suffix)
+	if name == "" {
+		return ""
+	}
+	return name + suffix
 }
 
-func (i Identity) baseName() string {
+// baseName is the name before suffix, the -retry<n> a restart appends.
+func (i Identity) baseName(suffix string) string {
 	switch i.Family {
 	case VikunjaImplement:
 		if i.Ops {
@@ -155,7 +170,7 @@ func (i Identity) baseName() string {
 	case PRFollowUp:
 		return fmt.Sprintf("pr-followup-%s-%d-%s%d", i.Workspace, i.PR, i.CommentKind, i.CommentID)
 	case PRReview:
-		return fmt.Sprintf("review-%s-%s-%d-%s", i.Workspace, i.Reviewer, i.PR, short(i.HeadSHA))
+		return i.reviewName(suffix)
 	case PRConflict:
 		return "pr-conflict-" + i.Episode
 	default:
@@ -175,6 +190,23 @@ func (i Identity) Branch() string {
 	default:
 		return ""
 	}
+}
+
+// reviewName leads an agent pull request's review with its Vikunja task
+// id, vikunja-<task>-<workspace>-<reviewer>-<pr>-<sha8>, so it sorts with
+// the task's other runs. A review of any other branch, or one whose
+// task-led name and suffix would not fit MaxNameLength, keeps
+// review-<workspace>-<reviewer>-<pr>-<sha8>. The head SHA keeps each
+// head's review its own name.
+func (i Identity) reviewName(suffix string) string {
+	rest := fmt.Sprintf("%s-%s-%d-%s", i.Workspace, i.Reviewer, i.PR, short(i.HeadSHA))
+	if task, ok := TaskIDFromBranch(i.HeadRef); ok {
+		name := fmt.Sprintf("%s-%d-%s", agentNamePrefix, task, rest)
+		if len(name)+len(suffix) <= MaxNameLength {
+			return name
+		}
+	}
+	return reviewNamePrefix + "-" + rest
 }
 
 func short(sha string) string {
