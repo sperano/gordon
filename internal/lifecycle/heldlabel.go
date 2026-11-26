@@ -32,6 +32,32 @@ func (e *Executor) unlessStillHeld(ctx context.Context, a action.Action) error {
 	return e.unheldRemove(ctx, a, name)
 }
 
+// heldLabelApplied reports a held run's queued label, absent from t,
+// as not wanted: its run started or stopped and no other run of the task
+// is held, or the task is done. A label taken off by a removal whose
+// restore failed is wanted again while another run is held: the retry
+// adds it, and the check after the add keeps it.
+func (e *Executor) heldLabelApplied(ctx context.Context, t Task, name string) (bool, error) {
+	held, err := e.held(ctx, name)
+	if err != nil {
+		return false, err
+	}
+	if held || t.Done {
+		return t.Done, nil
+	}
+	other, err := e.Runs.TaskHeldBesides(ctx, t.ID, name, run.TaskFamilies)
+	return !other, err
+}
+
+// unheldApplied reports a per-run removal applied when the label matches
+// the task's other held runs: on while one is held (its own removal takes
+// it off), off while none is. A label off while one is held is one a
+// failed restore left off: the write puts it back.
+func (e *Executor) unheldApplied(ctx context.Context, t Task, name string, labeled bool) (bool, error) {
+	other, err := e.Runs.TaskHeldBesides(ctx, t.ID, name, run.TaskFamilies)
+	return err == nil && labeled == other, err
+}
+
 // unlabel is the removal write: a removal naming the run it is for
 // guards against another run of the task held meanwhile.
 func (e *Executor) unlabel(ctx context.Context, a action.Action) error {
@@ -46,12 +72,12 @@ func (e *Executor) unlabel(ctx context.Context, a action.Action) error {
 // reads the runs outside any lock (the target lock's transaction holds a
 // pool connection), so another run can be held, and its label added,
 // between that check and the removal; a run held after this second check
-// adds its label after the removal, so it keeps one. A failed check puts
-// the label back too and is retried: the retry finds the label and
-// checks again before removing it.
+// adds its label after the removal, so it keeps one. A failed check or
+// restore is retried: the retry's check finds the label, or finds it
+// missing while another run is held, and this write puts it back.
 func (e *Executor) unheldRemove(ctx context.Context, a action.Action, name string) error {
 	removed, err := e.removeLabels(ctx, a)
-	if err != nil || len(removed) == 0 {
+	if err != nil {
 		return err
 	}
 	id, _ := taskTarget(a)
@@ -59,11 +85,21 @@ func (e *Executor) unheldRemove(ctx context.Context, a action.Action, name strin
 	if err == nil && !other {
 		return nil
 	}
-	return errors.Join(err, e.restoreLabels(ctx, id, removed))
+	return errors.Join(err, e.restoreLabels(ctx, a, removed))
 }
 
-func (e *Executor) restoreLabels(ctx context.Context, id int64, labels []int64) error {
-	for _, l := range labels {
+// restoreLabels puts the removed labels back, or the label titled as the
+// action's when none was removed (a retry after a failed restore).
+func (e *Executor) restoreLabels(ctx context.Context, a action.Action, removed []int64) error {
+	if len(removed) == 0 {
+		l, err := e.labelID(ctx, a.Value)
+		if err != nil {
+			return err
+		}
+		removed = []int64{l}
+	}
+	id, _ := taskTarget(a)
+	for _, l := range removed {
 		if err := e.W.AddLabel(ctx, id, l); err != nil {
 			return err
 		}

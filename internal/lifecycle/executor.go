@@ -190,8 +190,7 @@ func (e *Executor) labelApplied(ctx context.Context, a action.Action) (bool, err
 		return true, nil
 	}
 	if name := route.HeldRun(a.Detail); name != "" {
-		held, err := e.held(ctx, name)
-		return !held || t.Done, err
+		return e.heldLabelApplied(ctx, t, name)
 	}
 	return false, nil
 }
@@ -206,14 +205,23 @@ func (e *Executor) held(ctx context.Context, name string) (bool, error) {
 	return err == nil && r.State == store.RunSubmitting, err
 }
 
-func (e *Executor) addLabel(ctx context.Context, a action.Action) error {
-	id, _ := taskTarget(a)
-	label, ok, err := e.W.LabelID(ctx, a.Value)
+// labelID is the id of the label titled title.
+func (e *Executor) labelID(ctx context.Context, title string) (int64, error) {
+	label, ok, err := e.W.LabelID(ctx, title)
 	switch {
 	case err != nil:
-		return err
+		return 0, err
 	case !ok:
-		return worker.Permanent(fmt.Errorf("no label titled %q visible to Gordon", a.Value))
+		return 0, worker.Permanent(fmt.Errorf("no label titled %q visible to Gordon", title))
+	}
+	return label, nil
+}
+
+func (e *Executor) addLabel(ctx context.Context, a action.Action) error {
+	id, _ := taskTarget(a)
+	label, err := e.labelID(ctx, a.Value)
+	if err != nil {
+		return err
 	}
 	if err := e.W.AddLabel(ctx, id, label); err != nil {
 		return err
@@ -230,15 +238,13 @@ func (e *Executor) unlabelApplied(ctx context.Context, a action.Action) (bool, e
 	if err != nil {
 		return false, err
 	}
-	if !hasLabel(t, a.Value) || e.skip(t, a) {
+	if e.skip(t, a) {
 		return true, nil
 	}
 	if name := route.UnheldRun(a.Detail); name != "" {
-		// Another run of the task still held keeps the label: its own
-		// removal takes it off.
-		return e.Runs.TaskHeldBesides(ctx, id, name, run.TaskFamilies)
+		return e.unheldApplied(ctx, t, name, hasLabel(t, a.Value))
 	}
-	return false, nil
+	return !hasLabel(t, a.Value), nil
 }
 
 // removeLabel removes every label of that title, by the ids on the task

@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"net/http"
 	"slices"
 	"testing"
 
@@ -70,9 +71,9 @@ func TestHeldLabelPostAddReadFailures(t *testing.T) {
 	}
 }
 
-// TestUnheldRemovalOtherRunReadFails: a failed read of the task's other
-// held runs leaves the queued label on and is retried.
-func TestUnheldRemovalOtherRunReadFails(t *testing.T) {
+// TestUnheldRemovalCheckReadFails: a failed read of the task's other
+// held runs before the removal writes nothing and is retried.
+func TestUnheldRemovalCheckReadFails(t *testing.T) {
 	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
 	ex, f := heldExecutor(t, "")
 	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
@@ -81,8 +82,71 @@ func TestUnheldRemovalOtherRunReadFails(t *testing.T) {
 	if err := ex.Execute(ctx, removal); !errors.Is(err, errRead) {
 		t.Fatalf("Execute: %v, want %v", err, errRead)
 	}
+	if len(f.writes) != 0 {
+		t.Fatalf("writes %v, want none", f.writes)
+	}
 	if got := labels(f.get(5)); !slices.Equal(got, []string{queuedLabel}) {
 		t.Fatalf("labels %v, want %v", got, []string{queuedLabel})
+	}
+}
+
+// TestUnheldRemovalRetriesAFailedRestore: a restore refused after the
+// removal, with another run of the task held, leaves the label off and
+// returns the refusal; the retry puts the label back.
+func TestUnheldRemovalRetriesAFailedRestore(t *testing.T) {
+	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	for name, c := range map[string]struct {
+		a       action.Action
+		labeled bool
+		refuse  []bool
+	}{
+		"removal":  {removal, true, []bool{true}},
+		"post-add": {label, false, []bool{false, true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ex, f := heldExecutor(t, "")
+			ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn(store.RunSubmitting), runIn("active")},
+				besides: []func() (bool, error){answer(false, nil), answer(true, nil)}}
+			if c.labeled {
+				f.tasks[5].Labels = []Label{{ID: queuedLabelID, Title: queuedLabel}}
+			}
+			f.refuseLabelAdds = c.refuse
+			var status *ErrStatus
+			if err := ex.Execute(ctx, c.a); !errors.As(err, &status) || status.Status != http.StatusServiceUnavailable {
+				t.Fatalf("Execute: %v, want HTTP %d", err, http.StatusServiceUnavailable)
+			}
+			if got := labels(f.get(5)); len(got) != 0 {
+				t.Fatalf("labels after the refusal %v, want none", got)
+			}
+			if err := ex.Execute(ctx, c.a); err != nil {
+				t.Fatalf("retry: %v", err)
+			}
+			if got := labels(f.get(5)); !slices.Equal(got, []string{queuedLabel}) {
+				t.Fatalf("labels after the retry %v, want %v", got, []string{queuedLabel})
+			}
+		})
+	}
+}
+
+// TestUnheldLabelGoneNoneHeldWritesNothing: a retried removal or add
+// finding the label off, with no run of the task held, is applied.
+func TestUnheldLabelGoneNoneHeldWritesNothing(t *testing.T) {
+	for name, a := range map[string]action.Action{
+		"removal":  route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2],
+		"post-add": route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0],
+	} {
+		t.Run(name, func(t *testing.T) {
+			ex, f := heldExecutor(t, "")
+			ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
+				besides: []func() (bool, error){answer(false, nil)}}
+			if err := ex.Execute(ctx, a); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if len(f.writes) != 0 {
+				t.Fatalf("writes %v, want none", f.writes)
+			}
+		})
 	}
 }
 

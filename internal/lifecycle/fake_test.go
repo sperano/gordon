@@ -41,6 +41,9 @@ type fakeVikunja struct {
 	// refuseReactions answers that many task reactions of a value 503,
 	// unapplied.
 	refuseReactions map[string]int
+	// refuseLabelAdds answers the i-th label add 503, unapplied, when
+	// its i-th value is true.
+	refuseLabelAdds []bool
 }
 
 func newFake(t *testing.T) *fakeVikunja {
@@ -192,6 +195,14 @@ func (f *fakeVikunja) addLabel(w http.ResponseWriter, r *http.Request, ids []int
 	}
 	if i < 0 {
 		http.Error(w, `{"code":4002}`, http.StatusNotFound)
+		return
+	}
+	refuse := len(f.refuseLabelAdds) > 0 && f.refuseLabelAdds[0]
+	if len(f.refuseLabelAdds) > 0 {
+		f.refuseLabelAdds = f.refuseLabelAdds[1:]
+	}
+	if refuse {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	t.Labels = append(t.Labels, f.labels[i])
