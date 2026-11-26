@@ -101,7 +101,7 @@ func (r Router) reviewRuns(fd *FamilyDecision, proj profile.Project, pr event.Pu
 	reviewers := r.reviewers(proj, pr.Files)
 	for _, rv := range reviewers {
 		id := run.Identity{Family: run.PRReview, Project: proj.Name, Workspace: proj.Workspace,
-			Variant: rv.Variant, Reviewer: rv.Name, PR: pr.Number, HeadSHA: pr.HeadSHA}
+			Variant: rv.Variant, Reviewer: rv.Name, PR: pr.Number, HeadSHA: pr.HeadSHA, HeadRef: pr.HeadRef}
 		if reason, dup := existing(led, id.Name()); dup {
 			dups++
 			if reason == ReasonRunActive {
