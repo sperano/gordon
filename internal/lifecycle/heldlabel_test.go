@@ -251,3 +251,28 @@ func TestUnheldRestoreLabelMissing(t *testing.T) {
 		t.Fatalf("writes %v, want none", f.writes)
 	}
 }
+
+// TestUnheldRestoreLookupFails: a removal restoring a label already off,
+// while another run is held, returns the label lookup's refusal and
+// writes nothing; the retry puts the label back.
+func TestUnheldRestoreLookupFails(t *testing.T) {
+	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	ex, f := heldExecutor(t, "")
+	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
+		besides: []func() (bool, error){answer(true, nil), answer(true, nil)}}
+	f.refuseLabelLists = 1
+	var status *ErrStatus
+	if err := ex.Execute(ctx, removal); !errors.As(err, &status) || status.Status != http.StatusServiceUnavailable ||
+		worker.IsPermanent(err) {
+		t.Fatalf("Execute: %v, want a transient HTTP %d", err, http.StatusServiceUnavailable)
+	}
+	if len(f.writes) != 0 {
+		t.Fatalf("writes %v, want none", f.writes)
+	}
+	if err := ex.Execute(ctx, removal); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if got := labels(f.get(5)); !slices.Equal(got, []string{queuedLabel}) {
+		t.Fatalf("labels after the retry %v, want %v", got, []string{queuedLabel})
+	}
+}

@@ -44,6 +44,8 @@ type fakeVikunja struct {
 	// refuseLabelAdds answers the i-th label add 503, unapplied, when
 	// its i-th value is true.
 	refuseLabelAdds []bool
+	// refuseLabelLists answers that many label lists 503.
+	refuseLabelLists int
 }
 
 func newFake(t *testing.T) *fakeVikunja {
@@ -234,6 +236,11 @@ func (f *fakeVikunja) assign(w http.ResponseWriter, r *http.Request, ids []int64
 }
 
 func (f *fakeVikunja) listLabels(w http.ResponseWriter, r *http.Request, _ []int64) {
+	if f.refuseLabelLists > 0 {
+		f.refuseLabelLists--
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	s := r.URL.Query().Get("s")
 	reply(w, paged(r, slices.DeleteFunc(slices.Clone(f.labels), func(l Label) bool { return !strings.Contains(l.Title, s) })))
 }
