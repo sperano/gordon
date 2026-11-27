@@ -368,6 +368,22 @@ func TestReactOnce(t *testing.T) {
 	}
 }
 
+// TestReactHourglass: a held follow-up's "hourglass" reaction is stored
+// as ⏳, once.
+func TestReactHourglass(t *testing.T) {
+	f := newFake(t)
+	ex := executor(f, nil)
+	a := action.New(action.React, action.VikunjaComment(9), "hourglass")
+	for range 2 {
+		if err := ex.Execute(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := f.reactions[9]; len(got) != 1 || len(got["⏳"]) != 1 {
+		t.Fatalf("reactions %+v, want one ⏳", got)
+	}
+}
+
 func TestMarkDone(t *testing.T) {
 	f := newFake(t)
 	f.put(Task{ID: 5, ProjectID: 3, Title: "Ship it", Labels: []Label{{ID: 1, Title: "in progress"}}})

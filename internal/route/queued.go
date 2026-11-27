@@ -55,16 +55,21 @@ func detailRun(detail, prefix string) string {
 	return name
 }
 
+// reactionHourglass is the ⏳ a held follow-up's request gets.
+const reactionHourglass = "hourglass"
+
 // HoldActions are the writes of a run held back from Kelos on its Vikunja
 // task, queued on the run's generation: the queued label, the notice of
-// the hold and the label's removal once the run's Task is created. seq
+// the hold, the label's removal once the run's Task is created and, for a
+// follow-up (comment, the owner's request; 0 for another run), the ⏳ on
+// that request, keyed by the comment so that every hold adds it once. seq
 // is the notice's place among the run's hold notices (0 for the first):
 // a deferral for the reason of the newest one passes that one's seq, so
 // it queues no other; a changed reason, even back to an earlier one,
 // passes the next and posts a new notice. A submission cancelled or
 // dead-lettered cancels that removal; the drag-cancel and Release take
 // the label off then. None without a queued label.
-func HoldActions(p profile.Policy, task int64, h notice.Hold, seq int) []action.Action {
+func HoldActions(p profile.Policy, task, comment int64, h notice.Hold, seq int) []action.Action {
 	if p.QueuedLabel == "" {
 		return nil
 	}
@@ -78,7 +83,11 @@ func HoldActions(p profile.Policy, task int64, h notice.Hold, seq int) []action.
 		note.Key += holdSeqSep + strconv.Itoa(seq)
 	}
 	submit := action.New(action.SubmitTask, action.KelosTask(KelosNamespace, h.Run), "")
-	return []action.Action{label, note, unheld(p, task, h.Run, queuedCreated).WaitFor(submit)}
+	actions := []action.Action{label, note, unheld(p, task, h.Run, queuedCreated).WaitFor(submit)}
+	if comment > 0 {
+		actions = append(actions, action.New(action.React, action.VikunjaComment(comment), reactionHourglass))
+	}
+	return actions
 }
 
 // ReleaseAction takes the queued label off a task whose held run (name)

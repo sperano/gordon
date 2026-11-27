@@ -46,7 +46,7 @@ func (h *Holds) Held(ctx context.Context, r store.SubmitRun, hold notice.Hold) e
 	if err != nil {
 		return err
 	}
-	actions := route.HoldActions(h.Policy, r.TaskID, hold, seq)
+	actions := route.HoldActions(h.Policy, r.TaskID, r.CommentID, hold, seq)
 	return h.Store.QueueRunActions(ctx, r.InboxID, run.VikunjaQueued, r.Project, actions)
 }
 

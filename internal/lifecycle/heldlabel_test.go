@@ -52,7 +52,7 @@ func answer(held bool, err error) func() (bool, error) {
 // TestHeldLabelPostAddReadFailures: a failed read after the queued
 // label's add is retried and leaves the label on.
 func TestHeldLabelPostAddReadFailures(t *testing.T) {
-	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	label := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0]
 	for name, rs := range map[string]*scriptedRuns{
 		"run read": {infos: []func() (store.RunInfo, error){runIn(store.RunSubmitting), readFails},
 			besides: []func() (bool, error){answer(false, nil)}},
@@ -75,7 +75,7 @@ func TestHeldLabelPostAddReadFailures(t *testing.T) {
 // TestUnheldRemovalCheckReadFails: a failed read of the task's other
 // held runs before the removal writes nothing and is retried.
 func TestUnheldRemovalCheckReadFails(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
 	ex, f := heldExecutor(t, "")
 	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
 		besides: []func() (bool, error){answer(false, errRead)}}
@@ -95,8 +95,8 @@ func TestUnheldRemovalCheckReadFails(t *testing.T) {
 // removal, with another run of the task held, leaves the label off and
 // returns the refusal; the retry puts the label back.
 func TestUnheldRemovalRetriesAFailedRestore(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
-	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
+	label := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0]
 	for name, c := range map[string]struct {
 		a       action.Action
 		labeled bool
@@ -134,8 +134,8 @@ func TestUnheldRemovalRetriesAFailedRestore(t *testing.T) {
 // finding the label off, with no run of the task held, is applied.
 func TestUnheldLabelGoneNoneHeldWritesNothing(t *testing.T) {
 	for name, a := range map[string]action.Action{
-		"removal":  route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2],
-		"post-add": route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0],
+		"removal":  route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2],
+		"post-add": route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0],
 	} {
 		t.Run(name, func(t *testing.T) {
 			ex, f := heldExecutor(t, "")
@@ -156,9 +156,9 @@ func TestUnheldLabelGoneNoneHeldWritesNothing(t *testing.T) {
 // removal) gets the label back; a failed second check puts it back and
 // is retried.
 func TestUnheldRemovalRestoresForARunHeldMeanwhile(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
 	release, _ := route.ReleaseAction(queuedPolicy(), 5, runName)
-	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	label := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0]
 	started := []func() (store.RunInfo, error){runIn(store.RunSubmitting), runIn("active")}
 	for name, c := range map[string]struct {
 		a       action.Action
@@ -193,7 +193,7 @@ func TestUnheldRemovalRestoresForARunHeldMeanwhile(t *testing.T) {
 // TestHeldLabelAppliedCheckReadFails: a failed read in the held label's
 // applied check writes nothing and is retried.
 func TestHeldLabelAppliedCheckReadFails(t *testing.T) {
-	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	label := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0]
 	for name, rs := range map[string]*scriptedRuns{
 		"run read": {infos: []func() (store.RunInfo, error){readFails},
 			besides: []func() (bool, error){answer(false, nil)}},
@@ -220,7 +220,7 @@ func TestHeldLabelAppliedCheckReadFails(t *testing.T) {
 // already off, whose check after the removal fails, returns the failure
 // without adding the label.
 func TestUnheldRemovalNothingRemovedCheckFails(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
 	ex, f := heldExecutor(t, "")
 	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
 		besides: []func() (bool, error){answer(true, nil), answer(false, errRead)}}
@@ -239,7 +239,7 @@ func TestUnheldRemovalNothingRemovedCheckFails(t *testing.T) {
 // while another run is held, fails permanently when no label of that
 // title is visible.
 func TestUnheldRestoreLabelMissing(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
 	ex, f := heldExecutor(t, "")
 	f.labels = slices.DeleteFunc(f.labels, func(l Label) bool { return l.Title == queuedLabel })
 	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
@@ -256,7 +256,7 @@ func TestUnheldRestoreLabelMissing(t *testing.T) {
 // while another run is held, returns the label lookup's refusal and
 // writes nothing; the retry puts the label back.
 func TestUnheldRestoreLookupFails(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
 	ex, f := heldExecutor(t, "")
 	ex.Runs = &scriptedRuns{infos: []func() (store.RunInfo, error){runIn("active")},
 		besides: []func() (bool, error){answer(true, nil), answer(true, nil)}}
