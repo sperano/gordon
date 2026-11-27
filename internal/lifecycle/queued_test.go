@@ -62,11 +62,15 @@ var limitHold = notice.Hold{Run: runName, Reason: notice.HoldLimit, Variant: "cl
 func TestHoldsQueueTheHoldOnItsRun(t *testing.T) {
 	q := &queueLog{}
 	h := &Holds{Store: q, Policy: queuedPolicy()}
-	r := store.SubmitRun{Name: runName, InboxID: 9, Family: run.VikunjaFollowUp, Project: "hollingsworth", TaskID: 5}
+	r := store.SubmitRun{Name: runName, InboxID: 9, Family: run.VikunjaFollowUp, Project: "hollingsworth", TaskID: 5,
+		CommentID: 7}
 	if err := h.Held(ctx, r, limitHold); err != nil {
 		t.Fatal(err)
 	}
-	want := []queuedCall{{9, run.VikunjaQueued, "hollingsworth", route.HoldActions(queuedPolicy(), 5, limitHold, 0)}}
+	want := []queuedCall{{9, run.VikunjaQueued, "hollingsworth", route.HoldActions(queuedPolicy(), 5, 7, limitHold, 0)}}
+	if acts := want[0].actions; acts[len(acts)-1].Kind != action.React {
+		t.Fatalf("a held follow-up's actions end with %+v, want its request's ⏳", acts[len(acts)-1])
+	}
 	if !reflect.DeepEqual(q.calls, want) {
 		t.Fatalf("queued %+v, want %+v", q.calls, want)
 	}
@@ -98,7 +102,7 @@ func TestHoldsNumberEachChangedHold(t *testing.T) {
 		if err := h.Held(ctx, r, s.hold); err != nil {
 			t.Fatal(err)
 		}
-		if got, want := q.calls[i].actions, route.HoldActions(queuedPolicy(), 5, s.hold, s.seq); !reflect.DeepEqual(got, want) {
+		if got, want := q.calls[i].actions, route.HoldActions(queuedPolicy(), 5, 0, s.hold, s.seq); !reflect.DeepEqual(got, want) {
 			t.Fatalf("deferral %d queued\n%+v\nwant\n%+v", i, got, want)
 		}
 	}
@@ -199,7 +203,7 @@ func heldExecutor(t *testing.T, state string) (*Executor, *fakeVikunja) {
 }
 
 func TestHeldLabelOnlyWhileTheRunIsHeld(t *testing.T) {
-	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	label := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0]
 	cases := map[string]struct {
 		state string
 		done  bool
@@ -244,7 +248,7 @@ func (r *startingRuns) RunInfo(ctx context.Context, name string) (store.RunInfo,
 // its queued label was added loses the label again (its removal may have
 // run first), unless another run of the task is still held.
 func TestHeldLabelTakenOffWhenTheRunStartsMeanwhile(t *testing.T) {
-	label := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[0]
+	label := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[0]
 	other := store.RunInfo{Name: "vikunja-fu-hollingsworth-5-c9", Family: run.VikunjaFollowUp,
 		Identity: run.Identity{TaskID: 5}, State: store.RunSubmitting}
 	for name, c := range map[string]struct {
@@ -273,7 +277,7 @@ func TestHeldLabelTakenOffWhenTheRunStartsMeanwhile(t *testing.T) {
 // TestUnheldRemovalWaitsForTheOtherHeldRun: a held run's removal leaves
 // the queued label while another run of the task is still held.
 func TestUnheldRemovalWaitsForTheOtherHeldRun(t *testing.T) {
-	removal := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[2]
+	removal := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[2]
 	release, _ := route.ReleaseAction(queuedPolicy(), 5, runName)
 	other := "vikunja-fu-hollingsworth-5-c9"
 	for name, c := range map[string]struct {
@@ -304,7 +308,7 @@ func TestUnheldRemovalWaitsForTheOtherHeldRun(t *testing.T) {
 }
 
 func TestHeldNoticeOnlyWhileTheRunIsHeld(t *testing.T) {
-	note := route.HoldActions(queuedPolicy(), 5, limitHold, 0)[1]
+	note := route.HoldActions(queuedPolicy(), 5, 0, limitHold, 0)[1]
 	ex, f := heldExecutor(t, store.RunSubmitting)
 	if err := ex.Execute(ctx, note); err != nil {
 		t.Fatal(err)

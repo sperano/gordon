@@ -38,15 +38,38 @@ func TestHoldActions(t *testing.T) {
 		{Key: "remove-label:vikunja/task/5:queued:created:" + heldRun, Kind: action.RemoveLabel, Target: target,
 			Value: "queued", Detail: route.DetailUnheld + heldRun, After: "submit-task:kelos/kelos-agents/" + heldRun},
 	}
-	if got := route.HoldActions(queuedPolicy(), 5, h, 0); !reflect.DeepEqual(got, want) {
+	if got := route.HoldActions(queuedPolicy(), 5, 0, h, 0); !reflect.DeepEqual(got, want) {
 		t.Fatalf("hold actions\n%+v\nwant\n%+v", got, want)
 	}
 	want[1].Key += ":2"
-	if got := route.HoldActions(queuedPolicy(), 5, h, 2); !reflect.DeepEqual(got, want) {
+	if got := route.HoldActions(queuedPolicy(), 5, 0, h, 2); !reflect.DeepEqual(got, want) {
 		t.Fatalf("the third hold notice's actions\n%+v\nwant\n%+v", got, want)
 	}
-	if got := route.HoldActions(profile.Defaults().Policy, 5, h, 0); got != nil {
+	if got := route.HoldActions(profile.Defaults().Policy, 5, 0, h, 0); got != nil {
 		t.Fatalf("hold actions without a queued label: %+v", got)
+	}
+	if got := route.HoldActions(profile.Defaults().Policy, 5, 7, h, 0); got != nil {
+		t.Fatalf("a follow-up's hold actions without a queued label: %+v", got)
+	}
+}
+
+// TestHoldActionsReactOnAFollowUpsRequest: a held follow-up's request
+// gets the ⏳, keyed by the comment alone, so a later hold of the run
+// (another reason, another seq) queues the same reaction.
+func TestHoldActionsReactOnAFollowUpsRequest(t *testing.T) {
+	limit := notice.Hold{Run: heldRun, Reason: notice.HoldLimit, Variant: "claude-opus", Running: 2, Limit: 2}
+	branch := notice.Hold{Run: heldRun, Reason: notice.HoldBranch, Branch: "kelos/vikunja-5", Holder: "other-1"}
+	want := action.Action{Key: "react:vikunja/comment/7:hourglass", Kind: action.React,
+		Target: action.VikunjaComment(7), Value: "hourglass"}
+	for i, s := range []struct {
+		hold notice.Hold
+		seq  int
+	}{{limit, 0}, {branch, 1}} {
+		got := route.HoldActions(queuedPolicy(), 5, 7, s.hold, s.seq)
+		if plain := route.HoldActions(queuedPolicy(), 5, 0, s.hold, s.seq); len(got) != len(plain)+1 ||
+			!reflect.DeepEqual(got[:len(plain)], plain) || got[len(plain)] != want {
+			t.Fatalf("hold %d of a follow-up\n%+v\nwant\n%+v then %+v", i, got, plain, want)
+		}
 	}
 }
 

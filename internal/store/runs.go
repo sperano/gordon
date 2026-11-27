@@ -28,6 +28,9 @@ type SubmitRun struct {
 	// of none), for the notice of a held submission.
 	Project string
 	TaskID  int64
+	// CommentID is the owner's request a follow-up answers (0 for a run
+	// of none), for the ⏳ of a held submission.
+	CommentID int64
 }
 
 // Submitted reports a run no longer submitting: its Task created by this
@@ -43,8 +46,8 @@ func (r SubmitRun) Stopped() bool { return r.State == runFinished }
 func (s *Store) RunToSubmit(ctx context.Context, name string) (SubmitRun, error) {
 	r := SubmitRun{Name: name}
 	err := s.pool.QueryRow(ctx, `SELECT inbox_id, coalesce(identity->>'variant', ''), family, state, task,
-			project, coalesce((identity->>'task_id')::bigint, 0)
-		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.Family, &r.State, &r.Task, &r.Project, &r.TaskID)
+			project, coalesce((identity->>'task_id')::bigint, 0), coalesce((identity->>'comment_id')::bigint, 0)
+		FROM runs WHERE name = $1`, name).Scan(&r.InboxID, &r.Variant, &r.Family, &r.State, &r.Task, &r.Project, &r.TaskID, &r.CommentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SubmitRun{}, ErrNoRun
 	}
