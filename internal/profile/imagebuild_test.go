@@ -86,8 +86,14 @@ func TestValidateImageBuilds(t *testing.T) {
 		"reconcile name": {func(c *Config) { c.ImageBuilds.Images[0].Name = "x-reconcile" }, "not ending in -reconcile"},
 		"no repository":  {func(c *Config) { c.ImageBuilds.Images[0].Repository = "" }, "repository, environment and branches are required"},
 		"no branch":      {func(c *Config) { c.ImageBuilds.Images[0].Branches = nil }, "repository, environment and branches are required"},
-		"bad branch":     {func(c *Config) { c.ImageBuilds.Images[0].Branches = []string{"ma[in"} }, `branch pattern "ma[in" is invalid`},
-		"empty branch":   {func(c *Config) { c.ImageBuilds.Images[0].Branches = []string{""} }, `branch pattern "" is invalid`},
+		"bad branch":     {func(c *Config) { c.ImageBuilds.Images[0].Branches = []string{"ma[in"} }, `branch pattern "ma[in" is invalid or uses {a,b}`},
+		"empty branch":   {func(c *Config) { c.ImageBuilds.Images[0].Branches = []string{""} }, `branch pattern "" is invalid or uses {a,b}`},
+		"branch alternation": {func(c *Config) {
+			c.ImageBuilds.Images[0].Branches = []string{"main", "{main,release}"}
+		}, `image "lucarne": branch pattern "{main,release}" is invalid or uses {a,b}`},
+		"empty file pattern": {func(c *Config) {
+			c.ImageBuilds.Images[1].FilePatterns.Include = []string{""}
+		}, `file pattern "" is invalid or uses {a,b}`},
 		"alternation": {func(c *Config) {
 			c.ImageBuilds.Images[1].FilePatterns.Include = []string{"docker/{a,b}/**"}
 		}, `file pattern "docker/{a,b}/**" is invalid or uses {a,b}`},
@@ -97,6 +103,11 @@ func TestValidateImageBuilds(t *testing.T) {
 	}
 	if err := imageBuilds().ValidateImageBuilds(); err != nil {
 		t.Fatalf("valid catalogue refused: %v", err)
+	}
+	longest := imageBuilds()
+	longest.ImageBuilds.Images[0].Name = strings.Repeat("a", imageNameMax)
+	if err := longest.ValidateImageBuilds(); err != nil {
+		t.Fatalf("%d-character name refused: %v", imageNameMax, err)
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

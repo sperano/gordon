@@ -184,7 +184,7 @@ renders it from `imageBuilds` (the images with `onPush`, in name order):
 | `profile` | the runner's execution profile (`executionProfiles.system.image-build`, `image-build-runner`): it must exist, run as a ServiceAccount, grant a writing capability (`image-build-run`), not be read-only, the ops profile, nor any project's default or allowed profile |
 | `workspace` | the runner Task's Workspace (the merge-close stub; Kelos clones it, the runner never reads it) |
 | `runner` | `type`, `image` (`imageBuilds.image`) and `credential_type` of the runner worker (`opencode`, `none`) |
-| `images[]` | `name` (`[a-z0-9-]`, at most 20, not ending in `-reconcile`; unique), `repository`, `environment`, `branches` (`onPush.branches`, Kelos branch globs; the first is the branch a coalescing build follows), `file_patterns` (`onPush.filePatterns`: `include`, `exclude`; `{a,b}` is refused), `coalesce` (`onPush.coalesce`), `owner_merged` (`ownerMerged`) |
+| `images[]` | `name` (`[a-z0-9-]`, at most 20, not ending in `-reconcile`; unique), `repository`, `environment`, `branches` (`onPush.branches`, Kelos branch globs, `{a,b}` refused; the first is the branch a coalescing build follows), `file_patterns` (`onPush.filePatterns`: `include`, `exclude`; `{a,b}` is refused), `coalesce` (`onPush.coalesce`), `owner_merged` (`ownerMerged`) |
 
 A catalogue that breaks a rule refuses the worker's start. Without one
 (the default: `profile.Defaults()` holds none), a push builds nothing.
@@ -193,6 +193,9 @@ A verified `push` builds each image whose `repository` it was pushed to,
 one of whose `branches` matches the pushed branch, and, with
 `file_patterns`, a changed file (added, removed or modified in the push's
 commits) survives `exclude` and matches `include`: one run per image,
+(GitHub's push payload lists at most 2048 commits, so files changed only
+in later commits of a larger push are not seen; the spawner read the
+same payload),
 named `image-build-<image>-push-<first 12 of after>`, with no 👀, comment
 or other write. Otherwise the delivery is ignored with a reason:
 `repository-not-configured`, `push-not-a-branch` (a tag),

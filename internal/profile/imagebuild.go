@@ -135,8 +135,9 @@ func (img ImageBuild) validate() error {
 		return fmt.Errorf("repository, environment and branches are required")
 	}
 	for _, b := range img.Branches {
-		if _, err := path.Match(b, ""); err != nil || b == "" {
-			return fmt.Errorf("branch pattern %q is invalid", b)
+		// route.builds matches branches with path.Match: no {a,b}.
+		if _, err := path.Match(b, ""); err != nil || b == "" || strings.ContainsAny(b, "{}") {
+			return fmt.Errorf("branch pattern %q is invalid or uses {a,b}", b)
 		}
 	}
 	if img.FilePatterns == nil {

@@ -89,13 +89,18 @@ func TestImageBuildTasksMatchPushSpawners(t *testing.T) {
 			rn := imageBuilt(t, routing, cfg, pushed(img.Repository, matchingFile(img)), img.Name)
 			want := golden(t, "image-build-push-"+img.Name)
 			var meta struct {
-				Metadata kelos.Metadata `json:"metadata"`
+				APIVersion string         `json:"apiVersion"`
+				Kind       string         `json:"kind"`
+				Metadata   kelos.Metadata `json:"metadata"`
 			}
 			if err := json.Unmarshal(want, &meta); err != nil {
 				t.Fatal(err)
 			}
 			if rn.Task.Metadata.Name != meta.Metadata.Name || rn.Name != meta.Metadata.Name {
 				t.Fatalf("name %q (run %q), golden %q", rn.Task.Metadata.Name, rn.Name, meta.Metadata.Name)
+			}
+			if got := [3]string{rn.Task.APIVersion, rn.Task.Kind, rn.Task.Metadata.Namespace}; got != [3]string{meta.APIVersion, meta.Kind, meta.Metadata.Namespace} {
+				t.Fatalf("apiVersion, kind, namespace %v, golden %v", got, [3]string{meta.APIVersion, meta.Kind, meta.Metadata.Namespace})
 			}
 			diff, err := kelostest.Diff(*rn.Task, want, gordonKeys...)
 			if err != nil {

@@ -35,7 +35,8 @@ const (
 	stackWeb, stackSwift     = "web", "swift"
 	discussServiceAccount    = "kelos-discuss"
 	imageBuildServiceAccount = "image-build-submitter"
-	// imageBuildRunnerServiceAccount is imageBuilds.serviceAccountName.
+	// imageBuildRunnerServiceAccount is the image-build-runner profile's
+	// service_account (executionProfiles.system.image-build).
 	imageBuildRunnerServiceAccount = "image-build-runner"
 )
 

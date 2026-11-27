@@ -17,7 +17,8 @@ const pushSHA = "0123456789abcdef0123456789abcdef01234567"
 
 // imageRouter is router() with a catalogue: lucarne on any change to
 // main, kelos-agent and portal-docs on their paths of hollingsworth's
-// main, release on release/* branches of nhl.
+// main, release on release/* branches of nhl, sillage on main or
+// release/* branches.
 func imageRouter() route.Router {
 	r := router()
 	r.Config.ImageBuilds = profile.ImageBuilds{Profile: profile.ProfileImageBuildRunner, Workspace: "merge-close-stub",
@@ -30,6 +31,7 @@ func imageRouter() route.Router {
 				FilePatterns: &profile.FilePatterns{Exclude: []string{"**/*.md"}}},
 			{Name: "portal-docs", Repository: "sperano/hollingsworth", Environment: "hollingsworth", Branches: []string{"main"},
 				FilePatterns: &profile.FilePatterns{Include: []string{"portal-docs/**"}, Exclude: []string{"portal-docs/drafts/**"}}},
+			{Name: "sillage", Repository: "sperano/sillage", Environment: "hollingsworth", Branches: []string{"main", "release/*"}},
 		}}
 	return r
 }
@@ -66,6 +68,9 @@ func TestPushBuildsTheImagesItMatches(t *testing.T) {
 		"exclude only":     {"sperano/hollingsworth", "refs/heads/main", []string{"portal-docs/drafts/a.md", "portal-docs/b.md"}, []string{"image-build-portal-docs-push-0123456789ab"}},
 		"glob spans dirs":  {"sperano/hollingsworth", "refs/heads/main", []string{"docker/kelos-agent/a/b/c.sh"}, []string{"image-build-kelos-agent-push-0123456789ab"}},
 		"branch is a path": {"sperano/nhl", "refs/heads/release/a/b", []string{"x"}, nil},
+		"first of globs":   {"sperano/sillage", "refs/heads/main", nil, []string{"image-build-sillage-push-0123456789ab"}},
+		"second of globs":  {"sperano/sillage", "refs/heads/release/1.2", nil, []string{"image-build-sillage-push-0123456789ab"}},
+		"none of globs":    {"sperano/sillage", "refs/heads/dev", nil, nil},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -106,6 +111,7 @@ func TestPushIgnored(t *testing.T) {
 		"other repository":   {imageRouter(), "sperano/vigie", "refs/heads/main", pushSHA, false, nil, route.ReasonRepositoryNotConfigured},
 		"tag":                {imageRouter(), "sperano/lucarne", "refs/tags/v1", pushSHA, false, nil, route.ReasonPushNotABranch},
 		"deleted":            {imageRouter(), "sperano/lucarne", "refs/heads/main", zero, true, nil, route.ReasonPushDeleted},
+		"deleted flag only":  {imageRouter(), "sperano/lucarne", "refs/heads/main", pushSHA, true, nil, route.ReasonPushDeleted},
 		"zero after":         {imageRouter(), "sperano/lucarne", "refs/heads/main", zero, false, nil, route.ReasonPushDeleted},
 		"other branch":       {imageRouter(), "sperano/lucarne", "refs/heads/feature", pushSHA, false, nil, route.ReasonPushNotBuilt},
 		"no matching path":   {imageRouter(), "sperano/hollingsworth", "refs/heads/main", pushSHA, false, []string{"README.md"}, route.ReasonPushNotBuilt},
