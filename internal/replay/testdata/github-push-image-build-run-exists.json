@@ -1,0 +1,111 @@
+{
+  "description": "The commit's build Task is still there (another branch pushed the same commit, or a redelivery under a new id): no second build.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Delivery": "push-vigie-2",
+      "X-GitHub-Event": "push"
+    },
+    "body": {
+      "ref": "refs/heads/main",
+      "before": "89abcdef0123456789abcdef0123456789abcdef",
+      "after": "0123456789abcdef0123456789abcdef01234567",
+      "deleted": false,
+      "repository": {
+        "full_name": "sperano/vigie"
+      },
+      "sender": {
+        "login": "sperano"
+      },
+      "head_commit": {
+        "id": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "commits": [
+        {
+          "id": "0123456789abcdef0123456789abcdef01234567",
+          "added": [],
+          "removed": [],
+          "modified": [
+            "main.go"
+          ]
+        }
+      ]
+    }
+  },
+  "state": {},
+  "ledger": {
+    "runs": [
+      {
+        "name": "image-build-vigie-push-0123456789ab",
+        "active": false,
+        "exists": true
+      }
+    ]
+  },
+  "image_builds": {
+    "profile": "image-build-runner",
+    "workspace": "merge-close-stub",
+    "runner": {
+      "type": "opencode",
+      "image": "ericsperano/kelos-image-builder:dev-20261114-160838-8c869d4",
+      "credential_type": "none"
+    },
+    "images": [
+      {
+        "name": "kelos-agent",
+        "repository": "sperano/hollingsworth",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "file_patterns": {
+          "include": [
+            "docker/kelos-agent/**",
+            "helm/kelos/Chart.yaml"
+          ]
+        }
+      },
+      {
+        "name": "lucarne",
+        "repository": "sperano/lucarne",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ]
+      },
+      {
+        "name": "portal-docs",
+        "repository": "sperano/hollingsworth",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "file_patterns": {
+          "include": [
+            "portal-docs/**"
+          ]
+        }
+      },
+      {
+        "name": "vigie",
+        "repository": "sperano/vigie",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "coalesce": true
+      }
+    ]
+  },
+  "expect": {
+    "outcome": "duplicate",
+    "delivery_key": "github/delivery/push-vigie-2",
+    "families": [
+      {
+        "family": "image-build-push",
+        "outcome": "duplicate",
+        "reason": "run-exists"
+      }
+    ]
+  }
+}

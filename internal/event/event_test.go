@@ -257,9 +257,50 @@ func TestParseGitHubRefusals(t *testing.T) {
 			t.Errorf("%s: err %v, want %v", name, err, c.want)
 		}
 	}
-	push, err := ParseGitHub(github("push", "g", `{`+repo+`}`))
-	if err != nil || push.Kind != GitHubPush || push.RequestKey != "" {
-		t.Errorf("push %+v err %v", push, err)
+}
+
+const pushSHA = "0123456789abcdef0123456789abcdef01234567"
+
+func TestParseGitHubPush(t *testing.T) {
+	ev, err := ParseGitHub(github("push", "g7", `{"ref":"refs/heads/main","after":"`+pushSHA+`",`+
+		`"repository":{"full_name":"sperano/vigie"},"sender":{"login":"sperano"},"commits":[`+
+		`{"added":["a.go"],"removed":["b.go"],"modified":["c.go","a.go"]},{"added":[],"removed":[],"modified":["b.go","d.go"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &Push{Ref: "refs/heads/main", After: pushSHA, Files: []string{"a.go", "b.go", "c.go", "d.go"}}
+	if ev.Kind != GitHubPush || ev.RequestKey != "" || ev.DeliveryKey != "github/delivery/g7" || !reflect.DeepEqual(ev.GitHub.Push, want) {
+		t.Errorf("push %+v %+v, want %+v", ev, ev.GitHub.Push, want)
+	}
+	if b := ev.GitHub.Push.Branch(); b != "main" {
+		t.Errorf("branch %q", b)
+	}
+	deleted, err := ParseGitHub(github("push", "g8", `{"ref":"refs/tags/v1","after":"`+strings.Repeat("0", 40)+`","deleted":true,`+
+		`"repository":{"full_name":"sperano/vigie"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := deleted.GitHub.Push; !p.Deleted || p.Branch() != "" || p.Files != nil {
+		t.Errorf("tag deletion %+v branch %q", p, p.Branch())
+	}
+}
+
+func TestParseGitHubPushRefusals(t *testing.T) {
+	repo := `"repository":{"full_name":"sperano/vigie"}`
+	for name, body := range map[string]string{
+		"no ref":       `{` + repo + `,"after":"` + pushSHA + `"}`,
+		"no after":     `{` + repo + `,"ref":"refs/heads/main"}`,
+		"short after":  `{` + repo + `,"ref":"refs/heads/main","after":"0123456789ab"}`,
+		"upper after":  `{` + repo + `,"ref":"refs/heads/main","after":"` + strings.ToUpper(pushSHA) + `"}`,
+		"after suffix": `{` + repo + `,"ref":"refs/heads/main","after":"` + pushSHA + `\nx"}`,
+	} {
+		if _, err := ParseGitHub(github("push", "g", body)); !errors.Is(err, ErrMalformed) {
+			t.Errorf("%s: err %v, want %v", name, err, ErrMalformed)
+		}
+	}
+	sha256 := strings.Repeat("ab", 32)
+	if _, err := ParseGitHub(github("push", "g", `{`+repo+`,"ref":"refs/heads/main","after":"`+sha256+`"}`)); err != nil {
+		t.Errorf("SHA-256 commit refused: %v", err)
 	}
 }
 
@@ -298,7 +339,7 @@ func TestParseBySource(t *testing.T) {
 		t.Fatalf("Parse(vikunja) = %+v, %v", ev, err)
 	}
 	ev, err = Parse(Delivery{Source: SourceGitHub, Headers: map[string]string{GitHubEventHeader: "push",
-		GitHubDeliveryHeader: "g"}, Body: []byte(`{"repository":{"full_name":"a/b"}}`)})
+		GitHubDeliveryHeader: "g"}, Body: []byte(`{"repository":{"full_name":"a/b"},"ref":"refs/heads/main","after":"` + pushSHA + `"}`)})
 	if err != nil || ev.Kind != GitHubPush {
 		t.Fatalf("Parse(github) = %+v, %v", ev, err)
 	}

@@ -1,0 +1,231 @@
+{
+  "apiVersion": "kelos.dev/v1alpha2",
+  "kind": "Task",
+  "metadata": {
+    "labels": {
+      "image-build.spe.quebec/image": "puckdb",
+      "kelos.spe.quebec/mode": "model-free",
+      "kelos.spe.quebec/profile": "image-build-runner"
+    },
+    "name": "image-build-puckdb-push-0123456789ab",
+    "namespace": "kelos-agents"
+  },
+  "spec": {
+    "prompt": "Image build request (no model runs), for a push to sperano/puckdb.\n\nrequest: push-0123456789ab\nimage: puckdb\nenvironment: hollingsworth\nref: main\nautomatic: true\nbranch: main\n",
+    "ttlSecondsAfterFinished": 7200,
+    "worker": {
+      "credentials": {
+        "type": "none"
+      },
+      "image": "ericsperano/kelos-image-builder:dev-20261114-160838-8c869d4",
+      "podOverrides": {
+        "activeDeadlineSeconds": 14400,
+        "affinity": {
+          "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "node-role.kubernetes.io/control-plane",
+                      "operator": "DoesNotExist"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "env": [
+          {
+            "name": "IMAGE_BUILD_NAMESPACE",
+            "value": "kelos-agents"
+          },
+          {
+            "name": "IMAGE_BUILD_CATALOG",
+            "value": "/opt/image-build-runner/catalog.json"
+          },
+          {
+            "name": "IMAGE_BUILD_PIN_REPOSITORY",
+            "value": "sperano/hollingsworth"
+          },
+          {
+            "name": "IMAGE_BUILD_PIN_BASE",
+            "value": "main"
+          },
+          {
+            "name": "IMAGE_BUILD_REGISTRY_USERNAME",
+            "value": "ericsperano"
+          },
+          {
+            "name": "IMAGE_BUILD_REGISTRY_TOKEN_FILE",
+            "value": "/etc/image-build/registry/token"
+          },
+          {
+            "name": "IMAGE_BUILD_BUILDKIT_CERT_DIR",
+            "value": "/etc/image-build/buildkit"
+          },
+          {
+            "name": "IMAGE_BUILD_BUILDKIT_SERVERS",
+            "value": "{\"linux/amd64\":\"tcp://buildkit-publish-amd64.buildkit.svc:1234\",\"linux/arm64\":\"tcp://buildkit-publish-arm64.buildkit.svc:1234\"}"
+          },
+          {
+            "name": "IMAGE_BUILD_GITHUB_APP_DIR",
+            "value": "/etc/image-build/github-app"
+          },
+          {
+            "name": "IMAGE_BUILD_OPENER_TOKEN_FILE",
+            "value": "/etc/image-build/github-opener/GITHUB_TOKEN"
+          },
+          {
+            "name": "IMAGE_BUILD_PR_LABEL",
+            "value": "kelos:no-review"
+          },
+          {
+            "name": "IMAGE_BUILD_AUTO_MERGE",
+            "value": "true"
+          },
+          {
+            "name": "IMAGE_BUILD_LOCK_WAIT_SECONDS",
+            "value": "7200"
+          },
+          {
+            "name": "IMAGE_BUILD_LEASE_SECONDS",
+            "value": "120"
+          },
+          {
+            "name": "IMAGE_BUILD_POLL_SECONDS",
+            "value": "15"
+          },
+          {
+            "name": "IMAGE_BUILD_QUIET_SECONDS",
+            "value": "300"
+          },
+          {
+            "name": "IMAGE_BUILD_MAX_WAIT_SECONDS",
+            "value": "1800"
+          },
+          {
+            "name": "IMAGE_BUILD_MAX_ATTEMPTS",
+            "value": "3"
+          },
+          {
+            "name": "IMAGE_BUILD_WORKDIR",
+            "value": "/work"
+          },
+          {
+            "name": "GIT_AUTHOR_NAME",
+            "value": "\u00c9ric Sp\u00e9rano"
+          },
+          {
+            "name": "GIT_AUTHOR_EMAIL",
+            "value": "eric.sperano@gmail.com"
+          },
+          {
+            "name": "HOME",
+            "value": "/work"
+          },
+          {
+            "name": "PYTHONPATH",
+            "value": "/opt/image-build-runner"
+          }
+        ],
+        "labels": {
+          "image-build.spe.quebec/runner": "true"
+        },
+        "resources": {
+          "limits": {
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "100m",
+            "memory": "256Mi"
+          }
+        },
+        "serviceAccountName": "image-build-runner",
+        "volumeMounts": [
+          {
+            "mountPath": "/kelos_entrypoint.sh",
+            "name": "runner",
+            "readOnly": true,
+            "subPath": "image_build.py"
+          },
+          {
+            "mountPath": "/opt/image-build-runner",
+            "name": "runner",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/work",
+            "name": "work"
+          },
+          {
+            "mountPath": "/etc/image-build/registry",
+            "name": "registry",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/etc/image-build/buildkit",
+            "name": "buildkit",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/etc/image-build/github-app",
+            "name": "github-app",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/etc/image-build/github-opener",
+            "name": "github-opener",
+            "readOnly": true
+          }
+        ],
+        "volumes": [
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "image-build-runner"
+            },
+            "name": "runner"
+          },
+          {
+            "emptyDir": {},
+            "name": "work"
+          },
+          {
+            "name": "registry",
+            "secret": {
+              "optional": true,
+              "secretName": "image-build-registry"
+            }
+          },
+          {
+            "name": "buildkit",
+            "secret": {
+              "optional": true,
+              "secretName": "buildkit-publish-client-image-build-runner"
+            }
+          },
+          {
+            "name": "github-app",
+            "secret": {
+              "optional": true,
+              "secretName": "github-app"
+            }
+          },
+          {
+            "name": "github-opener",
+            "secret": {
+              "optional": true,
+              "secretName": "github-token"
+            }
+          }
+        ]
+      },
+      "type": "opencode",
+      "workspaceRef": {
+        "name": "merge-close-stub"
+      }
+    }
+  }
+}

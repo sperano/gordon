@@ -1,0 +1,101 @@
+{
+  "description": "GitHub redelivers a push already decided: a duplicate by its delivery id.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Delivery": "push-lucarne-1",
+      "X-GitHub-Event": "push"
+    },
+    "body": {
+      "ref": "refs/heads/main",
+      "before": "89abcdef0123456789abcdef0123456789abcdef",
+      "after": "0123456789abcdef0123456789abcdef01234567",
+      "deleted": false,
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "sperano"
+      },
+      "head_commit": {
+        "id": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "commits": [
+        {
+          "id": "0123456789abcdef0123456789abcdef01234567",
+          "added": [],
+          "removed": [],
+          "modified": [
+            "web/src/app.ts"
+          ]
+        }
+      ]
+    }
+  },
+  "state": {},
+  "ledger": {
+    "deliveries": [
+      "github/delivery/push-lucarne-1"
+    ]
+  },
+  "image_builds": {
+    "profile": "image-build-runner",
+    "workspace": "merge-close-stub",
+    "runner": {
+      "type": "opencode",
+      "image": "ericsperano/kelos-image-builder:dev-20261114-160838-8c869d4",
+      "credential_type": "none"
+    },
+    "images": [
+      {
+        "name": "kelos-agent",
+        "repository": "sperano/hollingsworth",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "file_patterns": {
+          "include": [
+            "docker/kelos-agent/**",
+            "helm/kelos/Chart.yaml"
+          ]
+        }
+      },
+      {
+        "name": "lucarne",
+        "repository": "sperano/lucarne",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ]
+      },
+      {
+        "name": "portal-docs",
+        "repository": "sperano/hollingsworth",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "file_patterns": {
+          "include": [
+            "portal-docs/**"
+          ]
+        }
+      },
+      {
+        "name": "vigie",
+        "repository": "sperano/vigie",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "coalesce": true
+      }
+    ]
+  },
+  "expect": {
+    "outcome": "duplicate",
+    "reason": "redelivery",
+    "delivery_key": "github/delivery/push-lucarne-1"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "description": "Without a routing catalogue (the defaults), a push builds nothing.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Delivery": "push-lucarne-3",
+      "X-GitHub-Event": "push"
+    },
+    "body": {
+      "ref": "refs/heads/main",
+      "before": "89abcdef0123456789abcdef0123456789abcdef",
+      "after": "0123456789abcdef0123456789abcdef01234567",
+      "deleted": false,
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "sperano"
+      },
+      "head_commit": {
+        "id": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "commits": [
+        {
+          "id": "0123456789abcdef0123456789abcdef01234567",
+          "added": [],
+          "removed": [],
+          "modified": [
+            "web/src/app.ts"
+          ]
+        }
+      ]
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "expect": {
+    "outcome": "ignore",
+    "reason": "repository-not-configured",
+    "delivery_key": "github/delivery/push-lucarne-3"
+  }
+}

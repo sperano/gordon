@@ -178,6 +178,7 @@ func TestResolveRefusals(t *testing.T) {
 		"unknown project":   {Request{Project: "nope", Variant: "claude-opus", Mode: ModeImplement}, CodeUnknownProject},
 		"unknown variant":   {Request{Project: "vigie", Variant: "gpt-9", Mode: ModeImplement}, CodeUnknownVariant},
 		"unknown mode":      {Request{Project: "vigie", Variant: "claude-opus", Mode: "admin"}, CodeUnknownMode},
+		"model-free":        {Request{Project: "vigie", Variant: "claude-opus", Mode: ModeModelFree}, CodeUnknownMode},
 		"no runner":         {Request{Project: "vigie", Variant: "broken", Mode: ModeImplement}, CodeIncompleteVariant},
 		"bad effort":        {Request{Project: "vigie", Variant: "claude-opus", Mode: ModeImplement, Effort: "turbo"}, CodeUnsupportedEffort},
 		"opencode effort":   {Request{Project: "vigie", Variant: "deepseek", Mode: ModeImplement, Effort: "high"}, CodeUnsupportedEffort},
@@ -224,6 +225,7 @@ func TestCapabilityWrites(t *testing.T) {
 		GitHubWrite: {true, true}, ImageBuildSubmit: {true, true},
 		GitHubReadOnly: {false, true}, ClusterRead: {false, true}, PostgresTest: {false, true},
 		PuckDBProdReadOnly: {false, true}, Mactest: {false, true}, ClusterWrite: {true, true}, NamespaceRead: {false, true}, "vault-admin": {false, false},
+		ImageBuildRun: {true, true},
 	}
 	for c, want := range cases {
 		if writing, known := c.Writes(); writing != want[0] || known != want[1] {

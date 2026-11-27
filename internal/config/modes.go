@@ -173,7 +173,7 @@ func LoadWorker(env Getenv) (Worker, error) {
 				project.Name, project.AutoAssignVariant)
 		}
 	}
-	for _, validate := range []func() error{c.Routing.ValidateOps, c.Routing.ValidateQueued} {
+	for _, validate := range []func() error{c.Routing.ValidateOps, c.Routing.ValidateQueued, c.Routing.ValidateImageBuilds} {
 		if err := validate(); err != nil {
 			r.fail("GORDON_ROUTING_CONFIG_FILE: %v", err)
 		}

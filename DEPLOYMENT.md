@@ -131,10 +131,10 @@ in `internal/dispatch/testdata/tasks`.
 | `comments`, `comments_max_bytes` | quote `GET /tasks/{id}/comments` as `Context.comments` (default cap 256 KiB; a failed or larger read is quoted empty, as the legacy `failurePolicy: Ignore`) |
 | `core_labels` | exact, unpadded Vikunja or GitHub label names mapped to positive whole-core CPU requests; after the family, Workspace, profile and variant pod pieces are composed, a selection replaces only the resulting `resources.requests.cpu`; unconfigured labels are inert, aliases for one value may coexist, and labels selecting different values reject the Task |
 | `common_secrets` | Secrets every profile may reference (the admission policy's `commonSecrets`: runner credentials, the variants' Vikunja and Authentik identities, Gordon's own, the run-link token) |
-| `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`, and `vikunja-ops`, the ops runs' template: the `vikunja-ops-*` spawners' `taskTemplate`, required once the ops mode is on, an ops run without it is rejected `task-spec-no-task-template`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
+| `families` | per family (`vikunja-implement`, `vikunja-discuss`, `vikunja-followup`, `vikunja-followup-answer`, `vikunja-followup-discuss`, `pr-followup`, `pr-review`, `pr-conflict`, `image-build-push`, and `vikunja-ops`, the ops runs' template: the `vikunja-ops-*` spawners' `taskTemplate`, required once the ops mode is on, an ops run without it is rejected `task-spec-no-task-template`): `prompt`, `labels`, `annotations`, `agent_configs` (`@project` and `@vikunja` expand to the project's and the variant's), `ttl_seconds_after_finished`, `pod_failure_policy`, `pod` |
 | `workspaces`, `profiles`, `variants` | pod pieces per Workspace (keyed by the project's writing Workspace; they apply to its read-only copy too), per execution profile (with the `secrets` it grants and its reserved pod `labels`, which nothing else may set) and per variant (`agent_config_suffix`, `vikunja_agent_config`, `pod`). Every routing variant and profile needs an entry, `{}` at least: a run without one is rejected (`task-spec-unknown-variant`, `task-spec-unknown-profile`) |
-| `pod` (each piece) | `labels` (profiles only), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`: `resources` and `affinity` objects, each list entry an object with a `name`. Lists concatenate family, Workspace, profile, variant, then volumes repeated by `name` and volume mounts repeated by `mountPath` collapse to the first when equal and reject the Task (`task-spec-pod-invalid`) when they differ; an `env` entry, top-level or in an init container's `env`, marked `"gordonOmitIfEmpty": true` is dropped when its rendered `value` is empty and it has no `valueFrom` (a kept one loses the key), and the key is refused anywhere else; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
-| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); a Task still without a phase 15 minutes (`submit.UnstartedGrace`) after its creation was refused by the controller and is not counted, but logged and reported by `gordon_kelos_unstarted_tasks`; `0` is unbounded; a `variants` key not in `variants` is refused |
+| `pod` (each piece) | `labels` (profiles only), `activeDeadlineSeconds` (positive; the last piece that sets it wins, as `resources` and `affinity`), `resources`, `affinity`, `env`, `extraInitContainers`, `lastInitContainers`, `volumes`, `volumeMounts`: `resources` and `affinity` objects, each list entry an object with a `name`. Lists concatenate family, Workspace, profile, variant, then volumes repeated by `name` and volume mounts repeated by `mountPath` collapse to the first when equal and reject the Task (`task-spec-pod-invalid`) when they differ; an `env` entry, top-level or in an init container's `env`, marked `"gordonOmitIfEmpty": true` is dropped when its rendered `value` is empty and it has no `valueFrom` (a kept one loses the key), and the key is refused anywhere else; every piece's `lastInitContainers` come after every piece's `extraInitContainers` (the family's `pr-opener` after the puckdb profile's `test-postgres`, as the spawners order them) |
+| `limits` | `default` and per-`variants` caps on unfinished, non-`Waiting` Tasks per variant (`vikunja.spe.quebec/variant`, legacy Tasks included); a Task still without a phase 15 minutes (`submit.UnstartedGrace`) after its creation was refused by the controller and is not counted, but logged and reported by `gordon_kelos_unstarted_tasks`; `0` is unbounded; a run with no variant (a model-free image build) is neither limited nor labelled; a `variants` key not in `variants` is refused |
 
 Prompt, label and annotation values, agent config names and pod strings
 (pod `labels` aside: they are literal, and a `{{` in one is refused)
@@ -143,11 +143,16 @@ holding `{{` are Go templates over the legacy Kelos variables (`.task`,
 `.Context.comments`, `.Number`, `.URL`, `.Branch`, `.Event`, `.Action`,
 `.CommentURL`, `.CommentBody`, `.Payload...`) plus `.project`,
 `.project_title`, `.workspace`, `.repository`, `.variant`, `.reviewer`,
-`.profile`, `.mode`, `.model`, `.effort`, `.branch` (`dispatch.Data`); a
+`.profile`, `.mode`, `.model`, `.effort`, `.branch`, and for
+`image-build-push` the catalogued image's `.image`, `.environment`,
+`.repository`, `.coalesce`, `.owner_merged`, `.first_branch` and the
+pushed commit as `.Payload.After` and `.Payload.GetAfter`
+(`dispatch.Data`); a
 template that does not parse refuses the config at startup, a missing
 variable refuses the run. Gordon alone sets
 `kelos.spe.quebec/profile`, `kelos.spe.quebec/mode`,
-`vikunja.spe.quebec/discuss` (discuss), `vikunja.spe.quebec/variant`,
+`vikunja.spe.quebec/discuss` (discuss), `vikunja.spe.quebec/variant`
+(runs with a variant),
 `gordon.spe.quebec/managed` and the `gordon.spe.quebec/inbox` annotation
 (the generation's marker that tells its own Task from another
 submitter's); the ServiceAccount and Workspace come from the profile. A
@@ -161,6 +166,60 @@ check and the create it admits hold a Postgres advisory lock. A held branch (an 
 Workspace and `spec.branch`) keeps the submission in the outbox instead of
 a `Waiting` Task in Kelos. The database must be UTF-8 (built Tasks are
 `jsonb` with non-ASCII text).
+
+## Image builds on push
+
+The `image-build-push` family replaces the `image-build-<image>-push`
+TaskSpawners of Hollingsworth's `helm/kelos` (`image-builds.yaml`), so
+the Kelos GitHub webhook source can be disabled. Build requests
+(`just image-build`, the `image-build` source) and the coalescing
+`-reconcile` crons stay Kelos spawners: Gordon still ignores the
+`image-build` source (`kelos-owned`).
+
+The routing configuration's `image_builds` is the catalogue; Hollingsworth
+renders it from `imageBuilds` (the images with `onPush`, in name order):
+
+| Field | |
+|---|---|
+| `profile` | the runner's execution profile (`executionProfiles.system.image-build`, `image-build-runner`): it must exist, run as a ServiceAccount, grant a writing capability (`image-build-run`), not be read-only, the ops profile, nor any project's default or allowed profile |
+| `workspace` | the runner Task's Workspace (the merge-close stub; Kelos clones it, the runner never reads it) |
+| `runner` | `type`, `image` (`imageBuilds.image`) and `credential_type` of the runner worker (`opencode`, `none`) |
+| `images[]` | `name` (`[a-z0-9-]`, at most 20, not ending in `-reconcile`; unique), `repository`, `environment`, `branches` (`onPush.branches`, Kelos branch globs; the first is the branch a coalescing build follows), `file_patterns` (`onPush.filePatterns`: `include`, `exclude`; `{a,b}` is refused), `coalesce` (`onPush.coalesce`), `owner_merged` (`ownerMerged`) |
+
+A catalogue that breaks a rule refuses the worker's start. Without one
+(the default: `profile.Defaults()` holds none), a push builds nothing.
+
+A verified `push` builds each image whose `repository` it was pushed to,
+one of whose `branches` matches the pushed branch, and, with
+`file_patterns`, a changed file (added, removed or modified in the push's
+commits) survives `exclude` and matches `include`: one run per image,
+named `image-build-<image>-push-<first 12 of after>`, with no 👀, comment
+or other write. Otherwise the delivery is ignored with a reason:
+`repository-not-configured`, `push-not-a-branch` (a tag),
+`push-deleted` (the push deleted the branch: legacy spawned a run for
+the zero commit when the image had no file patterns), `push-not-built`.
+A push payload without a `ref` or a full `after` commit is malformed
+(`400`). The signed push is the decision's whole input: a commit and its
+files do not change, so no fresh state is read. A redelivery is a
+duplicate by its delivery key, and a commit whose run is active or whose
+Task still exists by the Task name, as the spawner's name deduplicated
+it.
+
+The run's profile is `profile`'s (mode `model-free`), with no project,
+variant, model or effort; its Task is the dispatch configuration's
+`image-build-push` family, with the `profiles` entry of `profile`
+(its `secrets` and the `image-build.spe.quebec/runner` pod label).
+`internal/dispatch/testdata` holds a catalogue and family made from the
+push spawners Hollingsworth `db28a49` renders, and the tests hold every
+image's Task equal to its spawner's (`tasks/image-build-push-<image>.json`).
+
+Hollingsworth, to cut over: render `image_builds` into the routing
+configuration and the `image-build-push` family and the profile's pod
+label into the dispatch configuration (a Gordon image without this
+family refuses the unknown `image_builds` field, so this image ships
+first), subscribe Gordon's GitHub webhook to `push` for the catalogued
+repositories, and stop rendering the push spawners in the same change:
+Gordon executes every family it is configured for, so both would build.
 
 ## Vikunja lifecycle (Gordon 06)
 
@@ -469,6 +528,7 @@ Hollingsworth (Gordon 13 deploys it):
 | `merge-close` | the Vikunja write token; the GitHub reconciliation |
 | `pr-conflict` | dispatch config and Task `create`; the App; Tasks without the `announce-github-start` init container; the conflict reconciliation |
 | `limit-restart` | dispatch config, Task `create` and `list`; the Vikunja write token |
+| `image-build-push` | `image_builds` in the routing config; the dispatch config's family and the runner profile's entry; Task `create`; `push` deliveries |
 | `pr-readiness` | the App; Task `list`; the Vikunja write token; the readiness backstop; `pr_readiness` and `readiness.ci_checks` in the policy; `check_run` deliveries mirrored; with `readiness.notify`, the ntfy publisher |
 
 ## Probes and metrics

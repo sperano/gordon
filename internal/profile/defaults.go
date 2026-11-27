@@ -14,16 +14,19 @@ const (
 
 // Profile names.
 const (
-	ProfileDefault           = "default"
-	ProfileImageBuild        = "image-build-submitter"
-	ProfilePuckDB            = "puckdb"
-	ProfileDiscuss           = "discuss"
-	ProfileDiscussDefault    = "discuss-default"
-	ProfilePuckDBDiscuss     = "puckdb-discuss"
-	ProfileReview            = "review"
-	ProfilePuckDBReview      = "puckdb-review"
-	ProfileMactest           = "mactest"
-	ProfileMactestDiscuss    = "mactest-discuss"
+	ProfileDefault        = "default"
+	ProfileImageBuild     = "image-build-submitter"
+	ProfilePuckDB         = "puckdb"
+	ProfileDiscuss        = "discuss"
+	ProfileDiscussDefault = "discuss-default"
+	ProfilePuckDBDiscuss  = "puckdb-discuss"
+	ProfileReview         = "review"
+	ProfilePuckDBReview   = "puckdb-review"
+	ProfileMactest        = "mactest"
+	ProfileMactestDiscuss = "mactest-discuss"
+	// ProfileImageBuildRunner is the image-build runner's model-free
+	// profile (executionProfiles.system.image-build).
+	ProfileImageBuildRunner  = "image-build-runner"
 	reviewServiceAccount     = "pr-review"
 	effortMedium             = "medium"
 	defaultVariant           = "claude-opus"
@@ -32,11 +35,16 @@ const (
 	stackWeb, stackSwift     = "web", "swift"
 	discussServiceAccount    = "kelos-discuss"
 	imageBuildServiceAccount = "image-build-submitter"
+	// imageBuildRunnerServiceAccount is imageBuilds.serviceAccountName.
+	imageBuildRunnerServiceAccount = "image-build-runner"
 )
 
 // Defaults returns the configuration that reproduces the legacy
 // TaskSpawner routing and the Gordon 02 execution profiles (names,
 // ServiceAccounts, capabilities) the Kelos admission policy enforces.
+// Its image-build catalogue is empty on purpose: the routing file is
+// decoded over Defaults, so a catalogue here would start builds before
+// Hollingsworth renders one (and while its push spawners still build).
 func Defaults() Config {
 	return Config{
 		Version:        LegacyVersion,
@@ -94,6 +102,8 @@ func profiles() map[string]Profile {
 		ProfilePuckDBDiscuss: {ServiceAccount: discussServiceAccount, ReadOnly: true,
 			Capabilities: []Capability{GitHubReadOnly, ClusterRead, PostgresTest, PuckDBProdReadOnly}},
 		ProfileMactestDiscuss: {ReadOnly: true, Capabilities: []Capability{GitHubReadOnly, Mactest}},
+		ProfileImageBuildRunner: {ServiceAccount: imageBuildRunnerServiceAccount,
+			Capabilities: []Capability{ImageBuildRun}},
 		// The agent container's token is shadowed: only the supersede init
 		// container uses pr-review's Task rights.
 		ProfileReview: {ServiceAccount: reviewServiceAccount, Capabilities: []Capability{GitHubWrite, GitHubReadOnly}},

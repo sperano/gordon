@@ -12,7 +12,9 @@
 // discuss run's name departs from the legacy taskspawners.yaml template:
 // it leads with the Vikunja task id and carries the variant without its
 // vendor prefix (vikunja-<task>-<project>-<short variant>, ShortVariant;
-// a discuss run adds -discuss), so runs of one task sort together.
+// a discuss run adds -discuss), so runs of one task sort together. An
+// image build for a push keeps the push spawner's name,
+// image-build-<image>-push-<sha12>.
 package run
 
 import (
@@ -64,6 +66,11 @@ const (
 	// back from Kelos, and takes the label off once no run of the task is
 	// held: model-free writes with no legacy implementation.
 	VikunjaQueued Family = "vikunja-queued"
+	// ImageBuildPush builds a catalogued image for a push to one of its
+	// branches: one model-free runner Task per image and pushed commit
+	// (the image-build-<image>-push spawners of Hollingsworth's
+	// image-builds.yaml).
+	ImageBuildPush Family = "image-build-push"
 )
 
 // Families lists every family the router decides, in a stable order.
@@ -71,7 +78,7 @@ var Families = []Family{
 	VikunjaImplement, VikunjaDiscuss, VikunjaFollowUp, VikunjaFollowUpAnswer,
 	VikunjaFollowUpDiscuss, PRFollowUp, PRReview, PROpen, MergeClose,
 	VikunjaDragCancel, VikunjaDoneCleanup, VikunjaChain, VikunjaFailure, VikunjaAutoAssign,
-	PRConflict, LimitRestart, PRReadiness, VikunjaCost, VikunjaQueued,
+	PRConflict, LimitRestart, PRReadiness, VikunjaCost, VikunjaQueued, ImageBuildPush,
 }
 
 // AgentFamilies are the families whose runs work on a Vikunja task as its
@@ -89,8 +96,13 @@ const BranchPrefix = "kelos/vikunja-"
 // Kelos copies the name into the kelos.dev/task label.
 const MaxNameLength = 63
 
-// shortSHALength is how much of a head SHA a review Task name keeps.
-const shortSHALength = 8
+// shortSHALength is how much of a head SHA a review Task name keeps;
+// pushSHALength how much of a pushed commit an image build's keeps (the
+// push spawners' printf "%.12s").
+const (
+	shortSHALength = 8
+	pushSHALength  = 12
+)
 
 // Identity is everything that names one run.
 type Identity struct {
@@ -116,6 +128,9 @@ type Identity struct {
 	// vikunja-ops-* spawners): the task's implementation run, named
 	// OpsNamePrefix-<task>-<project>-<short variant>.
 	Ops bool `json:"ops,omitempty"`
+	// Image is an ImageBuildPush run's catalogued image; HeadSHA its
+	// pushed commit.
+	Image string `json:"image,omitempty"`
 }
 
 // OpsNamePrefix starts an ops run's Task name (the legacy vikunja-ops-*
@@ -182,6 +197,8 @@ func (i Identity) baseName(suffix string) string {
 		return i.reviewName(suffix)
 	case PRConflict:
 		return "pr-conflict-" + i.Episode
+	case ImageBuildPush:
+		return fmt.Sprintf("image-build-%s-push-%s", i.Image, PushRequest(i.HeadSHA))
 	default:
 		return ""
 	}
@@ -218,11 +235,17 @@ func (i Identity) reviewName(suffix string) string {
 	return reviewNamePrefix + "-" + rest
 }
 
-func short(sha string) string {
-	if len(sha) < shortSHALength {
-		return sha
+func short(sha string) string { return prefix(sha, shortSHALength) }
+
+// PushRequest is the part of a pushed commit an image build's Task name
+// and request id carry: its first 12 characters.
+func PushRequest(sha string) string { return prefix(sha, pushSHALength) }
+
+func prefix(s string, n int) string {
+	if len(s) < n {
+		return s
 	}
-	return sha[:shortSHALength]
+	return s[:n]
 }
 
 var agentBranch = regexp.MustCompile(`^` + regexp.QuoteMeta(BranchPrefix) + `([0-9]+)$`)

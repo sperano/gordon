@@ -31,6 +31,11 @@ func TestValidateRefusals(t *testing.T) {
 			"family \"pr-open\" submits no Task"},
 		"unknown family": {func(c *dispatch.Config) { c.Families["wiki-followup"] = dispatch.Family{Prompt: "x"} }, `family "wiki-followup"`},
 		"empty prompt":   {family(dispatch.Family{Prompt: " \n"}), "family vikunja-implement: prompt is required"},
+		"zero deadline": {family(dispatch.Family{Prompt: "x", Pod: dispatch.Pod{ActiveDeadlineSeconds: ptr(int64(0))}}),
+			"family vikunja-implement: pod activeDeadlineSeconds 0 is not positive"},
+		"negative profile deadline": {func(c *dispatch.Config) {
+			c.Profiles["default"] = dispatch.ProfileSpec{Pod: dispatch.Pod{ActiveDeadlineSeconds: ptr(int64(-5))}}
+		}, "profile default: pod activeDeadlineSeconds -5 is not positive"},
 		"reserved label": {family(dispatch.Family{Prompt: "x", Labels: map[string]string{dispatch.ModeLabel: "implement"}}), dispatch.ModeLabel + " is set by Gordon"},
 		"variant label":  {family(dispatch.Family{Prompt: "x", Labels: map[string]string{dispatch.VariantLabel: "x"}}), dispatch.VariantLabel + " is set by Gordon"},
 		"reserved annotation": {family(dispatch.Family{Prompt: "x", Annotations: map[string]string{dispatch.InboxAnnotation: "1"}}),
@@ -86,7 +91,7 @@ func TestProfilePodLabelsAccepted(t *testing.T) {
 
 func TestLimitsFor(t *testing.T) {
 	l := dispatch.Limits{Default: 4, Variants: map[string]int{"claude-sonnet": 2, "qwen-coder": 0}}
-	for variant, want := range map[string]int{"claude-sonnet": 2, "claude-opus": 4, "qwen-coder": 0} {
+	for variant, want := range map[string]int{"claude-sonnet": 2, "claude-opus": 4, "qwen-coder": 0, "": 0} {
 		if got := l.For(variant); got != want {
 			t.Errorf("For(%s) = %d, want %d", variant, got, want)
 		}
@@ -164,3 +169,5 @@ func TestValidateReportsTheFirstInvalidEntryByName(t *testing.T) {
 		}
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

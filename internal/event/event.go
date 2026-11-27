@@ -177,6 +177,35 @@ type GitHub struct {
 	// CheckRunHeadSHA is a check_run's head_sha: the head whose pull
 	// requests the readiness family decides.
 	CheckRunHeadSHA string
+	// Push is a push delivery's ref, commit and files; nil otherwise.
+	Push *Push
+}
+
+// Push is what the image-build family routes a push on.
+type Push struct {
+	// Ref is the pushed ref (refs/heads/<branch>, refs/tags/<tag>).
+	Ref string
+	// After is the commit the ref points to after the push: all zeros
+	// when the push deleted the ref.
+	After string
+	// Deleted is the payload's deleted flag.
+	Deleted bool
+	// Files are the paths the push's commits added, removed or modified,
+	// each once, in payload order (Kelos's extractPushEventFiles).
+	Files []string
+}
+
+// branchRefPrefix starts a branch's ref.
+const branchRefPrefix = "refs/heads/"
+
+// Branch is the pushed branch, "" for a ref that is no branch (a tag),
+// as Kelos's push Branch.
+func (p Push) Branch() string {
+	b, ok := strings.CutPrefix(p.Ref, branchRefPrefix)
+	if !ok {
+		return ""
+	}
+	return b
 }
 
 // PullRequest is a GitHub pull-request snapshot, from a delivery or a

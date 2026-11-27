@@ -86,6 +86,8 @@ func (r Router) route(ev event.Event, st State, led Ledger) Decision {
 		return r.pullRequest(ev, st, led)
 	case event.GitHubCheckRun:
 		return r.checkRun(ev, st, led)
+	case event.GitHubPush:
+		return r.push(ev, led)
 	default:
 		return Decision{Outcome: Ignore, Reason: ReasonNotRouted}
 	}
@@ -121,11 +123,16 @@ func (r Router) family(f run.Family, project string) FamilyDecision {
 // resolved builds a run, or a Reject naming the configuration's refusal
 // or a Task name too long for its kelos.dev/task label.
 func (r Router) resolved(fd *FamilyDecision, id run.Identity, req profile.Request) (Run, bool) {
+	return r.resolvedWith(fd, id, func() (profile.Resolved, error) { return r.Config.Resolve(req) })
+}
+
+// resolvedWith is resolved with the profile resolve returns.
+func (r Router) resolvedWith(fd *FamilyDecision, id run.Identity, resolve func() (profile.Resolved, error)) (Run, bool) {
 	if len(id.Name()) > run.MaxNameLength {
 		fd.Outcome, fd.Reason = Reject, ReasonNameTooLong
 		return Run{}, false
 	}
-	prof, err := r.Config.Resolve(req)
+	prof, err := resolve()
 	if err != nil {
 		var perr *profile.Error
 		fd.Outcome, fd.Reason = Reject, err.Error()
