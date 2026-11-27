@@ -222,11 +222,13 @@ pr-open notice promises a ready-to-merge one).
   (its variant limit full, its branch held) gets that label on its task
   and one `queued` notice saying why (`<variant> ALREADY RUNS 2 OF ITS 2`,
   `BRANCH <branch> IS HELD BY KELOS TASK <task>`); a follow-up's `/gordon`
-  comment also gets ⏳, added once whatever the reason. All are queued by
-  the submit executor on the run's generation, keyed by the run and, for
+  comment also gets ⏳. All are queued by the submit executor on the
+  run's generation. The label and notice are keyed by the run and, for
   the notice, the hold without its count: retries for the same reason
-  write nothing, a new reason posts a new notice. None is written once
-  the run started or stopped; the ⏳ stays after the run starts. The label comes off when the Task is created,
+  write nothing, a new reason posts a new notice. The ⏳ is keyed by the
+  request's comment alone, so a later hold of the run, for any reason,
+  queues no second one. None is written once the run started or
+  stopped; the ⏳ stays after the run starts. The label comes off when the Task is created,
   when a drag-cancel stops the run, and when the observer finishes a run
   whose submission was dead-lettered; a task still labelled with no run
   held loses it on its next `task.updated` (the reconciliation queues
