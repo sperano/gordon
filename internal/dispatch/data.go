@@ -40,10 +40,15 @@ type Input struct {
 //     Payload.Review.ID, Payload.PullRequest.Head.SHA (and .GetSHA),
 //     Payload.PullRequest.Head.Ref, Payload.PullRequest.Base.Ref;
 //   - pr-conflict, the conflict dispatch's fields: id and ID (the
-//     episode), number, title, url, base_ref, base_sha, head_sha.
+//     episode), number, title, url, base_ref, base_sha, head_sha;
+//   - image-build-push, the catalogued image's fields instead of the
+//     GitHub ones: image, environment, repository (the image's),
+//     coalesce and owner_merged (bools), first_branch (its first branch,
+//     the one a coalescing build follows) and Payload.After and Payload.GetAfter
+//     (the pushed commit, as go-github's accessor the push spawners use).
 type Data map[string]any
 
-func (b Builder) data(in Input, proj profile.Project) Data {
+func (b Builder) data(in Input, proj profile.Project) (Data, error) {
 	id, prof := in.Run.Identity, in.Run.Profile
 	d := Data{
 		"name": in.Run.Name, "family": string(id.Family), "project": proj.Name, "project_title": proj.Title,
@@ -53,6 +58,8 @@ func (b Builder) data(in Input, proj profile.Project) Data {
 		"effort": prof.Effort, "branch": in.Run.Branch, "Branch": in.Run.Branch,
 	}
 	switch {
+	case id.Family == run.ImageBuildPush:
+		return d, b.pushData(d, id)
 	case in.Event.Vikunja != nil:
 		vikunjaData(d, in)
 	case in.Event.GitHub != nil:
@@ -61,7 +68,20 @@ func (b Builder) data(in Input, proj profile.Project) Data {
 			conflictData(d, in)
 		}
 	}
-	return d
+	return d, nil
+}
+
+// pushData are an image build's fields, from its catalogue entry: the
+// image named by the run, never by the payload.
+func (b Builder) pushData(d Data, id run.Identity) error {
+	img, ok := b.Routing.ImageBuilds.Image(id.Image)
+	if !ok || len(img.Branches) == 0 {
+		return refuse(CodeUnknownImage, "image %q", id.Image)
+	}
+	d["image"], d["environment"], d["repository"] = img.Name, img.Environment, img.Repository
+	d["coalesce"], d["owner_merged"], d["first_branch"] = img.Coalesce, img.OwnerMerged, img.Branches[0]
+	d["Payload"] = map[string]any{"After": id.HeadSHA, "GetAfter": id.HeadSHA}
+	return nil
 }
 
 // conflictData are the conflict dispatch's fields

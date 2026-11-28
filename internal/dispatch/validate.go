@@ -189,6 +189,9 @@ func (p Pod) checkNoLabels() error {
 // true and only on an env entry, and every template in them parses. The
 // API server still checks the rest of the schema.
 func (p Pod) validate() error {
+	if p.ActiveDeadlineSeconds != nil && *p.ActiveDeadlineSeconds <= 0 {
+		return fmt.Errorf("pod activeDeadlineSeconds %d is not positive", *p.ActiveDeadlineSeconds)
+	}
 	for _, f := range []struct {
 		field string
 		raw   json.RawMessage

@@ -382,18 +382,21 @@ func envNamed(name string) json.RawMessage {
 
 // TestPodPiecesComposeInOrder: env is the family's, the Workspace's, the
 // profile's then the variant's; a later piece's resources or affinity
-// wins. A discuss run takes its project's Workspace pieces, keyed by the
-// writing Workspace, though its Task names the read-only copy.
+// wins, as does its activeDeadlineSeconds. A discuss run takes its
+// project's Workspace pieces, keyed by the writing Workspace, though its
+// Task names the read-only copy.
 func TestPodPiecesComposeInOrder(t *testing.T) {
 	cfg := fixture(t)
 	f := cfg.Families[run.VikunjaDiscuss]
 	f.Pod.Env = append(f.Pod.Env, envNamed("FROM_FAMILY"))
 	f.Pod.Resources, f.Pod.Affinity = json.RawMessage(`{"limits":{"cpu":"1"}}`), json.RawMessage(`{"a":"family"}`)
+	f.Pod.ActiveDeadlineSeconds = ptr(int64(60))
 	cfg.Families[run.VikunjaDiscuss] = f
 	cfg.Workspaces = map[string]dispatch.Pod{"gordon": {Env: []json.RawMessage{envNamed("FROM_WORKSPACE")}}}
 	p := cfg.Profiles["discuss-default"]
 	p.Pod.Env = append(p.Pod.Env, envNamed("FROM_PROFILE"))
 	p.Pod.Resources = json.RawMessage(`{"limits":{"cpu":"2"}}`)
+	p.Pod.ActiveDeadlineSeconds = ptr(int64(120))
 	cfg.Profiles["discuss-default"] = p
 	v := cfg.Variants["claude-opus"]
 	v.Pod.Env = append(v.Pod.Env, envNamed("FROM_VARIANT"))
@@ -413,6 +416,9 @@ func TestPodPiecesComposeInOrder(t *testing.T) {
 	}
 	if string(po.Resources) != `{"limits":{"cpu":"2"}}` || string(po.Affinity) != `{"a":"variant"}` {
 		t.Fatalf("resources %s affinity %s, want the profile's and the variant's", po.Resources, po.Affinity)
+	}
+	if po.ActiveDeadlineSeconds == nil || *po.ActiveDeadlineSeconds != 120 {
+		t.Fatalf("activeDeadlineSeconds %v, want the profile's 120", po.ActiveDeadlineSeconds)
 	}
 	if rn.Task.WorkspaceName() != "gordon-readonly" {
 		t.Fatalf("workspace %s, want the read-only copy", rn.Task.WorkspaceName())

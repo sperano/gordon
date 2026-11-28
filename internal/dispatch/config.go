@@ -130,7 +130,7 @@ type VariantSpec struct {
 // Pod is a piece of spec.worker.podOverrides. A Task's pod is its
 // family's, then its Workspace's, its profile's and its variant's
 // pieces, lists concatenated in that order; the last piece that sets
-// resources or affinity wins. Only a profile's piece may set labels.
+// resources, affinity or activeDeadlineSeconds wins. Only a profile's piece may set labels.
 // Init containers start in order: every piece's ExtraInitContainers
 // come first, then every piece's LastInitContainers, so a family's
 // pr-opener still starts after a profile's test-postgres, as in the
@@ -141,14 +141,17 @@ type VariantSpec struct {
 // is dropped when its rendered value is empty and it has no valueFrom,
 // as a spawner's {{if}} leaves it out.
 type Pod struct {
-	Labels              map[string]string `json:"labels,omitempty"`
-	Resources           json.RawMessage   `json:"resources,omitempty"`
-	Affinity            json.RawMessage   `json:"affinity,omitempty"`
-	Env                 []json.RawMessage `json:"env,omitempty"`
-	ExtraInitContainers []json.RawMessage `json:"extraInitContainers,omitempty"`
-	LastInitContainers  []json.RawMessage `json:"lastInitContainers,omitempty"`
-	Volumes             []json.RawMessage `json:"volumes,omitempty"`
-	VolumeMounts        []json.RawMessage `json:"volumeMounts,omitempty"`
+	Labels map[string]string `json:"labels,omitempty"`
+	// ActiveDeadlineSeconds, when set, must be positive; the last piece
+	// that sets it wins.
+	ActiveDeadlineSeconds *int64            `json:"activeDeadlineSeconds,omitempty"`
+	Resources             json.RawMessage   `json:"resources,omitempty"`
+	Affinity              json.RawMessage   `json:"affinity,omitempty"`
+	Env                   []json.RawMessage `json:"env,omitempty"`
+	ExtraInitContainers   []json.RawMessage `json:"extraInitContainers,omitempty"`
+	LastInitContainers    []json.RawMessage `json:"lastInitContainers,omitempty"`
+	Volumes               []json.RawMessage `json:"volumes,omitempty"`
+	VolumeMounts          []json.RawMessage `json:"volumeMounts,omitempty"`
 }
 
 // Limits bound the Tasks Gordon lets run at once per variant (the legacy
@@ -160,8 +163,13 @@ type Limits struct {
 	Variants map[string]int `json:"variants,omitempty"`
 }
 
-// For is the limit of a variant; <= 0 is unbounded.
+// For is the limit of a variant; <= 0 is unbounded. A run with no
+// variant (a model-free image build) is unbounded: no agent runs, and
+// the legacy push spawners set no maxConcurrency.
 func (l Limits) For(variant string) int {
+	if variant == "" {
+		return 0
+	}
 	if n, ok := l.Variants[variant]; ok {
 		return n
 	}

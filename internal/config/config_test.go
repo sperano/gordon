@@ -171,6 +171,32 @@ func TestWorkerQueuedLabel(t *testing.T) {
 	}
 }
 
+func TestWorkerImageBuilds(t *testing.T) {
+	env := workerEnv(t)
+	c, err := LoadWorker(envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(c.Routing.ImageBuilds.Images); n != 0 {
+		t.Fatalf("defaults catalogue %d images, want none", n)
+	}
+	catalogue := `{"policy":{"pr_readiness":true},"image_builds":{"profile":"image-build-runner","workspace":"merge-close-stub",` +
+		`"runner":{"type":"opencode","image":"builder:1","credential_type":"none"},` +
+		`"images":[{"name":"lucarne","repository":"sperano/lucarne","environment":"hollingsworth","branches":["main"]}]}}`
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", catalogue)
+	if c, err = LoadWorker(envOf(env)); err != nil {
+		t.Fatal(err)
+	}
+	if img, ok := c.Routing.ImageBuilds.Image("lucarne"); !ok || img.Repository != "sperano/lucarne" {
+		t.Fatalf("catalogue %+v", c.Routing.ImageBuilds)
+	}
+	env["GORDON_ROUTING_CONFIG_FILE"] = file(t, "routing.json", strings.Replace(catalogue, `"image-build-runner"`, `"default"`, 1))
+	if _, err := LoadWorker(envOf(env)); err == nil || !strings.Contains(err.Error(),
+		`GORDON_ROUTING_CONFIG_FILE: image_builds: profile "default" names no service_account`) {
+		t.Fatalf("catalogue on the default profile: %v", err)
+	}
+}
+
 func TestWorkerRefusals(t *testing.T) {
 	cases := map[string]struct {
 		set  map[string]string

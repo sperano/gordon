@@ -41,12 +41,15 @@ const (
 
 // Fixture is one replayed delivery.
 type Fixture struct {
-	Name        string         `json:"-"`
-	Description string         `json:"description"`
-	Delivery    Delivery       `json:"delivery"`
-	State       route.State    `json:"state"`
-	Ledger      Ledger         `json:"ledger"`
-	Expect      route.Decision `json:"expect"`
+	Name        string      `json:"-"`
+	Description string      `json:"description"`
+	Delivery    Delivery    `json:"delivery"`
+	State       route.State `json:"state"`
+	Ledger      Ledger      `json:"ledger"`
+	// ImageBuilds, when set, is the routing catalogue the fixture runs
+	// with: the defaults build no image on push.
+	ImageBuilds *profile.ImageBuilds `json:"image_builds,omitempty"`
+	Expect      route.Decision       `json:"expect"`
 }
 
 // Delivery is the fixture's raw delivery.
@@ -133,14 +136,19 @@ func Load(dir string) ([]Fixture, error) {
 	return out, nil
 }
 
-// Router is the router fixtures run against: the routing defaults and the
-// fixture key for every source.
+// Router is the router fixtures run against: the routing defaults (with
+// the fixture's image-build catalogue) and the fixture key for every
+// source.
 func (f Fixture) Router() route.Router {
 	keys := auth.Keys{}
 	for _, s := range []event.Source{event.SourceVikunja, event.SourceGitHub, event.SourceWikiComment, event.SourceImageBuild} {
 		keys[s] = FixtureKey
 	}
-	return route.Router{Config: profile.Defaults(), Keys: keys}
+	cfg := profile.Defaults()
+	if f.ImageBuilds != nil {
+		cfg.ImageBuilds = *f.ImageBuilds
+	}
+	return route.Router{Config: cfg, Keys: keys}
 }
 
 // Build turns the fixture's delivery into the signed bytes a receiver gets.

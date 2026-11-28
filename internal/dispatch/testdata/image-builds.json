@@ -1,0 +1,115 @@
+{
+  "profile": "image-build-runner",
+  "workspace": "merge-close-stub",
+  "runner": {
+    "type": "opencode",
+    "image": "ericsperano/kelos-image-builder:dev-20261114-160838-8c869d4",
+    "credential_type": "none"
+  },
+  "images": [
+    {
+      "name": "devbox",
+      "repository": "sperano/hollingsworth",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ],
+      "file_patterns": {
+        "include": [
+          "docker/devbox/Dockerfile"
+        ]
+      }
+    },
+    {
+      "name": "gordon",
+      "repository": "sperano/gordon",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ]
+    },
+    {
+      "name": "kelos-agent",
+      "repository": "sperano/hollingsworth",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ],
+      "file_patterns": {
+        "include": [
+          "docker/kelos-agent/**",
+          "helm/kelos/Chart.yaml"
+        ]
+      }
+    },
+    {
+      "name": "kelos-image-builder",
+      "repository": "sperano/hollingsworth",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ],
+      "file_patterns": {
+        "include": [
+          "docker/kelos-image-builder/**"
+        ]
+      },
+      "owner_merged": true
+    },
+    {
+      "name": "lucarne",
+      "repository": "sperano/lucarne",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ]
+    },
+    {
+      "name": "maurice-web",
+      "repository": "sperano/maurice-web",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ]
+    },
+    {
+      "name": "portal-docs",
+      "repository": "sperano/hollingsworth",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ],
+      "file_patterns": {
+        "include": [
+          "portal-docs/**"
+        ]
+      }
+    },
+    {
+      "name": "puckdb",
+      "repository": "sperano/puckdb",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ],
+      "coalesce": true
+    },
+    {
+      "name": "sillage",
+      "repository": "sperano/sillage",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ]
+    },
+    {
+      "name": "vigie",
+      "repository": "sperano/vigie",
+      "environment": "hollingsworth",
+      "branches": [
+        "main"
+      ],
+      "coalesce": true
+    }
+  ]
+}

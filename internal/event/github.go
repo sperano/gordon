@@ -3,6 +3,7 @@ package event
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 )
 
 // GitHub delivery headers.
@@ -58,11 +59,23 @@ type githubBody struct {
 	CheckRun    *struct {
 		HeadSHA string `json:"head_sha"`
 	} `json:"check_run"`
+	// A push's fields.
+	Ref     string         `json:"ref"`
+	After   string         `json:"after"`
+	Deleted bool           `json:"deleted"`
+	Commits []githubCommit `json:"commits"`
 	// Gordon is what a synthetic delivery adds: the Workspace whose
 	// conflict reconciliation found the conflict.
 	Gordon *struct {
 		Workspace string `json:"workspace"`
 	} `json:"gordon"`
+}
+
+// githubCommit is one commit of a push.
+type githubCommit struct {
+	Added    []string `json:"added"`
+	Removed  []string `json:"removed"`
+	Modified []string `json:"modified"`
 }
 
 // githubComment is a comment or a submitted review.
@@ -200,6 +213,8 @@ func request(ev *Event, raw githubBody) error {
 		}
 		gh.CheckRunHeadSHA = raw.CheckRun.HeadSHA
 		return nil
+	case GitHubPush:
+		return push(gh, raw)
 	case GitHubPullRequest:
 		if raw.PullRequest == nil {
 			return fmt.Errorf("%w: pull_request event without pull_request", ErrMalformed)
@@ -217,5 +232,30 @@ func request(ev *Event, raw githubBody) error {
 		return fmt.Errorf("%w: %s without a comment, review or issue id", ErrMalformed, ev.Kind)
 	}
 	ev.RequestKey = fmt.Sprintf("github/%s/%c/%d", gh.Repository, gh.CommentKind, gh.CommentID)
+	return nil
+}
+
+// commitSHA is a full commit id: SHA-1 or SHA-256, lowercase hex.
+var commitSHA = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// push fills a push's ref, commit and changed files. A push is no
+// request: its delivery key alone deduplicates it.
+func push(gh *GitHub, raw githubBody) error {
+	if raw.Ref == "" || !commitSHA.MatchString(raw.After) {
+		return fmt.Errorf("%w: push without a ref or a full after commit", ErrMalformed)
+	}
+	p := &Push{Ref: raw.Ref, After: raw.After, Deleted: raw.Deleted}
+	seen := map[string]bool{}
+	for _, c := range raw.Commits {
+		for _, batch := range [][]string{c.Added, c.Removed, c.Modified} {
+			for _, f := range batch {
+				if !seen[f] {
+					seen[f] = true
+					p.Files = append(p.Files, f)
+				}
+			}
+		}
+	}
+	gh.Push = p
 	return nil
 }

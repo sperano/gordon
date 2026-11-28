@@ -83,14 +83,17 @@ type Ref struct {
 // PodOverrides is spec.worker.podOverrides, limited to the fields the
 // admission policy allows.
 type PodOverrides struct {
-	ServiceAccountName  string            `json:"serviceAccountName,omitempty"`
-	Labels              map[string]string `json:"labels,omitempty"`
-	Resources           json.RawMessage   `json:"resources,omitempty"`
-	Affinity            json.RawMessage   `json:"affinity,omitempty"`
-	Env                 []json.RawMessage `json:"env,omitempty"`
-	ExtraInitContainers []json.RawMessage `json:"extraInitContainers,omitempty"`
-	Volumes             []json.RawMessage `json:"volumes,omitempty"`
-	VolumeMounts        []json.RawMessage `json:"volumeMounts,omitempty"`
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	// ActiveDeadlineSeconds bounds the pod's run (the image-build
+	// runner's whole run, its lock wait included).
+	ActiveDeadlineSeconds *int64            `json:"activeDeadlineSeconds,omitempty"`
+	Labels                map[string]string `json:"labels,omitempty"`
+	Resources             json.RawMessage   `json:"resources,omitempty"`
+	Affinity              json.RawMessage   `json:"affinity,omitempty"`
+	Env                   []json.RawMessage `json:"env,omitempty"`
+	ExtraInitContainers   []json.RawMessage `json:"extraInitContainers,omitempty"`
+	Volumes               []json.RawMessage `json:"volumes,omitempty"`
+	VolumeMounts          []json.RawMessage `json:"volumeMounts,omitempty"`
 }
 
 // Status is the part of TaskStatus Gordon reads.

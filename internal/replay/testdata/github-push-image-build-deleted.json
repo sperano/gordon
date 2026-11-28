@@ -1,0 +1,86 @@
+{
+  "description": "Deleting a catalogued branch builds nothing: there is no commit.",
+  "delivery": {
+    "source": "github",
+    "headers": {
+      "X-GitHub-Delivery": "push-lucarne-del",
+      "X-GitHub-Event": "push"
+    },
+    "body": {
+      "ref": "refs/heads/main",
+      "before": "89abcdef0123456789abcdef0123456789abcdef",
+      "after": "0000000000000000000000000000000000000000",
+      "deleted": true,
+      "repository": {
+        "full_name": "sperano/lucarne"
+      },
+      "sender": {
+        "login": "sperano"
+      },
+      "head_commit": null,
+      "commits": []
+    }
+  },
+  "state": {},
+  "ledger": {},
+  "image_builds": {
+    "profile": "image-build-runner",
+    "workspace": "merge-close-stub",
+    "runner": {
+      "type": "opencode",
+      "image": "ericsperano/kelos-image-builder:dev-20261114-160838-8c869d4",
+      "credential_type": "none"
+    },
+    "images": [
+      {
+        "name": "kelos-agent",
+        "repository": "sperano/hollingsworth",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "file_patterns": {
+          "include": [
+            "docker/kelos-agent/**",
+            "helm/kelos/Chart.yaml"
+          ]
+        }
+      },
+      {
+        "name": "lucarne",
+        "repository": "sperano/lucarne",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ]
+      },
+      {
+        "name": "portal-docs",
+        "repository": "sperano/hollingsworth",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "file_patterns": {
+          "include": [
+            "portal-docs/**"
+          ]
+        }
+      },
+      {
+        "name": "vigie",
+        "repository": "sperano/vigie",
+        "environment": "hollingsworth",
+        "branches": [
+          "main"
+        ],
+        "coalesce": true
+      }
+    ]
+  },
+  "expect": {
+    "outcome": "ignore",
+    "reason": "push-deleted",
+    "delivery_key": "github/delivery/push-lucarne-del"
+  }
+}

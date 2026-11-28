@@ -9,6 +9,7 @@ import (
 
 	"github.com/sperano/gordon/internal/kelos"
 	"github.com/sperano/gordon/internal/profile"
+	"github.com/sperano/gordon/internal/run"
 )
 
 // Error codes of a Task that cannot be built; a family whose run fails to
@@ -22,6 +23,7 @@ const (
 	CodePod               = "pod-invalid"
 	CodeSecretNotGranted  = "secret-not-granted"
 	CodeCoreLabelConflict = "core-label-conflict"
+	CodeUnknownImage      = "unknown-image"
 )
 
 // ReasonPrefix starts the family reason of a run whose Task cannot be built.
@@ -53,22 +55,19 @@ func (b Builder) Build(in Input) (kelos.Task, error) {
 	if !ok {
 		return kelos.Task{}, refuse(CodeNoTemplate, "family %s", key)
 	}
-	proj, ok := b.project(id.Project)
-	if !ok {
-		return kelos.Task{}, refuse(CodeUnknownProject, "project %q", id.Project)
+	proj, variant, err := b.target(id, prof)
+	if err != nil {
+		return kelos.Task{}, err
 	}
-	// A variant's entry may be empty, but it must be there: a missing one
-	// would build the Task without its variant's identity and pod pieces.
-	variant, ok := b.Config.Variants[id.Variant]
-	if !ok {
-		return kelos.Task{}, refuse(CodeUnknownVariant, "variant %q", id.Variant)
-	}
-	// Likewise a profile: without its entry the Task would lack the
+	// A profile's entry may be empty, but it must be there: without its entry the Task would lack the
 	// profile's pod pieces and network labels, and grant no Secret.
 	if _, ok := b.Config.Profiles[prof.Profile]; !ok {
 		return kelos.Task{}, refuse(CodeUnknownProfile, "profile %q", prof.Profile)
 	}
-	d := b.data(in, proj)
+	d, err := b.data(in, proj)
+	if err != nil {
+		return kelos.Task{}, err
+	}
 	prompt, err := render("prompt", fam.Prompt, d)
 	if err != nil {
 		return kelos.Task{}, err
@@ -100,6 +99,25 @@ func (b Builder) Build(in Input) (kelos.Task, error) {
 		},
 	}}
 	return t, b.admit(t, prof)
+}
+
+// target is the run's project and variant entries. A variant's entry may
+// be empty, but it must be there: a missing one would build the Task
+// without its variant's identity and pod pieces. A model-free run has
+// neither: no project's or variant's piece applies to it.
+func (b Builder) target(id run.Identity, prof profile.Resolved) (profile.Project, VariantSpec, error) {
+	if prof.Mode == profile.ModeModelFree {
+		return profile.Project{}, VariantSpec{}, nil
+	}
+	proj, ok := b.project(id.Project)
+	if !ok {
+		return proj, VariantSpec{}, refuse(CodeUnknownProject, "project %q", id.Project)
+	}
+	variant, ok := b.Config.Variants[id.Variant]
+	if !ok {
+		return proj, variant, refuse(CodeUnknownVariant, "variant %q", id.Variant)
+	}
+	return proj, variant, nil
 }
 
 func (b Builder) project(name string) (profile.Project, bool) {
@@ -140,7 +158,9 @@ func (b Builder) metadata(in Input, fam Family, prof profile.Resolved, d Data) (
 		m.Annotations[k] = out
 	}
 	m.Labels[ProfileLabel], m.Labels[ModeLabel], m.Labels[ManagedLabel] = prof.Profile, string(prof.Mode), "true"
-	m.Labels[VariantLabel] = in.Run.Identity.Variant
+	if v := in.Run.Identity.Variant; v != "" {
+		m.Labels[VariantLabel] = v
+	}
 	if prof.Mode == profile.ModeDiscuss {
 		m.Labels[DiscussLabel] = "true"
 	}
@@ -212,6 +232,9 @@ func addPiece(out *kelos.PodOverrides, p Pod) {
 	if p.Affinity != nil {
 		out.Affinity = p.Affinity
 	}
+	if p.ActiveDeadlineSeconds != nil {
+		out.ActiveDeadlineSeconds = p.ActiveDeadlineSeconds
+	}
 	out.Env = append(out.Env, p.Env...)
 	out.ExtraInitContainers = append(out.ExtraInitContainers, p.ExtraInitContainers...)
 	out.Volumes = append(out.Volumes, p.Volumes...)
@@ -219,7 +242,7 @@ func addPiece(out *kelos.PodOverrides, p Pod) {
 }
 
 func podEmpty(p *kelos.PodOverrides) bool {
-	return p.ServiceAccountName == "" && len(p.Labels) == 0 && p.Resources == nil && p.Affinity == nil &&
+	return p.ServiceAccountName == "" && p.ActiveDeadlineSeconds == nil && len(p.Labels) == 0 && p.Resources == nil && p.Affinity == nil &&
 		len(p.Env) == 0 && len(p.ExtraInitContainers) == 0 && len(p.Volumes) == 0 && len(p.VolumeMounts) == 0
 }
 

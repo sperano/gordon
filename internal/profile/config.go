@@ -19,6 +19,9 @@ const (
 	// (the legacy clusterOperator mode): its profile is the configuration's
 	// OpsProfile, never a project's.
 	ModeOps Mode = "ops"
+	// ModeModelFree is a run no agent works in (an image build): its
+	// profile is ImageBuilds.Profile, never a project's.
+	ModeModelFree Mode = "model-free"
 )
 
 // Capability is a named grant a profile carries. Gordon 02 binds each one
@@ -50,12 +53,15 @@ const (
 	// ClusterWrite is the cluster operator's write ClusterRole: only the
 	// ops profile may grant it, and only to an ops run.
 	ClusterWrite Capability = "cluster-write"
+	// ImageBuildRun is the image-build runner's registry, publish
+	// builders and pin pull requests.
+	ImageBuildRun Capability = "image-build-run"
 )
 
 // writes classifies every known capability: true when it can change
 // something outside the pod. A capability missing here is unknown.
 var writes = map[Capability]bool{
-	GitHubWrite: true, ImageBuildSubmit: true, ClusterWrite: true,
+	GitHubWrite: true, ImageBuildSubmit: true, ClusterWrite: true, ImageBuildRun: true,
 	GitHubReadOnly: false, ClusterRead: false, NamespaceRead: false, PostgresTest: false, PuckDBProdReadOnly: false, Mactest: false,
 }
 
@@ -136,6 +142,9 @@ type Config struct {
 	CommonReviewer []Reviewer          `json:"common_reviewers"`
 	StackReviewers map[string]Reviewer `json:"stack_reviewers"`
 	Policy         Policy              `json:"policy"`
+	// ImageBuilds is the push-triggered image-build catalogue; zero
+	// builds nothing.
+	ImageBuilds ImageBuilds `json:"image_builds,omitzero"`
 }
 
 // Policy holds the labels, buckets and identities routing keys on.

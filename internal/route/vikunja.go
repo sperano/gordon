@@ -216,11 +216,16 @@ func (r Router) projectOf(sent int64, fresh *event.Task) (p profile.Project, ok,
 // submit resolves and deduplicates one run; on success fd dispatches it
 // and submit is its submission, which the run's claim waits for.
 func (r Router) submit(fd *FamilyDecision, led Ledger, id run.Identity, req profile.Request) (Run, action.Action, bool) {
+	return r.submitWith(fd, led, id, func() (profile.Resolved, error) { return r.Config.Resolve(req) })
+}
+
+// submitWith is submit with the profile resolve returns.
+func (r Router) submitWith(fd *FamilyDecision, led Ledger, id run.Identity, resolve func() (profile.Resolved, error)) (Run, action.Action, bool) {
 	if reason, dup := existing(led, id.Name()); dup {
 		fd.Outcome, fd.Reason = Duplicate, reason
 		return Run{}, action.Action{}, false
 	}
-	rn, ok := r.resolved(fd, id, req)
+	rn, ok := r.resolvedWith(fd, id, resolve)
 	if !ok {
 		return Run{}, action.Action{}, false
 	}

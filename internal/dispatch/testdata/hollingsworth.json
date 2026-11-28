@@ -25,6 +25,214 @@
     "vikunja-agent-qwen-coder"
   ],
   "families": {
+    "image-build-push": {
+      "prompt": "Image build request (no model runs), for a push to {{.repository}}.\n\nrequest: push-{{printf \"%.12s\" .Payload.GetAfter}}\nimage: {{.image}}\nenvironment: {{.environment}}\nref: {{if .coalesce}}{{.first_branch}}{{else}}{{.Payload.GetAfter}}{{end}}\n{{- if .coalesce}}\nautomatic: true\nbranch: {{.first_branch}}\n{{- end}}\n",
+      "labels": {
+        "image-build.spe.quebec/image": "{{.image}}"
+      },
+      "ttl_seconds_after_finished": 7200,
+      "pod": {
+        "affinity": {
+          "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [
+                {
+                  "matchExpressions": [
+                    {
+                      "key": "node-role.kubernetes.io/control-plane",
+                      "operator": "DoesNotExist"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "activeDeadlineSeconds": 14400,
+        "resources": {
+          "limits": {
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "100m",
+            "memory": "256Mi"
+          }
+        },
+        "env": [
+          {
+            "name": "IMAGE_BUILD_NAMESPACE",
+            "value": "kelos-agents"
+          },
+          {
+            "name": "IMAGE_BUILD_CATALOG",
+            "value": "/opt/image-build-runner/catalog.json"
+          },
+          {
+            "name": "IMAGE_BUILD_PIN_REPOSITORY",
+            "value": "sperano/hollingsworth"
+          },
+          {
+            "name": "IMAGE_BUILD_PIN_BASE",
+            "value": "main"
+          },
+          {
+            "name": "IMAGE_BUILD_REGISTRY_USERNAME",
+            "value": "ericsperano"
+          },
+          {
+            "name": "IMAGE_BUILD_REGISTRY_TOKEN_FILE",
+            "value": "/etc/image-build/registry/token"
+          },
+          {
+            "name": "IMAGE_BUILD_BUILDKIT_CERT_DIR",
+            "value": "/etc/image-build/buildkit"
+          },
+          {
+            "name": "IMAGE_BUILD_BUILDKIT_SERVERS",
+            "value": "{\"linux/amd64\":\"tcp://buildkit-publish-amd64.buildkit.svc:1234\",\"linux/arm64\":\"tcp://buildkit-publish-arm64.buildkit.svc:1234\"}"
+          },
+          {
+            "name": "IMAGE_BUILD_GITHUB_APP_DIR",
+            "value": "/etc/image-build/github-app"
+          },
+          {
+            "name": "IMAGE_BUILD_OPENER_TOKEN_FILE",
+            "value": "/etc/image-build/github-opener/GITHUB_TOKEN"
+          },
+          {
+            "name": "IMAGE_BUILD_PR_LABEL",
+            "value": "kelos:no-review"
+          },
+          {
+            "name": "IMAGE_BUILD_AUTO_MERGE",
+            "value": "{{if not .owner_merged}}true{{end}}",
+            "gordonOmitIfEmpty": true
+          },
+          {
+            "name": "IMAGE_BUILD_LOCK_WAIT_SECONDS",
+            "value": "7200"
+          },
+          {
+            "name": "IMAGE_BUILD_LEASE_SECONDS",
+            "value": "120"
+          },
+          {
+            "name": "IMAGE_BUILD_POLL_SECONDS",
+            "value": "15"
+          },
+          {
+            "name": "IMAGE_BUILD_QUIET_SECONDS",
+            "value": "300"
+          },
+          {
+            "name": "IMAGE_BUILD_MAX_WAIT_SECONDS",
+            "value": "1800"
+          },
+          {
+            "name": "IMAGE_BUILD_MAX_ATTEMPTS",
+            "value": "3"
+          },
+          {
+            "name": "IMAGE_BUILD_WORKDIR",
+            "value": "/work"
+          },
+          {
+            "name": "GIT_AUTHOR_NAME",
+            "value": "\u00c9ric Sp\u00e9rano"
+          },
+          {
+            "name": "GIT_AUTHOR_EMAIL",
+            "value": "eric.sperano@gmail.com"
+          },
+          {
+            "name": "HOME",
+            "value": "/work"
+          },
+          {
+            "name": "PYTHONPATH",
+            "value": "/opt/image-build-runner"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "name": "runner",
+            "mountPath": "/kelos_entrypoint.sh",
+            "subPath": "image_build.py",
+            "readOnly": true
+          },
+          {
+            "name": "runner",
+            "mountPath": "/opt/image-build-runner",
+            "readOnly": true
+          },
+          {
+            "name": "work",
+            "mountPath": "/work"
+          },
+          {
+            "name": "registry",
+            "mountPath": "/etc/image-build/registry",
+            "readOnly": true
+          },
+          {
+            "name": "buildkit",
+            "mountPath": "/etc/image-build/buildkit",
+            "readOnly": true
+          },
+          {
+            "name": "github-app",
+            "mountPath": "/etc/image-build/github-app",
+            "readOnly": true
+          },
+          {
+            "name": "github-opener",
+            "mountPath": "/etc/image-build/github-opener",
+            "readOnly": true
+          }
+        ],
+        "volumes": [
+          {
+            "name": "runner",
+            "configMap": {
+              "name": "image-build-runner",
+              "defaultMode": 365
+            }
+          },
+          {
+            "name": "work",
+            "emptyDir": {}
+          },
+          {
+            "name": "registry",
+            "secret": {
+              "secretName": "image-build-registry",
+              "optional": true
+            }
+          },
+          {
+            "name": "buildkit",
+            "secret": {
+              "secretName": "buildkit-publish-client-image-build-runner",
+              "optional": true
+            }
+          },
+          {
+            "name": "github-app",
+            "secret": {
+              "secretName": "github-app",
+              "optional": true
+            }
+          },
+          {
+            "name": "github-opener",
+            "secret": {
+              "secretName": "github-token",
+              "optional": true
+            }
+          }
+        ]
+      }
+    },
     "pr-conflict": {
       "prompt": "Resolve the confirmed merge conflict on pull request #{{.number}} in {{.repository}}: {{.title}}\n\nPR: {{.url}}\nBranch: {{.branch}}\nBase ref: {{.base_ref}}\nExpected PR base SHA (GitHub base.sha, not the base branch tip): {{.base_sha}}\nExpected head SHA: {{.head_sha}}\nExpected mergeability: false / dirty\nExpected variant: {{.variant}}\nLabel prefix: kelos:\nCurrent variants: claude-opus, claude-sonnet, claude-fable, claude-haiku, gpt-sol, gpt-astra, deepseek, qwen-coder\nDefault variant: claude-opus\nOwner: sperano\nPR authors: sperano, gordon-cole-ai[bot]\n\nFollow the PR conflict-resolution procedure in your instructions.\n",
       "labels": {
@@ -3737,7 +3945,12 @@
         "github-app",
         "github-token",
         "image-build-registry"
-      ]
+      ],
+      "pod": {
+        "labels": {
+          "image-build.spe.quebec/runner": "true"
+        }
+      }
     },
     "image-build-submitter": {
       "secrets": [
